@@ -1,0 +1,88 @@
+<style>
+  table {
+    border-collapse: collapse;
+  }
+
+  table img {
+    max-height: 6em;
+    max-width: 6em;
+  }
+
+  table td {
+    border: 1px solid black;
+  }
+
+  table td:nth-child(2),
+  table td:nth-child(4) {
+    padding: 0.5em;
+  }
+
+  table .tags {
+    padding: 0.25em;
+    gap: 0.5em;
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  table .tags > a {
+    border-radius: 0.25em;
+    padding: 0.2em 0.25em;
+    border: 1px solid black;
+    display: inline-block;
+    text-decoration: none;
+  }
+
+  table .tags > a.author {
+    border: 1px solid rgb(0, 200, 200);
+  }
+</style>
+
+<div>
+<div style="margin-bottom: 1em;">
+<p>Hosting <%= @n_files %> jxl files</p>
+<a href="app-standard-universal-debug.apk">app-standard-universal-debug.apk</a> [2021.10.22]
+<a href="tachiyomi-en.grass-v1.2.1-debug.apk">tachiyomi-en.grass-v1.2.1-debug.apk</a>
+</div>
+
+
+<div>
+<input phx-hook="search" id="search" type="text" name="q" value="<%= @query %>" />
+<datalist id="results">
+  <%= for tag <- @suggestions do %>
+  <option value="<%= tag %>"><%= tag %></option>
+  <% end %>
+</datalist>
+
+<%= live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) %>
+<%= live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) %>
+<span><%= (@page - 1) * @limit + 1 %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
+</div>
+
+<table id="table">
+  <%= for s <- @results do %>
+  <tr>
+    <td class="cover">
+      <img src="/<%= s.e.cover %>" />
+    </td>
+    <td class="title">
+      <%= live_patch(s.e.title, to: Routes.reader_path(@socket, s.type, s.e.id)) %>
+    </td>
+    <td>
+      <div class="tags">
+      <%= for tag <- s.e.tags do %>
+        <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+      <% end %>
+      </div>
+    </td>
+    <td class="date">
+      <%= Date.to_string(s.date) %>
+    </td>
+  </tr>
+  <% end %>
+</table>
+
+<%= live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) %>
+<%= live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) %>
+<span><%= (@page - 1) * @limit + 1 %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
+
+</div>

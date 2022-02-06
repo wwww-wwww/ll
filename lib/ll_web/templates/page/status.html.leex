@@ -1,0 +1,10 @@
+<table>
+
+<%= for {key, value} <- @status do %>
+<tr>
+  <td><%= key_string(key) %></td>
+  <td><%= value %></td>
+</tr>
+<% end %>
+
+</table>

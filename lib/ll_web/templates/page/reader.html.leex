@@ -1,0 +1,44 @@
+<style>
+  .tags {
+    margin-top: 1em;
+    display: flex:
+    gap: 0.5em;
+  }
+
+  #img_container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    align-items: center;
+  }
+
+  #img_container img {
+    max-height: 1000px;
+  }
+</style>
+
+<h2><%= @title %></h2>
+
+<div><%= @date %></div>
+
+<div class="tags">
+<%= for tag <- @tags do %>
+  <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+<% end %>
+</div>
+
+<%= if assigns[:chapter] do %>
+<div>
+  <div><%= @chapter.enc %></div>
+  <div><%= @chapter.enc_params %></div>
+</div>
+
+<div><%= @chapter.files |> length %> pages</div>
+
+<div id="img_container">
+<%= for file <- @chapter.files do %>
+  <img src="/<%= file %>" />
+<% end%>
+</div>
+<% else %>
+<% end %>
