@@ -17,6 +17,8 @@ defmodule LLWeb.Router do
   scope "/", LLWeb do
     pipe_through :browser
 
+    get "/routes", PageController, :routes
+
     live "/", IndexLive
     live "/status", StatusLive
     live "/series/:series_id/:n", ReaderLive, :series
@@ -25,10 +27,12 @@ defmodule LLWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  scope "/", LLWeb do
+  scope "/api/", LLWeb do
     pipe_through :api
 
     get "/all.json", ApiController, :all
+    get "/series/:series_id/:file", ApiController, :series
+    get "/chapter/:chapter_id/:file", ApiController, :chapter
   end
 
   # Enables LiveDashboard only for development

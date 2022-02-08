@@ -20,14 +20,31 @@ defmodule LL.Sources.Dynasty do
 
   @tag_types Map.keys(@tag_type)
 
+  # @groupings [
+  #  {0, "Series", "series"},
+  #  {1, "Anthology", "anthologies"}
+  # ]
+
   @grouping_paths %{
     "Series" => "series",
     "Anthology" => "anthologies"
   }
 
+  @groupings_ids %{
+    "series" => 0,
+    "anthologies" => 1
+  }
+
+  @grouping_from_ids Map.new(@groupings_ids, fn {key, val} -> {val, key} end)
+
   @groupings Map.keys(@grouping_paths)
 
   @accepted_exts [".png", ".jpg", ".jpeg"]
+
+  def chapter_url(chapter_id), do: "#{@root}/chapters/#{chapter_id}"
+
+  def series_url(series),
+    do: "#{@root}/#{Map.get(@grouping_from_ids, series.type)}/#{series.source_id}"
 
   def get_chapter(permalink),
     do: Repo.one(from(s in Chapter, where: s.source_id == ^permalink and s.source == "dynasty"))
@@ -117,6 +134,15 @@ defmodule LL.Sources.Dynasty do
     Downloader.add("#{@root}/authors/#{data_url}.json", &on_authors(data_url, &1))
   end
 
+  def sync(2, data_url) do
+    Status.put("dynasty/chapters/#{data_url}", "Syncing")
+
+    Downloader.add(
+      "#{@root}/chapters/#{data_url}.json",
+      &CriticalWriter.add(fn -> on_chapter(data_url, &1) end)
+    )
+  end
+
   def on_groupings(:doujin, data_url, {:ok, data}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables, "current_page" => page, "total_pages" => pages}} ->
@@ -146,6 +172,13 @@ defmodule LL.Sources.Dynasty do
       err ->
         Status.put("dynasty/doujins/#{data_url}/groupings", "Error: #{inspect(err)}")
     end
+  end
+
+  def on_groupings(:doujin, data_url, {:err, url, {:error, %{reason: :timeout}}}) do
+    Downloader.add(
+      url,
+      &on_groupings(:doujin, data_url, &1)
+    )
   end
 
   def on_chapters(:doujin, data_url, {:ok, data}) do
@@ -253,8 +286,8 @@ defmodule LL.Sources.Dynasty do
 
           # Request series to retrieve chapter/listing number
           tags
-          |> Enum.filter(&(&1["type"] in @groupings))
-          |> Enum.map(&{&1["type"], &1["permalink"]})
+          |> Enum.filter(&(&1.type in @groupings))
+          |> Enum.map(&{&1.type, &1.id})
           |> Enum.at(0)
           |> case do
             nil ->
@@ -314,7 +347,6 @@ defmodule LL.Sources.Dynasty do
         all_tags =
           all_tags
           |> Enum.filter(&(&1.type != 1))
-          |> Enum.filter(&(&1.type != 3))
 
         {:ok, series} =
           case Repo.get(Series, data_url) do
@@ -332,7 +364,8 @@ defmodule LL.Sources.Dynasty do
             title: name,
             description: description,
             source: "dynasty",
-            source_id: data_url
+            source_id: data_url,
+            type: @groupings_ids[grouping_type]
           })
           |> Ecto.Changeset.put_assoc(
             :tags,
@@ -431,14 +464,20 @@ defmodule LL.Sources.Dynasty do
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "chapter_#{chapter.id}_#{filename}")
 
-      System.cmd("python", ["covers.py", path, new_path])
+      case System.cmd("python", ["covers.py", path, new_path]) do
+        {_, 0} ->
+          if File.exists?(new_path) do
+            CriticalWriter.add(fn ->
+              Repo.get(Chapter, chapter.id)
+              |> Ecto.Changeset.change(%{cover: new_path})
+              |> Repo.update()
 
-      if File.exists?(new_path) do
-        CriticalWriter.add(fn ->
-          Repo.get(Chapter, chapter.id)
-          |> Ecto.Changeset.change(%{cover: new_path})
-          |> Repo.update()
-        end)
+              File.rm(path)
+            end)
+          end
+
+        _ ->
+          nil
       end
     end)
   end
@@ -464,6 +503,9 @@ defmodule LL.Sources.Dynasty do
                   Repo.get(Chapter, chapter.id)
                   |> Ecto.Changeset.change(%{cover: first_page})
                   |> Repo.update()
+
+                  Repo.get(Chapter, chapter.id)
+                  |> download_cover()
                 end)
 
               _ ->
@@ -482,7 +524,6 @@ defmodule LL.Sources.Dynasty do
       |> URI.decode()
       |> Path.basename()
 
-    # TODO: download cover
     Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")

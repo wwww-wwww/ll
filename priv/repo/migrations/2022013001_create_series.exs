@@ -8,6 +8,7 @@ defmodule LL.Repo.Migrations.CreateSeries do
       add :description, :string, size: 4096
       add :source, :string
       add :source_id, :string
+      add :type, :integer, default: 0
 
       add :cover, :string
 

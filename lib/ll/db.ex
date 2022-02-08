@@ -5,9 +5,12 @@ defmodule LL.DB do
 
   alias LL.{Repo, Chapter, Series}
 
+  @cooldown 1
+
   defstruct time: nil,
             n_files: 0,
-            all: []
+            all: [],
+            all_safe: "{}"
 
   def start_link(_opts) do
     Agent.start_link(fn -> %__MODULE__{} end, name: __MODULE__)
@@ -33,29 +36,27 @@ defmodule LL.DB do
 
     series_chapters =
       series
-      |> Stream.map(& &1.chapters)
-      |> Enum.reduce([], &(&1 ++ &2))
+      |> Enum.map(& &1.chapters)
+      |> List.flatten()
 
     n_files =
       (chapters ++ series_chapters)
-      |> Stream.map(& &1.files)
-      |> Enum.reduce([], &(&1 ++ &2))
+      |> Enum.map(& &1.files)
+      |> List.flatten()
       |> Enum.filter(&String.ends_with?(&1, ".jxl"))
       |> length()
 
     series =
       Enum.map(series, fn s ->
         latest_chapter = s.chapters |> Enum.max_by(& &1.date)
-        c_tags = Enum.map(s.chapters, & &1.tags) |> List.flatten()
 
-        tags = tag_names(s.tags ++ c_tags)
-        tag_ids = tag_ids(s.tags ++ c_tags)
+        tags = tag_names(s.tags)
+        tag_ids = tag_ids(s.tags)
 
         %{
           type: :series,
           date: latest_chapter.date,
           e: s,
-          tags: tags,
           search: ([s.title] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
         }
       end)
@@ -71,7 +72,6 @@ defmodule LL.DB do
             type: :chapter,
             date: c.date,
             e: c,
-            tags: tags,
             search: ([c.title] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
           }
         end
@@ -81,7 +81,19 @@ defmodule LL.DB do
       (series ++ chapters)
       |> Enum.sort_by(& &1.date, {:desc, Date})
 
-    %__MODULE__{time: Time.utc_now(), n_files: n_files, all: all}
+    all_safe =
+      all
+      |> Enum.map(
+        &%{
+          id: &1.e.id,
+          title: &1.e.title,
+          type: &1.type,
+          date: &1.date,
+          tags: Enum.map(&1.e.tags, fn tag -> %{name: tag.name, type: tag.type} end)
+        }
+      )
+
+    %__MODULE__{time: Time.utc_now(), n_files: n_files, all: all, all_safe: all_safe}
   end
 
   def reset() do
@@ -95,7 +107,7 @@ defmodule LL.DB do
       now = Time.utc_now()
 
       state =
-        if is_nil(state.time) or Time.diff(now, state.time) > 600 do
+        if is_nil(state.time) or Time.diff(now, state.time) > @cooldown do
           update()
         else
           state
@@ -108,4 +120,6 @@ defmodule LL.DB do
   def n_files(), do: get(:n_files)
 
   def all(), do: get(:all)
+
+  def all_safe(), do: get(:all_safe)
 end

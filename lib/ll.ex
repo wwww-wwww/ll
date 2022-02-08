@@ -9,7 +9,7 @@ defmodule LL do
 
   alias LL.{Repo, Downloader, Encoder, Chapter, Series, Tag, Sources}
 
-  def reset() do
+  def reset_reset_reset_reset_reset() do
     Repo.delete_all(Tag)
     Repo.delete_all(Chapter)
     Repo.delete_all(Series)
@@ -33,17 +33,17 @@ defmodule LL do
     |> Enum.map(fn c ->
       Sources.Dynasty.download_pages(c)
     end)
-    |> Enum.reduce([], &(&1 ++ &2))
+    |> List.flatten()
     |> Downloader.save_all()
   end
 
   def encode_pages() do
     Repo.all(Chapter)
     |> Repo.preload(:series)
-    |> Enum.each(fn c ->
+    |> Enum.map(fn c ->
       Enum.with_index(c.files)
       |> Enum.filter(&String.starts_with?(elem(&1, 0), "tmp/"))
-      |> Enum.each(fn {path, i} ->
+      |> Enum.map(fn {path, i} ->
         filename =
           path
           |> String.slice(41..-1)
@@ -60,9 +60,11 @@ defmodule LL do
           |> Path.join(c.id)
           |> Path.join(new_filename)
 
-        Encoder.add(c.id, i, path, new_path)
+        {c.id, i, path, new_path}
       end)
     end)
+    |> List.flatten()
+    |> Encoder.add_all()
   end
 
   def sync_assoc() do
@@ -107,7 +109,7 @@ defmodule LL do
 
       tags =
         (s.tags ++ tags)
-        |> Enum.filter(&(&1.type != 3 and &1.type != 1))
+        |> Enum.filter(&(&1.type != 1))
 
       Ecto.Changeset.change(s, %{})
       |> Ecto.Changeset.put_assoc(:tags, tags)
@@ -123,7 +125,8 @@ defmodule LL do
       |> List.flatten()
 
     files
-    |> Enum.filter(&String.starts_with?(elem(&1, 1), "/"))
+    |> Enum.filter(&String.starts_with?(elem(&1, 1), "tmp"))
+    |> Enum.filter(&(not File.exists?(elem(&1, 1))))
 
     # |> Enum.filter(&(!File.exists?(&1)))
   end

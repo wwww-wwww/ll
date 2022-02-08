@@ -1,0 +1,20 @@
+<ul>
+  <li>scope "/", LLWeb
+    <ul>
+      <li>get "/routes", PageController, :routes</li>
+      <li>live "/", IndexLive</li>
+      <li>live "/status", StatusLive</li>
+      <li>live "/series/:series_id/:n", ReaderLive, :series</li>
+      <li>live "/series/:series_id", ReaderLive, :series</li>
+      <li>live "/chapter/:chapter_id", ReaderLive, :chapter</li>
+    </ul>
+  </li>
+
+  <li>scope "/api/", LLWeb
+    <ul>
+      <li>get "/all.json", ApiController, :all</li>
+      <li>get "/series/:series_id/:file", ApiController, :series</li>
+      <li>get "/chapter/:chapter_id/:file", ApiController, :chapter</li>
+    </ul>
+  </li>
+</ul>

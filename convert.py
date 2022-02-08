@@ -25,9 +25,12 @@ if __name__ == "__main__":
   args = argparser.parse_args()
 
   inputs = [args.input]
+  gray = False
 
   if args.check_color:
     im = Image.open(args.input)
+    # assume not JPEG if LA or RGBA
+    gray = im.mode == "L" or im.mode == "LA"
     if im.mode == "LA":
       if im.getextrema()[-1][0] == 255:
         im.convert("L").save(args.input + "_L.png")
@@ -58,6 +61,7 @@ if __name__ == "__main__":
         file,
         file + ".jxl",
       ]
+      print(" ".join(cmd))
       subprocess.run(cmd, capture_output=False)
       outputs.append(file + ".jxl")
     elif ext == ".jpg" or ext == ".jpeg":
@@ -65,17 +69,20 @@ if __name__ == "__main__":
         file,
         file + ".jxl",
       ]
+      print(" ".join(cmd))
       subprocess.run(cmd, capture_output=False)
       outputs.append(file + ".jxl")
 
-      # lossy transcode
-      cmd = cjxl_args + [
-        "-j",
-        file,
-        file + ".j.jxl",
-      ]
-      subprocess.run(cmd, capture_output=False)
-      outputs.append(file + ".j.jxl")
+      if not gray:
+        # lossy transcode
+        cmd = cjxl_args + [
+          "-j",
+          file,
+          file + ".j.jxl",
+        ]
+        print(" ".join(cmd))
+        subprocess.run(cmd, capture_output=False)
+        outputs.append(file + ".j.jxl")
     elif ext == ".gif":
       cmd = cjxl_args + [
         file,

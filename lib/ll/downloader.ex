@@ -33,7 +33,7 @@ defmodule LL.Downloader do
 
         {:noreply, %{state | active: false}}
 
-      {url, cb, guard} ->
+      {url, cb, guard} = job ->
         if guard == nil or guard.() do
           Status.put(state.id, "Downloading #{url}")
 
@@ -49,7 +49,10 @@ defmodule LL.Downloader do
           Status.put(state.id, "Failed guard for #{url}")
         end
 
+        WorkerManager.finish(DownloaderManager, job)
+
         GenServer.cast(self(), :loop)
+
         {:noreply, %{state | active: true}}
     end
   end

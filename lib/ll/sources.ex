@@ -28,4 +28,8 @@ defmodule LL.Sources do
       Map.get(@source_modules, source.source).sync(source.type, source.data_url)
     end)
   end
+
+  def source_module(id) when is_atom(id), do: source_module(Atom.to_string(id))
+
+  def source_module(id), do: Map.get(@source_modules, id)
 end

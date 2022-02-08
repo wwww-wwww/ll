@@ -33,7 +33,7 @@ defmodule LL.Encoder do
 
         {:noreply, %{state | active: false}}
 
-      {id, n, path, new_path} ->
+      {id, n, path, new_path} = job ->
         if (Path.extname(path) |> String.downcase()) in @accepted_exts do
           Status.put(state.id, "Encoding #{id} #{n} #{path} -> #{new_path}")
 
@@ -49,10 +49,13 @@ defmodule LL.Encoder do
                 Chapter.update_file(id, n, new_path, true)
               end
 
-            _ ->
+            err ->
+              IO.inspect(err)
               add(id, n, path, new_path)
           end
         end
+
+        WorkerManager.finish(EncoderManager, job)
 
         GenServer.cast(self(), :loop)
 
@@ -67,4 +70,10 @@ defmodule LL.Encoder do
   def add(id, n, path, new_path) do
     WorkerManager.add(EncoderManager, {id, n, path, new_path})
   end
+
+  def add_all(jobs) when length(jobs) > 0 do
+    WorkerManager.add_all(EncoderManager, jobs)
+  end
+
+  def add_all(_), do: nil
 end
