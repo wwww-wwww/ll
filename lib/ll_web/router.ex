@@ -18,6 +18,7 @@ defmodule LLWeb.Router do
     pipe_through :browser
 
     get "/routes", PageController, :routes
+    get "/f/files/:path", PageController, :file
 
     live "/", IndexLive
     live "/status", StatusLive
