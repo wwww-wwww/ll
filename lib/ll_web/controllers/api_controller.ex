@@ -7,88 +7,77 @@ defmodule LLWeb.ApiController do
     conn |> json(LL.DB.all_safe())
   end
 
-  def series(conn, %{"series_id" => series_id, "file" => file}) do
-    Path.extname(file)
+  def map_tags(tags) do
+    Stream.map(
+      tags,
+      &%{
+        type: &1.type,
+        name: &1.name
+      }
+    )
+    |> Enum.sort_by(& &1.name)
+  end
+
+  def series(conn, %{"series_id" => series_id}) do
+    Repo.get(Series, series_id)
+    |> Repo.preload([{:chapters, :tags}, :tags])
     |> case do
-      ".json" ->
-        Repo.get(Series, series_id)
-        |> Repo.preload([{:chapters, :tags}, :tags])
-        |> case do
-          nil ->
-            conn |> json(%{success: 0, reason: "chapter not found"})
+      nil ->
+        conn |> json(%{success: 0, reason: "chapter not found"})
 
-          series ->
-            latest_chapter = series.chapters |> Enum.max_by(& &1.date)
+      series ->
+        latest_chapter = series.chapters |> Enum.max_by(& &1.date)
 
-            conn
-            |> json(%{
-              success: 1,
-              id: series.id,
-              title: series.title,
-              description: series.description,
-              cover: series.cover,
-              date: latest_chapter.date,
-              tags:
-                Enum.map(
-                  series.tags,
-                  &%{
-                    type: &1.type,
-                    name: &1.name
-                  }
-                ),
-              chapters:
-                Enum.map(
-                  series.chapters,
-                  &%{
-                    id: &1.id,
-                    title: &1.title,
-                    date: &1.date,
-                    number: &1.number,
-                    tags: Enum.map(&1.tags, fn tag -> %{type: tag.type, name: tag.name} end)
-                  }
-                )
-            })
-        end
+        chapters =
+          Enum.map(
+            series.chapters,
+            fn chapter ->
+              %{
+                id: chapter.id,
+                title: chapter.title,
+                date: chapter.date,
+                number: chapter.number,
+                tags: map_tags(chapter.tags)
+              }
+            end
+          )
 
-      _ ->
-        conn |> text("not supported")
+        conn
+        |> json(%{
+          success: 1,
+          type: "series",
+          id: series.id,
+          title: series.title,
+          description: series.description,
+          cover: series.cover,
+          date: latest_chapter.date,
+          tags: map_tags(series.tags),
+          chapters: chapters
+        })
     end
   end
 
-  def chapter(conn, %{"chapter_id" => chapter_id, "file" => file}) do
-    Path.extname(file)
+  def chapter(conn, %{"chapter_id" => chapter_id}) do
+    Repo.get(Chapter, chapter_id)
+    |> Repo.preload(:tags)
     |> case do
-      ".json" ->
-        Repo.get(Chapter, chapter_id)
-        |> Repo.preload(:tags)
-        |> case do
-          nil ->
-            conn |> json(%{success: 0, reason: "chapter not found"})
+      nil ->
+        conn |> json(%{success: 0, reason: "chapter not found"})
 
-          chapter ->
-            conn
-            |> json(%{
-              success: 1,
-              id: chapter.id,
-              title: chapter.title,
-              number: chapter.number,
-              cover: chapter.cover,
-              date: chapter.date,
-              tags:
-                Enum.map(
-                  chapter.tags,
-                  &%{
-                    type: &1.type,
-                    name: &1.name
-                  }
-                ),
-              series_id: chapter.series_id,
-              files: chapter.files
-            })
-        end
-
-      _ ->
-        conn |> text("not supported")
+      chapter ->
+        conn
+        |> json(%{
+          success: 1,
+          type: "chapter",
+          id: chapter.id,
+          title: chapter.title,
+          number: chapter.number,
+          cover: chapter.cover,
+          date: chapter.date,
+          tags: map_tags(chapter.tags),
+          series_id: chapter.series_id,
+          files: chapter.files
+        })
     end
   end
 end

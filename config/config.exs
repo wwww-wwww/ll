@@ -15,7 +15,7 @@ config :ll,
 
 # Configures the endpoint
 config :ll, LLWeb.Endpoint,
-  url: [host: "localhost"],
+  url: [host: "m.grass.moe"],
   render_errors: [view: LLWeb.ErrorView, accepts: ~w(html json), layout: false],
   pubsub_server: LL.PubSub,
   live_view: [signing_salt: "fNgamUF+"]

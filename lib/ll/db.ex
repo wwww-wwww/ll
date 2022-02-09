@@ -5,7 +5,7 @@ defmodule LL.DB do
 
   alias LL.{Repo, Chapter, Series}
 
-  @cooldown 1
+  @cooldown 300
 
   defstruct time: nil,
             n_files: 0,
@@ -87,6 +87,7 @@ defmodule LL.DB do
         &%{
           id: &1.e.id,
           title: &1.e.title,
+          cover: &1.e.cover,
           type: &1.type,
           date: &1.date,
           tags: Enum.map(&1.e.tags, fn tag -> %{name: tag.name, type: tag.type} end)

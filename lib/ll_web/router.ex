@@ -31,8 +31,8 @@ defmodule LLWeb.Router do
     pipe_through :api
 
     get "/all.json", ApiController, :all
-    get "/series/:series_id/:file", ApiController, :series
-    get "/chapter/:chapter_id/:file", ApiController, :chapter
+    get "/series/:series_id", ApiController, :series
+    get "/chapter/:chapter_id", ApiController, :chapter
   end
 
   # Enables LiveDashboard only for development

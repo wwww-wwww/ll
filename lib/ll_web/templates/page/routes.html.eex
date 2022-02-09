@@ -13,8 +13,8 @@
   <li>scope "/api/", LLWeb
     <ul>
       <li>get "/all.json", ApiController, :all</li>
-      <li>get "/series/:series_id/:file", ApiController, :series</li>
-      <li>get "/chapter/:chapter_id/:file", ApiController, :chapter</li>
+      <li>get "/series/:series_id", ApiController, :series</li>
+      <li>get "/chapter/:chapter_id", ApiController, :chapter</li>
     </ul>
   </li>
 </ul>

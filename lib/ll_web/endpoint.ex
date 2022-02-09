@@ -24,6 +24,7 @@ defmodule LLWeb.Endpoint do
 
   plug Plug.Static, at: "/covers", from: "covers"
   plug Plug.Static, at: "/files", from: "files"
+  plug Plug.Static, at: "/apk", from: "apk"
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

@@ -18,7 +18,8 @@ config :ll, LL.Repo,
 config :ll, LLWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {0, 0, 0, 0}, port: 9005],
+  http: [ip: {0, 0, 0, 0}, port: 5002],
+  url: [host: "m.grass.moe", scheme: "https", port: 443],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
