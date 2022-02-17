@@ -26,7 +26,11 @@ defmodule LLWeb.ApiController do
         conn |> json(%{success: 0, reason: "chapter not found"})
 
       series ->
-        latest_chapter = series.chapters |> Enum.max_by(& &1.date)
+        date =
+          case series.chapters do
+            [] -> series.inserted_at
+            chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+          end
 
         chapters =
           Enum.map(
@@ -50,7 +54,7 @@ defmodule LLWeb.ApiController do
           title: series.title,
           description: series.description,
           cover: series.cover,
-          date: latest_chapter.date,
+          date: date,
           tags: map_tags(series.tags),
           chapters: chapters
         })

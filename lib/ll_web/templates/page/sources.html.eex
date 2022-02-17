@@ -1,0 +1,30 @@
+<style>
+  table {
+    border-collapse: collapse;
+  }
+  table, th, td {
+    border: 1px solid black;
+  }
+  th, td {
+    padding: 0.25em;
+  }
+</style>
+
+<table>
+  <tr>
+    <th>ID</th>
+    <th>Category</th>
+    <th>Source</th>
+    <th>Type</th>
+    <th>Data Url</th>
+  </tr>
+  <%= for source <- LL.Repo.all(LL.Source) |> LL.Repo.preload(:category) do %>
+  <tr>
+    <td><%= source.id %></td>
+    <td><%= source.category.name %></td>
+    <td><%= source.source %></td>
+    <td><%= source.type %></td>
+    <td><%= source.data_url %></td>
+  </tr>
+  <% end %>
+</table>

@@ -5,6 +5,10 @@ defmodule LLWeb.PageController do
     render(conn, "routes.html")
   end
 
+  def sources(conn, _params) do
+    render(conn, "sources.html")
+  end
+
   def mime(path) do
     cond do
       String.ends_with?(path, ".jxl") -> "image/jxl"

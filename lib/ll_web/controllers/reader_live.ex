@@ -28,7 +28,11 @@ defmodule LLWeb.ReaderLive do
       Repo.get(Series, series_id)
       |> Repo.preload([:chapters, :tags])
 
-    latest_chapter = series.chapters |> Enum.max_by(& &1.date)
+    date =
+      case series.chapters do
+        [] -> series.inserted_at
+        chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+      end
 
     chapters = Enum.sort_by(series.chapters, & &1.number)
 
@@ -39,7 +43,7 @@ defmodule LLWeb.ReaderLive do
       |> assign(chapters: chapters)
       |> assign(title: series.title)
       |> assign(tags: series.tags)
-      |> assign(date: latest_chapter.date)
+      |> assign(date: date)
 
     {:ok, socket}
   end

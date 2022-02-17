@@ -16,12 +16,18 @@ defmodule LL do
   end
 
   def add_sources() do
-    Sources.add_source("dynasty", 0, "love_live")
-    Sources.add_source("dynasty", 0, "love_live_sunshine")
-    Sources.add_source("dynasty", 0, "love_live_nijigasaki_academy_school_idol_club")
-    Sources.add_source("dynasty", 0, "love_live_superstar")
+    Sources.add_source("dynasty", 0, "love_live", "love_live")
+    Sources.add_source("dynasty", 0, "love_live_sunshine", "love_live")
+    Sources.add_source("dynasty", 0, "love_live_nijigasaki_academy_school_idol_club", "love_live")
+    Sources.add_source("dynasty", 0, "love_live_superstar", "love_live")
 
-    Sources.add_source("dynasty", 1, "kimino_sakurako")
+    Sources.add_source("dynasty", 1, "kimino_sakurako", "love_live")
+
+    Sources.add_source("dynasty", 0, "bang_dream", "bang_dream")
+    Sources.add_source("dynasty", 3, "bang_dream_girls_band_party_roselia_stage", "bang_dream")
+    Sources.add_source("dynasty", 3, "bang_dream_4_koma_bandori", "bang_dream")
+    Sources.add_source("dynasty", 3, "bang_dream_raise_the_story_of_my_music", "bang_dream")
+    Sources.add_source("dynasty", 3, "bangdream_star_beat", "bang_dream")
   end
 
   def sync() do
@@ -129,5 +135,32 @@ defmodule LL do
     |> Enum.filter(&(not File.exists?(elem(&1, 1))))
 
     # |> Enum.filter(&(!File.exists?(&1)))
+  end
+
+  def set_category() do
+    ll =
+      Repo.insert_all(Tag, [%{id: "category_love_live", name: "Love Live!", type: 4}],
+        on_conflict: :nothing
+      )
+
+    ll = Repo.get(Tag, "category_love_live")
+
+    bandori =
+      Repo.insert_all(Tag, [%{id: "category_bang_dream", name: "BanG Dream!", type: 4}],
+        on_conflict: :nothing
+      )
+
+    bandori = Repo.get(Tag, "category_bang_dream")
+
+    Repo.all(Series)
+    |> Repo.preload([:tags, :chapters])
+    |> Enum.map(fn c ->
+      c
+      |> Ecto.Changeset.change(%{})
+      |> Chapter.put_tags(c.tags ++ [ll])
+      |> Repo.update
+
+      # |> Repo.insert()
+    end)
   end
 end

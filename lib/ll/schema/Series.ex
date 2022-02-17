@@ -8,6 +8,7 @@ defmodule LL.Series do
     field :description, :string, size: 4096
     field :source, :string
     field :source_id, :string
+
     # series, anthology
     field :type, :integer, default: 0
 

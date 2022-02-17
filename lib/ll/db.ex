@@ -48,14 +48,18 @@ defmodule LL.DB do
 
     series =
       Enum.map(series, fn s ->
-        latest_chapter = s.chapters |> Enum.max_by(& &1.date)
+        date =
+          case s.chapters do
+            [] -> s.inserted_at
+            chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+          end
 
         tags = tag_names(s.tags)
         tag_ids = tag_ids(s.tags)
 
         %{
           type: :series,
-          date: latest_chapter.date,
+          date: date,
           e: s,
           search: ([s.title] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
         }

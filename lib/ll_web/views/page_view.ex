@@ -5,7 +5,8 @@ defmodule LLWeb.PageView do
     0 => "",
     1 => "Series",
     2 => "Author",
-    3 => "Group"
+    3 => "Group",
+    4 => "Category"
   }
 
   def key_string(key) do

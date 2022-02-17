@@ -2,6 +2,7 @@
   <li>scope "/", LLWeb
     <ul>
       <li>get "/routes", PageController, :routes</li>
+      <li>get "/sources", PageController, :sources</li>
       <li>live "/", IndexLive</li>
       <li>live "/status", StatusLive</li>
       <li>live "/series/:series_id/:n", ReaderLive, :series</li>

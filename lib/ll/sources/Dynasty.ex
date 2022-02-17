@@ -20,11 +20,6 @@ defmodule LL.Sources.Dynasty do
 
   @tag_types Map.keys(@tag_type)
 
-  # @groupings [
-  #  {0, "Series", "series"},
-  #  {1, "Anthology", "anthologies"}
-  # ]
-
   @grouping_paths %{
     "Series" => "series",
     "Anthology" => "anthologies"
@@ -41,6 +36,44 @@ defmodule LL.Sources.Dynasty do
 
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
+  def sync(%{type: 0, data_url: data_url, category: category}) do
+    Status.put("dynasty/doujins/#{data_url}/groupings", "Syncing")
+    Status.put("dynasty/doujins/#{data_url}/chapters", "Syncing")
+
+    Downloader.add(
+      "#{@root}/doujins/#{data_url}.json?view=groupings",
+      &on_groupings(:doujin, data_url, category, &1)
+    )
+
+    Downloader.add(
+      "#{@root}/doujins/#{data_url}.json?view=chapters",
+      &on_chapters(:doujin, data_url, category, &1)
+    )
+  end
+
+  def sync(%{type: 1, data_url: data_url, category: category}) do
+    Status.put("dynasty/authors/#{data_url}", "Syncing")
+    Downloader.add("#{@root}/authors/#{data_url}.json", &on_authors(data_url, category, &1))
+  end
+
+  def sync(%{type: 2, data_url: data_url, category: category}) do
+    Status.put("dynasty/chapters/#{data_url}", "Syncing")
+
+    Downloader.add(
+      "#{@root}/chapters/#{data_url}.json",
+      &CriticalWriter.add(fn -> on_chapter(data_url, category, &1) end)
+    )
+  end
+
+  def sync(%{type: 3, data_url: data_url, category: category}) do
+    Status.put("dynasty/series/#{data_url}", "Syncing")
+
+    Downloader.add(
+      "#{@root}/series/#{data_url}.json",
+      &CriticalWriter.add(fn -> on_series(data_url, "series", category, &1) end)
+    )
+  end
+
   def chapter_url(chapter_id), do: "#{@root}/chapters/#{chapter_id}"
 
   def series_url(series),
@@ -54,6 +87,22 @@ defmodule LL.Sources.Dynasty do
 
   def series_exists?(permalink) when not is_nil(permalink),
     do: Repo.one(from(s in Series, where: s.source_id == ^permalink)) != nil
+
+  def category_tag(category) do
+    Repo.insert_all(
+      Tag,
+      [
+        %{
+          id: "category_#{category.id}",
+          name: category.name,
+          type: 4
+        }
+      ],
+      on_conflict: :nothing
+    )
+
+    Repo.get(Tag, "category_#{category.id}")
+  end
 
   def get_series(tagging) do
     series_id =
@@ -114,36 +163,7 @@ defmodule LL.Sources.Dynasty do
     Repo.insert_all(Tag, tags, on_conflict: :nothing)
   end
 
-  def sync(0, data_url) do
-    Status.put("dynasty/doujins/#{data_url}/groupings", "Syncing")
-    Status.put("dynasty/doujins/#{data_url}/chapters", "Syncing")
-
-    Downloader.add(
-      "#{@root}/doujins/#{data_url}.json?view=groupings",
-      &on_groupings(:doujin, data_url, &1)
-    )
-
-    Downloader.add(
-      "#{@root}/doujins/#{data_url}.json?view=chapters",
-      &on_chapters(:doujin, data_url, &1)
-    )
-  end
-
-  def sync(1, data_url) do
-    Status.put("dynasty/authors/#{data_url}", "Syncing")
-    Downloader.add("#{@root}/authors/#{data_url}.json", &on_authors(data_url, &1))
-  end
-
-  def sync(2, data_url) do
-    Status.put("dynasty/chapters/#{data_url}", "Syncing")
-
-    Downloader.add(
-      "#{@root}/chapters/#{data_url}.json",
-      &CriticalWriter.add(fn -> on_chapter(data_url, &1) end)
-    )
-  end
-
-  def on_groupings(:doujin, data_url, {:ok, data}) do
+  def on_groupings(:doujin, data_url, category, {:ok, data}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables, "current_page" => page, "total_pages" => pages}} ->
         if Application.get_env(:ll, :get_all_pages) and page == 1 and page < pages do
@@ -163,7 +183,7 @@ defmodule LL.Sources.Dynasty do
 
           Downloader.add(
             "#{@root}/#{grouping_path}/#{permalink}.json",
-            &CriticalWriter.add(fn -> on_series(permalink, grouping_path, &1) end)
+            &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
           )
         end)
 
@@ -181,7 +201,7 @@ defmodule LL.Sources.Dynasty do
     )
   end
 
-  def on_chapters(:doujin, data_url, {:ok, data}) do
+  def on_chapters(:doujin, data_url, category, {:ok, data}) do
     case Jason.decode(data) do
       {:ok, %{"taggings" => taggings, "current_page" => page, "total_pages" => pages}} ->
         if Application.get_env(:ll, :get_all_pages) and page == 1 and page < pages do
@@ -189,7 +209,7 @@ defmodule LL.Sources.Dynasty do
           |> Enum.each(fn p ->
             Downloader.add(
               "#{@root}/doujins/#{data_url}.json?view=chapters&page=#{p}",
-              &on_chapters(:doujin, data_url, &1)
+              &on_chapters(:doujin, data_url, category, &1)
             )
           end)
         end
@@ -204,13 +224,13 @@ defmodule LL.Sources.Dynasty do
             nil ->
               Downloader.add(
                 "#{@root}/chapters/#{permalink}.json",
-                &CriticalWriter.add(fn -> on_chapter(permalink, &1) end)
+                &CriticalWriter.add(fn -> on_chapter(permalink, category, &1) end)
               )
 
             series ->
               Downloader.add(
                 "#{@root}/chapters/#{permalink}.json",
-                &CriticalWriter.add(fn -> on_chapter(permalink, &1, series) end)
+                &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series) end)
               )
           end
         end)
@@ -222,7 +242,7 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
-  def on_authors(data_url, {:ok, data}) do
+  def on_authors(data_url, category, {:ok, data}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables}} ->
         taggables
@@ -232,7 +252,7 @@ defmodule LL.Sources.Dynasty do
 
           Downloader.add(
             "#{@root}/#{grouping_path}/#{permalink}.json",
-            &CriticalWriter.add(fn -> on_series(permalink, grouping_path, &1) end)
+            &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
           )
         end)
 
@@ -243,18 +263,18 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
-  def on_authors(data_url, err) do
+  def on_authors(data_url, _category, err) do
     Status.put("dynasty/authors/#{data_url}", "Error: #{inspect(err)}")
   end
 
   # safe
-  def on_chapter(data_url, {:ok, data}, series \\ nil) do
+  def on_chapter(data_url, category, {:ok, data}, series \\ nil) do
     if !chapter_exists?(data_url) do
       case Jason.decode(data) do
         {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
           add_tags(tags)
 
-          tags = get_tags(tags)
+          tags = get_tags(tags) ++ [category_tag(category)]
 
           title = data["long_title"] || data["title"]
 
@@ -298,7 +318,7 @@ defmodule LL.Sources.Dynasty do
 
               Downloader.add(
                 "#{@root}/#{grouping_path}/#{permalink}.json",
-                &CriticalWriter.add(fn -> on_series(permalink, grouping_path, &1) end)
+                &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
               )
           end
 
@@ -314,7 +334,7 @@ defmodule LL.Sources.Dynasty do
   end
 
   # safe
-  def on_series(data_url, grouping_type, {:ok, data}) do
+  def on_series(data_url, grouping_type, category, {:ok, data}) do
     case Jason.decode(data) do
       {:ok,
        %{
@@ -344,6 +364,8 @@ defmodule LL.Sources.Dynasty do
 
         Repo.insert_all(Tag, all_tags, on_conflict: :nothing)
 
+        cat_tag = category_tag(category)
+
         all_tags =
           all_tags
           |> Enum.filter(&(&1.type != 1))
@@ -369,7 +391,7 @@ defmodule LL.Sources.Dynasty do
           })
           |> Ecto.Changeset.put_assoc(
             :tags,
-            get_tags(Enum.map(all_tags, &%{"permalink" => &1.id}))
+            get_tags(Enum.map(all_tags, &%{"permalink" => &1.id})) ++ [cat_tag]
           )
           |> Repo.insert_or_update()
 
@@ -382,7 +404,7 @@ defmodule LL.Sources.Dynasty do
         |> Enum.each(fn permalink ->
           Downloader.add(
             "#{@root}/chapters/#{permalink}.json",
-            &CriticalWriter.add(fn -> on_chapter(permalink, &1, series) end),
+            &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series) end),
             fn -> !chapter_exists?(permalink) end
           )
         end)
