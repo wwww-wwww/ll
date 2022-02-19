@@ -70,7 +70,10 @@ defmodule LL.Sources.Dynasty do
 
     Downloader.add(
       "#{@root}/series/#{data_url}.json",
-      &CriticalWriter.add(fn -> on_series(data_url, "series", category, &1) end)
+      &CriticalWriter.add(fn ->
+        Status.put("dynasty/series/#{data_url}", "Synced")
+        on_series(data_url, "series", category, &1)
+      end)
     )
   end
 
