@@ -1,6 +1,8 @@
 defmodule LLWeb.PageView do
   use LLWeb, :view
 
+  alias LL.{Category, Repo}
+
   @tag_types %{
     0 => "",
     1 => "Series",
@@ -29,5 +31,9 @@ defmodule LLWeb.PageView do
       "" -> tag.name
       label -> "#{label}: #{tag.name}"
     end
+  end
+
+  def categories() do
+    Repo.all(LL.Category)
   end
 end

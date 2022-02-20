@@ -44,6 +44,11 @@
 <a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
 </div>
 
+<div>
+  <%= for cat <- categories() do %>
+  <%= live_patch(cat.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"category_#{cat.id}\"")) %>
+  <% end %>
+</div>
 
 <div>
 <input phx-hook="search" id="search" type="text" name="q" value="<%= @query %>" />
