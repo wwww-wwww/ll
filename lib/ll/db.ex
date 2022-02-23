@@ -112,7 +112,7 @@ defmodule LL.DB do
       now = Time.utc_now()
 
       state =
-        if is_nil(state.time) or Time.diff(now, state.time) > @cooldown do
+        if is_nil(state.time) or abs(Time.diff(now, state.time)) > @cooldown do
           update()
         else
           state
