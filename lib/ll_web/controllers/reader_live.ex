@@ -8,51 +8,59 @@ defmodule LLWeb.ReaderLive do
   end
 
   def mount(%{"chapter_id" => chapter_id}, _session, socket) do
-    chapter =
-      Repo.get(Chapter, chapter_id)
-      |> Repo.preload([:tags, :series])
+    Repo.get(Chapter, chapter_id)
+    |> Repo.preload([:tags, :series])
+    |> case do
+      nil ->
+        {:ok,
+         redirect(socket, to: "/")
+         |> put_flash(:error, "Chapter not found")}
 
-    socket =
-      socket
-      |> assign(type: :chapter)
-      |> assign(title: chapter.title)
-      |> assign(tags: chapter.tags)
-      |> assign(chapter: chapter)
-      |> assign(date: chapter.date)
-
-    {:ok, socket}
+      chapter ->
+        {:ok,
+         socket
+         |> assign(type: :chapter)
+         |> assign(title: chapter.title)
+         |> assign(tags: chapter.tags)
+         |> assign(chapter: chapter)
+         |> assign(date: chapter.date)}
+    end
   end
 
   def mount(%{"series_id" => series_id}, _session, socket) do
-    series =
-      Repo.get(Series, series_id)
-      |> Repo.preload([{:chapters, :tags}, :tags])
+    Repo.get(Series, series_id)
+    |> Repo.preload([{:chapters, :tags}, :tags])
+    |> case do
+      nil ->
+        {:ok,
+         redirect(socket, to: "/")
+         |> put_flash(:error, "Series not found")}
 
-    date =
-      case series.chapters do
-        [] -> series.inserted_at
-        chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
-      end
+      series ->
+        date =
+          case series.chapters do
+            [] -> series.inserted_at
+            chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+          end
 
-    chapters = Enum.sort_by(series.chapters, & &1.number)
+        chapters = Enum.sort_by(series.chapters, & &1.number)
 
-    common_tags = chapters |> Enum.map(& &1.tags) |> List.flatten()
+        common_tags = chapters |> Enum.map(& &1.tags) |> List.flatten()
 
-    common_tags =
-      Enum.reduce(chapters |> Enum.drop(1), common_tags, fn _, acc ->
-        acc -- Enum.uniq(common_tags)
-      end)
+        common_tags =
+          Enum.reduce(chapters |> Enum.drop(1), common_tags, fn _, acc ->
+            acc -- Enum.uniq(common_tags)
+          end)
 
-    socket =
-      socket
-      |> assign(type: :series)
-      |> assign(series: series)
-      |> assign(chapters: chapters)
-      |> assign(title: series.title)
-      |> assign(tags: common_tags)
-      |> assign(date: date)
-
-    {:ok, socket}
+        {:ok,
+         socket
+         |> assign(type: :series)
+         |> assign(series: series)
+         |> assign(chapters: chapters)
+         |> assign(title: series.title)
+         |> assign(tags: common_tags)
+         |> assign(date: date)}
+    end
   end
 
   def handle_params(%{"series_id" => _, "n" => n}, _session, socket) do

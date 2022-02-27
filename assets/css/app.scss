@@ -1,0 +1,15 @@
+.alert:not(:empty) {
+  display: inline-block;
+}
+
+.alert-danger {
+  color: red;
+}
+
+.alert-danger:not(:empty)::before {
+  content: "ERROR: ";
+}
+
+.alert-info:not(:empty)::before {
+  content: "INFO: ";
+}
