@@ -2,9 +2,9 @@ import Config
 
 # Configure your database
 config :ll, LL.Repo,
-  username: "mg",
-  password: "mg",
-  hostname: "192.168.1.51",
+  username: "w",
+  password: "w",
+  hostname: "localhost",
   database: "mg",
   show_sensitive_data_on_connection_error: true,
   pool_size: 10

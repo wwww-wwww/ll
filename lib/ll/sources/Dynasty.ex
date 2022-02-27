@@ -5,6 +5,7 @@ defmodule LL.Sources.Dynasty do
 
   @root "https://dynasty-scans.com"
 
+  @files_root "/tank/main/llm"
   @file_path "files/dynasty"
   @file_path_covers "covers/dynasty"
 
@@ -174,7 +175,7 @@ defmodule LL.Sources.Dynasty do
           |> Enum.each(fn p ->
             Downloader.add(
               "#{@root}/doujins/#{data_url}.json?view=groupings&page=#{p}",
-              &on_groupings(:doujin, data_url, &1)
+              &on_groupings(:doujin, data_url, category, &1)
             )
           end)
         end
@@ -277,7 +278,10 @@ defmodule LL.Sources.Dynasty do
         {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
           add_tags(tags)
 
-          tags = get_tags(tags) ++ [category_tag(category)]
+          tags =
+            get_tags(tags)
+            |> Kernel.++([category_tag(category)])
+            |> Enum.uniq()
 
           title = data["long_title"] || data["title"]
 
@@ -488,10 +492,11 @@ defmodule LL.Sources.Dynasty do
     Downloader.save("#{@root}/#{cover}", "#{chapter.id}_cover_#{filename}", fn path ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "chapter_#{chapter.id}_#{filename}")
+      new_path_disk = Path.join(@files_root, new_path)
 
-      case System.cmd("python", ["covers.py", path, new_path]) do
+      case System.cmd("python3", ["covers.py", path, new_path_disk]) do
         {_, 0} ->
-          if File.exists?(new_path) do
+          if File.exists?(new_path_disk) do
             CriticalWriter.add(fn ->
               Repo.get(Chapter, chapter.id)
               |> Ecto.Changeset.change(%{cover: new_path})
@@ -541,6 +546,71 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
+  def download_cover(%Series{cover: nil} = series) do
+    series = Repo.preload(series, :chapters)
+    first_chapter = series.chapters |> Enum.at(0)
+
+    case first_chapter do
+      nil ->
+        nil
+
+      first_chapter ->
+        Downloader.add(
+          "#{@root}/chapters/#{first_chapter.source_id}.json",
+          fn {:ok, data} ->
+            case Jason.decode(data) do
+              {:ok, data} ->
+                first_page = data["pages"] |> Enum.at(0) |> Map.get("url")
+
+                CriticalWriter.add(fn ->
+                  Repo.get(Series, series.id)
+                  |> Ecto.Changeset.change(%{cover: "!0" <> first_page})
+                  |> Repo.update()
+
+                  Repo.get(Series, series.id)
+                  |> download_cover()
+                end)
+
+              _ ->
+                nil
+            end
+          end
+        )
+    end
+  end
+
+  def download_cover(%Series{cover: "!0/" <> cover} = series) do
+    filename =
+      URI.parse(cover)
+      |> Map.get(:path)
+      |> Kernel.||("cover")
+      |> URI.decode()
+      |> Path.basename()
+      |> Path.rootname()
+      |> Kernel.<>(".webp")
+
+    Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
+      File.mkdir_p(@file_path_covers)
+      new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")
+      new_path_disk = Path.join(@files_root, new_path)
+
+      case System.cmd("python3", ["covers.py", path, new_path_disk]) do
+        {_, 0} ->
+          if File.exists?(new_path_disk) do
+            CriticalWriter.add(fn ->
+              Ecto.Changeset.change(series, %{cover: new_path})
+              |> Repo.update()
+
+              File.rm(path)
+            end)
+          end
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
   def download_cover(%Series{cover: "/" <> cover} = series) do
     filename =
       URI.parse(cover)
@@ -552,8 +622,9 @@ defmodule LL.Sources.Dynasty do
     Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")
+      new_path_disk = Path.join(@files_root, new_path)
 
-      case File.rename(path, new_path) do
+      case File.rename(path, new_path_disk) do
         :ok ->
           Ecto.Changeset.change(series, %{cover: new_path})
           |> Repo.update()

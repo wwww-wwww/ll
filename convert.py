@@ -1,6 +1,7 @@
 import subprocess, os, time
 from PIL import Image, ImageChops
 from argparse import ArgumentParser
+import shutil
 
 jobs = []
 
@@ -93,7 +94,9 @@ if __name__ == "__main__":
 
   outputs.sort(key=lambda f: os.path.getsize(f))
 
-  os.rename(outputs[0], args.output)
+  shutil.copyfile(outputs[0], args.output)
+  #os.remove(outputs[0])
+  #os.rename(outputs[0], args.output)
 
   while True:
     try:

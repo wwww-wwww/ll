@@ -18,7 +18,7 @@ defmodule LLWeb.PageController do
   end
 
   def file(conn, %{"path" => path}) do
-    path = "files/#{path}"
+    path = "/tank/main/llm/files/#{path}"
 
     if File.exists?(path) do
       case mime(path) do
@@ -34,7 +34,7 @@ defmodule LLWeb.PageController do
                   else
                     conn
                     |> put_resp_content_type("image/png")
-                    |> send_file(200, "files/unsupported.png")
+                    |> send_file(200, "/tank/main/llm/files/unsupported.png")
                   end
 
                 _ ->

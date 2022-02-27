@@ -43,34 +43,40 @@ defmodule LL do
     |> Downloader.save_all()
   end
 
-  def encode_pages() do
-    Repo.all(Chapter)
-    |> Repo.preload(:series)
-    |> Enum.map(fn c ->
-      Enum.with_index(c.files)
-      |> Enum.filter(&String.starts_with?(elem(&1, 0), "tmp/"))
-      |> Enum.map(fn {path, i} ->
-        filename =
-          path
-          |> String.slice(41..-1)
-          |> String.slice((String.length(c.id) + 1)..-1)
+  def encode_pages(exec) do
+    pages =
+      Repo.all(Chapter)
+      |> Repo.preload(:series)
+      |> Enum.map(fn c ->
+        Enum.with_index(c.files)
+        |> Enum.filter(&String.starts_with?(elem(&1, 0), "tmp/"))
+        |> Enum.map(fn {path, i} ->
+          filename =
+            path
+            |> String.slice(41..-1)
+            |> String.slice((String.length(c.id) + 1)..-1)
 
-        new_filename = Path.rootname(filename) <> ".jxl"
+          new_filename = Path.rootname(filename) <> ".jxl"
 
-        new_path =
-          if c.series do
-            Path.join("files/dynasty", c.series.id)
-          else
-            "files/dynasty"
-          end
-          |> Path.join(c.id)
-          |> Path.join(new_filename)
+          new_path =
+            if c.series do
+              Path.join("files/dynasty", c.series.id)
+            else
+              "files/dynasty"
+            end
+            |> Path.join(c.id)
+            |> Path.join(new_filename)
 
-        {c.id, i, path, new_path}
+          {c.id, i, path, new_path}
+        end)
       end)
-    end)
-    |> List.flatten()
-    |> Encoder.add_all()
+      |> List.flatten()
+
+    if exec do
+      pages |> Encoder.add_all()
+    else
+      pages
+    end
   end
 
   def sync_assoc() do
@@ -131,8 +137,9 @@ defmodule LL do
       |> List.flatten()
 
     files
-    |> Enum.filter(&String.starts_with?(elem(&1, 1), "tmp"))
-    |> Enum.filter(&(not File.exists?(elem(&1, 1))))
+    # |> Enum.filter(&not String.starts_with?(elem(&1, 1), "tmp"))
+    # |> Enum.filter(&String.starts_with?(elem(&1, 1), "/tank"))
+    |> Enum.filter(&(not File.exists?("/tank/main/llm/" <> elem(&1, 1))))
 
     # |> Enum.filter(&(!File.exists?(&1)))
   end
@@ -158,7 +165,7 @@ defmodule LL do
       c
       |> Ecto.Changeset.change(%{})
       |> Chapter.put_tags(c.tags ++ [ll])
-      |> Repo.update
+      |> Repo.update()
 
       # |> Repo.insert()
     end)

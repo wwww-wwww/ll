@@ -3,6 +3,7 @@ defmodule LL.Encoder do
 
   alias LL.{Chapter, WorkerManager, EncoderManager, Status}
 
+  @files_root "/tank/main/llm"
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
   defstruct id: nil, active: false
@@ -37,21 +38,28 @@ defmodule LL.Encoder do
         if (Path.extname(path) |> String.downcase()) in @accepted_exts do
           Status.put(state.id, "Encoding #{id} #{n} #{path} -> #{new_path}")
 
-          new_path
+          new_path_disk = Path.join(@files_root, new_path)
+
+          new_path_disk
           |> Path.dirname()
           |> File.mkdir_p()
 
-          case System.cmd("wsl", ["-e", "python3", "convert.py", path, new_path, "--check-color"],
-                 stderr_to_stdout: true
-               ) do
-            {_, 0} ->
-              if File.exists?(new_path) do
-                Chapter.update_file(id, n, new_path, true)
-              end
+          if not File.exists?(new_path_disk) do
+            case System.cmd("python3", ["convert.py", path, new_path_disk, "--check-color"],
+                   stderr_to_stdout: true
+                 ) do
+              {_, 0} ->
+                nil
 
-            err ->
-              IO.inspect(err)
-              add(id, n, path, new_path)
+              err ->
+                IO.inspect(err)
+                add(id, n, path, new_path)
+            end
+          end
+
+          if File.exists?(new_path_disk) do
+            Chapter.update_file(id, n, new_path, true)
+            File.rm(path)
           end
         end
 

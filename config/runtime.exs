@@ -14,9 +14,9 @@ end
 
 if config_env() == :prod do
   config :ll, LL.Repo,
-    username: "mg",
-    password: "mg",
-    hostname: "192.168.1.51",
+    username: "w",
+    password: "w",
+    hostname: "localhost",
     database: "mg",
     pool_size: 10
 

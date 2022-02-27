@@ -36,4 +36,8 @@ defmodule LLWeb.PageView do
   def categories() do
     Repo.all(LL.Category)
   end
+
+  def sort_tags(tags) do
+    Enum.sort_by(tags, &{-&1.type, &1.id})
+  end
 end

@@ -74,7 +74,7 @@
     </td>
     <td>
       <div class="tags">
-      <%= for tag <- s.e.tags |> Enum.sort_by(&{-&1.type, &1.id}) do %>
+      <%= for tag <- sort_tags(s.e.tags) do %>
         <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
       <% end %>
       </div>

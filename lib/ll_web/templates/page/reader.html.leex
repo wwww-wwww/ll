@@ -22,7 +22,7 @@
 <div><%= @date %></div>
 
 <div class="tags">
-<%= for tag <- @tags do %>
+<%= for tag <- sort_tags(@tags) do %>
   <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
 <% end %>
 </div>
@@ -32,12 +32,21 @@
 <div><a href="<%= series_source_url %>"><%= series_source_url %></a></div>
 <ol>
   <%= for chapter <- @chapters do %>
-  <li value="<%= chapter.number %>"><%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter.number)) %></li>
+  <li value="<%= chapter.number %>">
+    <%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter.number)) %>
+    -
+    <span class="tags">
+      <%= for tag <- sort_tags(chapter.tags -- @tags) do %>
+        <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+      <% end %>
+    </span>
+  </li>
   <% end %>
 </ol>
 <% end %>
 
 <%= if assigns[:chapter] do %>
+
 <% source_url = LL.Sources.source_module(@chapter.source).chapter_url(@chapter.source_id) %>
 <div><a href="<%= source_url %>"><%= source_url %></a></div>
 <div>

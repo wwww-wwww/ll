@@ -10,7 +10,7 @@ import Config
 config :ll,
   get_all_pages: false,
   n_downloaders: 4,
-  n_encoders: 8,
+  n_encoders: 4,
   ecto_repos: [LL.Repo]
 
 # Configures the endpoint

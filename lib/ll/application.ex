@@ -7,7 +7,7 @@ defmodule LL.Application do
 
   @impl true
   def start(_type, _args) do
-    {cjxl_ver, 0} = System.cmd("wsl", ["-e", "cjxl", "-V"])
+    {cjxl_ver, 0} = System.cmd("cjxl", ["-V"])
     cjxl_ver = cjxl_ver |> String.split("\n") |> Enum.at(0)
     Application.put_env(:ll, :cjxl, cjxl_ver)
 

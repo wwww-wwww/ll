@@ -22,8 +22,8 @@ defmodule LLWeb.Endpoint do
     gzip: false,
     only: ~w(assets fonts images favicon.ico robots.txt)
 
-  plug Plug.Static, at: "/covers", from: "covers"
-  plug Plug.Static, at: "/files", from: "files"
+  plug Plug.Static, at: "/covers", from: "/tank/main/llm/covers"
+  plug Plug.Static, at: "/files", from: "/tank/main/llm/files"
   plug Plug.Static, at: "/apk", from: "apk"
 
   # Code reloading can be explicitly enabled under the
