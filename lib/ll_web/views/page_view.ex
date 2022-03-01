@@ -34,7 +34,7 @@ defmodule LLWeb.PageView do
   end
 
   def categories() do
-    Repo.all(LL.Category)
+    Repo.all(Category)
   end
 
   def sort_tags(tags) do
