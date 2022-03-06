@@ -40,6 +40,9 @@ if __name__ == "__main__":
       if is_gray(im):
         im.convert("L").save(args.input + "_L.png")
         inputs.append(args.input + "_L.png")
+      elif os.path.splitext(args.input)[1].lower() in [".jpg", ".jpeg"]:
+        im.save(args.input + "_RGB.png")
+        inputs.append(args.input + "_RGB.png")
     elif im.mode == "RGBA":
       if is_gray(im):
         if im.getextrema()[-1][0] == 255:
@@ -52,6 +55,10 @@ if __name__ == "__main__":
         if im.getextrema()[-1][0] == 255:
           im.convert("RGB").save(args.input + "_RGB.png")
           inputs.append(args.input + "_RGB.png")
+    elif im.mode == "L":
+      if os.path.splitext(args.input)[1].lower() in [".jpg", ".jpeg"]:
+        im.save(args.input + "L.png")
+        inputs.append(args.input + "_L.png")
 
   outputs = []
 
@@ -74,16 +81,16 @@ if __name__ == "__main__":
       subprocess.run(cmd, capture_output=False)
       outputs.append(file + ".jxl")
 
-      if not gray:
-        # lossy transcode
-        cmd = cjxl_args + [
-          "-j",
-          file,
-          file + ".j.jxl",
-        ]
-        print(" ".join(cmd))
-        subprocess.run(cmd, capture_output=False)
-        outputs.append(file + ".j.jxl")
+      #if not gray:
+      #  # lossy transcode
+      #  cmd = cjxl_args + [
+      #    "-j",
+      #    file,
+      #    file + ".j.jxl",
+      #  ]
+      #  print(" ".join(cmd))
+      #  subprocess.run(cmd, capture_output=False)
+      #  outputs.append(file + ".j.jxl")
     elif ext == ".gif":
       cmd = cjxl_args + [
         file,
