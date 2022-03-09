@@ -3,7 +3,7 @@ defmodule LL.Encoder do
 
   alias LL.{Chapter, WorkerManager, EncoderManager, Status}
 
-  @files_root "/tank/main/llm"
+  @files_root "/tank/llm"
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
   defstruct id: nil, active: false

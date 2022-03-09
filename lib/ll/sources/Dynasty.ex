@@ -5,9 +5,15 @@ defmodule LL.Sources.Dynasty do
 
   @root "https://dynasty-scans.com"
 
-  @files_root "/tank/main/llm"
+  @files_root "/tank/llm"
   @file_path "files/dynasty"
   @file_path_covers "covers/dynasty"
+
+  # types
+  # 0: doujins
+  # 1: authors
+  # 2: chapters
+  # 3: series
 
   @tag_type %{
     "General" => 0,
@@ -282,6 +288,20 @@ defmodule LL.Sources.Dynasty do
             get_tags(tags)
             |> Kernel.++([category_tag(category)])
             |> Enum.uniq()
+
+          case series do
+            nil ->
+              tags
+              |> Enum.filter(&(&1.type == 1))
+              |> case do
+                [] -> nil
+                [tag] -> tag
+              end
+
+            series ->
+              series
+          end
+          |> IO.inspect()
 
           title = data["long_title"] || data["title"]
 

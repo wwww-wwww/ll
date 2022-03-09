@@ -40,4 +40,11 @@ defmodule LLWeb.PageView do
   def sort_tags(tags) do
     Enum.sort_by(tags, &{-&1.type, &1.id})
   end
+
+  def tag_type(tag) do
+    case @tag_types[tag.type] do
+      "" -> "Normal"
+      type -> type
+    end
+  end
 end

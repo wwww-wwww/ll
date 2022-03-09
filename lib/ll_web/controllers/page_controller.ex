@@ -5,6 +5,10 @@ defmodule LLWeb.PageController do
     render(conn, "routes.html")
   end
 
+  def tags(conn, _params) do
+    render(conn, "tags.html")
+  end
+
   def sources(conn, _params) do
     render(conn, "sources.html")
   end
@@ -18,7 +22,7 @@ defmodule LLWeb.PageController do
   end
 
   def file(conn, %{"path" => path}) do
-    path = "/tank/main/llm/files/#{path}"
+    path = "/tank/llm/files/#{path}"
 
     if File.exists?(path) do
       case mime(path) do
@@ -34,7 +38,7 @@ defmodule LLWeb.PageController do
                   else
                     conn
                     |> put_resp_content_type("image/png")
-                    |> send_file(200, "/tank/main/llm/files/unsupported.png")
+                    |> send_file(200, "/tank/llm/files/unsupported.png")
                   end
 
                 _ ->
