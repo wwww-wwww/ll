@@ -292,7 +292,7 @@ defmodule LL.Sources.Dynasty do
           case series do
             nil ->
               tags
-              |> Enum.filter(&(&1.type == 1))
+              |> Enum.filter(&(&1.type in @groupings))
               |> case do
                 [] -> nil
                 [tag] -> tag
@@ -638,18 +638,22 @@ defmodule LL.Sources.Dynasty do
       |> Kernel.||("cover.jpg")
       |> URI.decode()
       |> Path.basename()
+      |> IO.inspect()
 
     Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")
       new_path_disk = Path.join(@files_root, new_path)
 
-      case File.rename(path, new_path_disk) do
-        :ok ->
+      case File.copy(path, new_path_disk) do
+        {:ok, _} ->
           Ecto.Changeset.change(series, %{cover: new_path})
           |> Repo.update()
 
-        _ ->
+          File.rm(path)
+
+        err ->
+          IO.inspect(err)
           nil
       end
     end)

@@ -24,15 +24,23 @@ defmodule LL do
     Sources.add_source("dynasty", 1, "kimino_sakurako", "love_live")
 
     Sources.add_source("dynasty", 0, "bang_dream", "bang_dream")
-    Sources.add_source("dynasty", 3, "bang_dream_girls_band_party_roselia_stage", "bang_dream")
-    Sources.add_source("dynasty", 3, "bang_dream_4_koma_bandori", "bang_dream")
-    Sources.add_source("dynasty", 3, "bang_dream_raise_the_story_of_my_music", "bang_dream")
-    Sources.add_source("dynasty", 3, "bangdream_star_beat", "bang_dream")
+
+    [
+      "bang_dream_girls_band_party_roselia_stage",
+      "bang_dream_4_koma_bandori",
+      "bang_dream_raise_the_story_of_my_music",
+      "bangdream_star_beat"
+    ]
+    |> Enum.each(&Sources.add_source("dynasty", 3, &1, "bang_dream"))
 
     Sources.add_source("dynasty", 0, "shoujo_kageki_revue_starlight", "revue_starlight")
-    Sources.add_source("dynasty", 3, "shoujokageki_revue_starlight_overture", "revue_starlight")
-    Sources.add_source("dynasty", 3, "shoujokageki_revue_starlight_the_live_show_must_go_on", "revue_starlight")
-    Sources.add_source("dynasty", 3, "shoujokageki_revue_starlight_the_live_2_transition", "revue_starlight")
+
+    [
+      "shoujokageki_revue_starlight_overture",
+      "shoujokageki_revue_starlight_the_live_show_must_go_on",
+      "shoujokageki_revue_starlight_the_live_2_transition"
+    ]
+    |> Enum.each(&Sources.add_source("dynasty", 3, &1, "revue_starlight"))
   end
 
   def sync() do
@@ -147,6 +155,12 @@ defmodule LL do
     |> Enum.filter(&(not File.exists?("/tank/llm/" <> elem(&1, 1))))
 
     # |> Enum.filter(&(!File.exists?(&1)))
+  end
+
+  def fix_covers() do
+    Repo.all(Series)
+    |> Kernel.++(Repo.all(Chapter) |> Enum.filter(&(&1.series == nil)))
+    |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
   end
 
   def set_category() do

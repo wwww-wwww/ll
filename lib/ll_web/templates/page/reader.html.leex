@@ -28,12 +28,17 @@
 </div>
 
 <%= if @type == :series do %>
+
+<img src="/<%= @series.cover %>" alt="<%= @title %>">
+
 <% series_source_url = LL.Sources.source_module(@series.source).series_url(@series) %>
 <div><a href="<%= series_source_url %>"><%= series_source_url %></a></div>
+
 <ol>
   <%= for chapter <- @chapters do %>
-  <li value="<%= chapter.number %>">
-    <%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter.number)) %>
+  <% chapter_number = chapter.number || 0 %>
+  <li value="<%= chapter_number %>">
+    <%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter_number)) %>
     -
     <span class="tags">
       <%= for tag <- sort_tags(chapter.tags -- @tags) do %>

@@ -30,6 +30,9 @@ defmodule LLWeb.StatusLive do
     downloader = LL.Downloader.get()
 
     if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
+      LL.sync_assoc()
+      LL.fix_covers()
+      LL.sync_pages()
       LL.sync()
     end
 
