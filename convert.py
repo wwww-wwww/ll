@@ -57,7 +57,7 @@ if __name__ == "__main__":
           inputs.append(args.input + "_RGB.png")
     elif im.mode == "L":
       if os.path.splitext(args.input)[1].lower() in [".jpg", ".jpeg"]:
-        im.save(args.input + "L.png")
+        im.save(args.input + "_L.png")
         inputs.append(args.input + "_L.png")
 
   outputs = []
