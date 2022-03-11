@@ -289,19 +289,22 @@ defmodule LL.Sources.Dynasty do
             |> Kernel.++([category_tag(category)])
             |> Enum.uniq()
 
-          case series do
-            nil ->
-              tags
-              |> Enum.filter(&(&1.type in @groupings))
-              |> case do
-                [] -> nil
-                [tag] -> tag
-              end
+          series =
+            case series do
+              nil ->
+                tags
+                |> Enum.filter(&(&1.type in @groupings))
+                |> case do
+                  [] ->
+                    nil
 
-            series ->
-              series
-          end
-          |> IO.inspect()
+                  [tag] ->
+                    Repo.one(from(s in Series, where: s.source_id == ^tag.id))
+                end
+
+              series ->
+                series
+            end
 
           title = data["long_title"] || data["title"]
 
