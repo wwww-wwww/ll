@@ -45,6 +45,7 @@ defmodule LLWeb.ApiController do
               }
             end
           )
+          |> Enum.sort_by(& &1.number || 0)
 
         conn
         |> json(%{
