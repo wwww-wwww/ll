@@ -1,6 +1,7 @@
 <ul>
   <li>scope "/", LLWeb
     <ul>
+      <li>get "/tags", PageController, :tags</li>
       <li>get "/routes", PageController, :routes</li>
       <li>get "/sources", PageController, :sources</li>
       <li>live "/", IndexLive</li>
