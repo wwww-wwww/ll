@@ -40,12 +40,12 @@ defmodule LLWeb.ApiController do
                 id: chapter.id,
                 title: chapter.title,
                 date: chapter.date,
-                number: chapter.number,
+                number: chapter.number || 0,
                 tags: map_tags(chapter.tags)
               }
             end
           )
-          |> Enum.sort_by(& &1.number || 0)
+          |> Enum.sort_by(& &1.number)
 
         conn
         |> json(%{
