@@ -135,6 +135,8 @@ defmodule LLWeb.IndexLive do
 
     pages = length(results)
 
+    page = min(max(page, 1), ceil(pages / limit))
+
     results =
       results
       |> Enum.drop((page - 1) * limit)
