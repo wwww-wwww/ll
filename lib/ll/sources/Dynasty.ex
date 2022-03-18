@@ -204,10 +204,10 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
-  def on_groupings(:doujin, data_url, {:err, url, {:error, %{reason: :timeout}}}) do
+  def on_groupings(:doujin, data_url, category, {:err, url, {:error, %{reason: :timeout}}}) do
     Downloader.add(
       url,
-      &on_groupings(:doujin, data_url, &1)
+      &on_groupings(:doujin, data_url, category, &1)
     )
   end
 
