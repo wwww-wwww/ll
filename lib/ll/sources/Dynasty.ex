@@ -335,21 +335,13 @@ defmodule LL.Sources.Dynasty do
             |> Repo.insert()
 
           # Request series to retrieve chapter/listing number
-          tags
-          |> Enum.filter(&(&1.type in @groupings))
-          |> Enum.map(&{&1.type, &1.id})
-          |> Enum.at(0)
-          |> case do
-            nil ->
-              nil
+          if series do
+            grouping_path = @grouping_from_ids[series.type]
 
-            {type, permalink} ->
-              grouping_path = @grouping_paths[type]
-
-              Downloader.add(
-                "#{@root}/#{grouping_path}/#{permalink}.json",
-                &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
-              )
+            Downloader.add(
+              "#{@root}/#{grouping_path}/#{series.source_id}.json",
+              &CriticalWriter.add(fn -> on_series(series.source_id, grouping_path, category, &1) end)
+            )
           end
 
           download_cover(chapter)
