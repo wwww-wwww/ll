@@ -19,7 +19,7 @@
 
 <h2><%= @title %></h2>
 
-<p><%= @date %></p>
+<p class="date"><%= @date %></p>
 
 <% authors = authors(@tags) %>
 <% tags = @tags -- authors %>
@@ -55,6 +55,7 @@
   <% tags = tags -- authors %>
 
   <li value="<%= chapter_number %>">
+    <span class="date"><%= chapter.date %></span>
     <%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter_number)) %>
     <%= if length(authors) > 0 do %>
     by
