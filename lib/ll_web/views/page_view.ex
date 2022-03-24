@@ -37,6 +37,11 @@ defmodule LLWeb.PageView do
     Repo.all(Category)
   end
 
+  def authors(tags) do
+    tags
+    |> Enum.filter(& &1.type == 2)
+  end
+
   def sort_tags(tags) do
     Enum.sort_by(tags, &{-&1.type, &1.id})
   end

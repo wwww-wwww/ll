@@ -19,33 +19,59 @@
 
 <h2><%= @title %></h2>
 
-<div><%= @date %></div>
+<p><%= @date %></p>
 
-<div class="tags">
-<%= for tag <- sort_tags(@tags) do %>
-  <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+<% authors = authors(@tags) %>
+<% tags = @tags -- authors %>
+
+<%= if length(authors) > 0 do %>
+<p class="authors">
+  by
+  <%= for tag <- sort_tags(authors) do %>
+    <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+  <% end %>
+</p>
 <% end %>
-</div>
+
+<p class="tags">
+  <%= for tag <- sort_tags(tags) do %>
+    <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+  <% end %>
+</p>
 
 <%= if @type == :series do %>
 
-<img src="/<%= @series.cover %>" alt="<%= @title %>">
-
 <% series_source_url = LL.Sources.source_module(@series.source).series_url(@series) %>
-<div><a href="<%= series_source_url %>"><%= series_source_url %></a></div>
+<p><a href="<%= series_source_url %>"><%= series_source_url %></a></p>
+
+<img src="/<%= @series.cover %>" alt="<%= @title %>">
 
 <ol>
   <%= for chapter <- @chapters do %>
+
   <% chapter_number = chapter.number || 0 %>
+  <% tags = sort_tags(chapter.tags -- @tags) %>
+  <% authors = authors(tags) %>
+  <% tags = tags -- authors %>
+
   <li value="<%= chapter_number %>">
     <%= live_patch(chapter.title, to: Routes.reader_path(@socket, :series, @series.id, chapter_number)) %>
+    <%= if length(authors) > 0 do %>
+    by
+    <span class="authors">
+      <%= for tag <- authors do %>
+        <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+      <% end %>
+    </span>
+    <% end %>
     -
     <span class="tags">
-      <%= for tag <- sort_tags(chapter.tags -- @tags) do %>
+      <%= for tag <- tags do %>
         <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
       <% end %>
     </span>
   </li>
+
   <% end %>
 </ol>
 <% end %>
