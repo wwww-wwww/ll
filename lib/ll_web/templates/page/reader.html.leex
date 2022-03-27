@@ -1,11 +1,11 @@
 <style>
   .tags {
-    margin-top: 1em;
     display: flex:
     gap: 0.5em;
   }
 
   #img_container {
+    margin-top: 1em;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -15,11 +15,53 @@
   #img_container img {
     max-height: 1000px;
   }
+
+  .chapter_header {
+    display: flex;
+    align-items: flex-end;
+    gap: 1em;
+  }
+
+  .card {
+    margin-top: 1em;
+    padding: 1em;
+    box-shadow: 0 0 0.5em rgba(0, 0, 0, 0.5);
+    border-radius: 0.25em;
+  }
+
+  .card > h2 {
+    margin-top: 0;
+  }
+
+  .card > *:last-child {
+    margin-bottom: 0;
+  }
 </style>
 
-<h2><%= @title %></h2>
+<div class="chapter_header">
 
-<p class="date"><%= @date %></p>
+<%= if @type == :series do %>
+<img src="/<%= @series.cover %>" alt="<%= @title %>">
+<% end %>
+
+<h1><%= @title %></h1>
+
+</div>
+
+<div class="details card">
+
+<h2>Details</h2>
+
+<div class="date">
+  <span>
+    <%= if @type == :series do %>
+    Last updated:
+    <% else %>
+    Uploaded:
+    <% end %>
+  </span>
+  <span><%= @date %></span>
+</div>
 
 <% authors = authors(@tags) %>
 <% tags = @tags -- authors %>
@@ -40,11 +82,17 @@
 </p>
 
 <%= if @type == :series do %>
-
 <% series_source_url = LL.Sources.source_module(@series.source).series_url(@series) %>
 <p><a href="<%= series_source_url %>"><%= series_source_url %></a></p>
+<% end %>
 
-<img src="/<%= @series.cover %>" alt="<%= @title %>">
+</div>
+
+<%= if @type == :series do %>
+
+<div class="chapters card">
+
+<h2>Chapters</h2>
 
 <ol>
   <%= for chapter <- @chapters do %>
@@ -65,7 +113,7 @@
       <% end %>
     </span>
     <% end %>
-    -
+    <%= if length(tags) > 0 do %>-<% end %>
     <span class="tags">
       <%= for tag <- tags do %>
         <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
@@ -75,18 +123,21 @@
 
   <% end %>
 </ol>
+
+</div>
+
 <% end %>
 
 <%= if assigns[:chapter] do %>
 
 <% source_url = LL.Sources.source_module(@chapter.source).chapter_url(@chapter.source_id) %>
-<div><a href="<%= source_url %>"><%= source_url %></a></div>
-<div>
+
+<div class="card">
+  <div><a href="<%= source_url %>"><%= source_url %></a></div>
   <div><%= @chapter.enc %></div>
   <div><%= @chapter.enc_params %></div>
+  <div><%= @chapter.files |> length %> pages</div>
 </div>
-
-<div><%= @chapter.files |> length %> pages</div>
 
 <div id="img_container">
 <%= for file <- @chapter.files do %>
