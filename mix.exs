@@ -50,7 +50,8 @@ defmodule LL.MixProject do
       {:plug_cowboy, "~> 2.5"},
       {:httpoison, "~> 1.8"},
       {:uuid, "~> 1.1"},
-      {:dart_sass, "~> 0.2", runtime: Mix.env() == :dev}
+      {:dart_sass, "~> 0.2", runtime: Mix.env() == :dev},
+      {:size, "~> 0.1.0"}
     ]
   end
 

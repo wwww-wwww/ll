@@ -11,7 +11,8 @@ config :ll,
   get_all_pages: false,
   n_downloaders: 4,
   n_encoders: 4,
-  ecto_repos: [LL.Repo]
+  ecto_repos: [LL.Repo],
+  files_root: "/tank/llm/"
 
 # Configures the endpoint
 config :ll, LLWeb.Endpoint,

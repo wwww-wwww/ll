@@ -5,7 +5,6 @@ defmodule LL.Sources.Dynasty do
 
   @root "https://dynasty-scans.com"
 
-  @files_root "/tank/llm"
   @file_path "files/dynasty"
   @file_path_covers "covers/dynasty"
 
@@ -49,18 +48,20 @@ defmodule LL.Sources.Dynasty do
 
     Downloader.add(
       "#{@root}/doujins/#{data_url}.json?view=groupings",
+      :get,
       &on_groupings(:doujin, data_url, category, &1)
     )
 
     Downloader.add(
       "#{@root}/doujins/#{data_url}.json?view=chapters",
+      :get,
       &on_chapters(:doujin, data_url, category, &1)
     )
   end
 
   def sync(%{type: 1, data_url: data_url, category: category}) do
     Status.put("dynasty/authors/#{data_url}", "Syncing")
-    Downloader.add("#{@root}/authors/#{data_url}.json", &on_authors(data_url, category, &1))
+    Downloader.add("#{@root}/authors/#{data_url}.json", :get, &on_authors(data_url, category, &1))
   end
 
   def sync(%{type: 2, data_url: data_url, category: category}) do
@@ -68,6 +69,7 @@ defmodule LL.Sources.Dynasty do
 
     Downloader.add(
       "#{@root}/chapters/#{data_url}.json",
+      :get,
       &CriticalWriter.add(fn -> on_chapter(data_url, category, &1) end)
     )
   end
@@ -77,6 +79,7 @@ defmodule LL.Sources.Dynasty do
 
     Downloader.add(
       "#{@root}/series/#{data_url}.json",
+      :get,
       &CriticalWriter.add(fn ->
         Status.put("dynasty/series/#{data_url}", "Synced")
         on_series(data_url, "series", category, &1)
@@ -84,7 +87,7 @@ defmodule LL.Sources.Dynasty do
     )
   end
 
-  def chapter_url(chapter_id), do: "#{@root}/chapters/#{chapter_id}"
+  def chapter_url(chapter), do: "#{@root}/chapters/#{chapter.source_id}"
 
   def series_url(series),
     do: "#{@root}/#{Map.get(@grouping_from_ids, series.type)}/#{series.source_id}"
@@ -173,7 +176,7 @@ defmodule LL.Sources.Dynasty do
     Repo.insert_all(Tag, tags, on_conflict: :nothing)
   end
 
-  def on_groupings(:doujin, data_url, category, {:ok, data}) do
+  def on_groupings(:doujin, data_url, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables, "current_page" => page, "total_pages" => pages}} ->
         if Application.get_env(:ll, :get_all_pages) and page == 1 and page < pages do
@@ -181,6 +184,7 @@ defmodule LL.Sources.Dynasty do
           |> Enum.each(fn p ->
             Downloader.add(
               "#{@root}/doujins/#{data_url}.json?view=groupings&page=#{p}",
+              :get,
               &on_groupings(:doujin, data_url, category, &1)
             )
           end)
@@ -193,6 +197,7 @@ defmodule LL.Sources.Dynasty do
 
           Downloader.add(
             "#{@root}/#{grouping_path}/#{permalink}.json",
+            :get,
             &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
           )
         end)
@@ -205,13 +210,10 @@ defmodule LL.Sources.Dynasty do
   end
 
   def on_groupings(:doujin, data_url, category, {:err, url, {:error, %{reason: :timeout}}}) do
-    Downloader.add(
-      url,
-      &on_groupings(:doujin, data_url, category, &1)
-    )
+    Downloader.add(url, :get, &on_groupings(:doujin, data_url, category, &1))
   end
 
-  def on_chapters(:doujin, data_url, category, {:ok, data}) do
+  def on_chapters(:doujin, data_url, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
       {:ok, %{"taggings" => taggings, "current_page" => page, "total_pages" => pages}} ->
         if Application.get_env(:ll, :get_all_pages) and page == 1 and page < pages do
@@ -219,6 +221,7 @@ defmodule LL.Sources.Dynasty do
           |> Enum.each(fn p ->
             Downloader.add(
               "#{@root}/doujins/#{data_url}.json?view=chapters&page=#{p}",
+              :get,
               &on_chapters(:doujin, data_url, category, &1)
             )
           end)
@@ -234,12 +237,14 @@ defmodule LL.Sources.Dynasty do
             nil ->
               Downloader.add(
                 "#{@root}/chapters/#{permalink}.json",
+                :get,
                 &CriticalWriter.add(fn -> on_chapter(permalink, category, &1) end)
               )
 
             series ->
               Downloader.add(
                 "#{@root}/chapters/#{permalink}.json",
+                :get,
                 &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series) end)
               )
           end
@@ -252,7 +257,7 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
-  def on_authors(data_url, category, {:ok, data}) do
+  def on_authors(data_url, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables}} ->
         taggables
@@ -262,6 +267,7 @@ defmodule LL.Sources.Dynasty do
 
           Downloader.add(
             "#{@root}/#{grouping_path}/#{permalink}.json",
+            :get,
             &CriticalWriter.add(fn -> on_series(permalink, grouping_path, category, &1) end)
           )
         end)
@@ -278,7 +284,7 @@ defmodule LL.Sources.Dynasty do
   end
 
   # safe
-  def on_chapter(data_url, category, {:ok, data}, series \\ nil) do
+  def on_chapter(data_url, category, {:ok, data, _headers}, series \\ nil) do
     if !chapter_exists?(data_url) do
       case Jason.decode(data) do
         {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
@@ -309,6 +315,7 @@ defmodule LL.Sources.Dynasty do
           title = data["long_title"] || data["title"]
 
           pages = Enum.map(pages, & &1["url"])
+          files_sizes = List.duplicate(0, length(pages))
 
           # TODO: id collision
 
@@ -319,7 +326,9 @@ defmodule LL.Sources.Dynasty do
               source: "dynasty",
               source_id: data_url,
               date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
-              files: pages
+              files: pages,
+              original_files: pages,
+              original_files_sizes: files_sizes
             })
 
           {:ok, chapter} =
@@ -340,7 +349,10 @@ defmodule LL.Sources.Dynasty do
 
             Downloader.add(
               "#{@root}/#{grouping_path}/#{series.source_id}.json",
-              &CriticalWriter.add(fn -> on_series(series.source_id, grouping_path, category, &1) end)
+              :get,
+              &CriticalWriter.add(fn ->
+                on_series(series.source_id, grouping_path, category, &1)
+              end)
             )
           end
 
@@ -356,7 +368,7 @@ defmodule LL.Sources.Dynasty do
   end
 
   # safe
-  def on_series(data_url, grouping_type, category, {:ok, data}) do
+  def on_series(data_url, grouping_type, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
       {:ok,
        %{
@@ -426,6 +438,7 @@ defmodule LL.Sources.Dynasty do
         |> Enum.each(fn permalink ->
           Downloader.add(
             "#{@root}/chapters/#{permalink}.json",
+            :get,
             &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series) end),
             fn -> !chapter_exists?(permalink) end
           )
@@ -482,9 +495,21 @@ defmodule LL.Sources.Dynasty do
         {
           "#{@root}#{f}",
           "#{chapter.id}_#{filename}",
-          fn new_file ->
+          fn new_file, headers ->
             Chapter.update_file(chapter.id, i, new_file, false)
             Encoder.add(chapter.id, i, new_file, new_path)
+
+            case headers |> Enum.filter(&(elem(&1, 0) == "Content-Length")) do
+              [{"Content-Length", content_length}] ->
+                Chapter.update_original_filesize(
+                  chapter.id,
+                  i,
+                  Integer.parse(content_length) |> elem(0)
+                )
+
+              _ ->
+                nil
+            end
           end
         }
       else
@@ -504,10 +529,10 @@ defmodule LL.Sources.Dynasty do
       |> Path.rootname()
       |> Kernel.<>(".webp")
 
-    Downloader.save("#{@root}/#{cover}", "#{chapter.id}_cover_#{filename}", fn path ->
+    Downloader.save("#{@root}/#{cover}", "#{chapter.id}_cover_#{filename}", fn path, _headers ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "chapter_#{chapter.id}_#{filename}")
-      new_path_disk = Path.join(@files_root, new_path)
+      new_path_disk = Path.join(LL.files_root(), new_path)
 
       case System.cmd("python3", ["covers.py", path, new_path_disk]) do
         {_, 0} ->
@@ -539,10 +564,11 @@ defmodule LL.Sources.Dynasty do
       _ ->
         Downloader.add(
           "#{@root}/chapters/#{chapter.source_id}.json",
-          fn {:ok, data} ->
+          :get,
+          fn {:ok, data, _headers} ->
             case Jason.decode(data) do
-              {:ok, data} ->
-                first_page = data["pages"] |> Enum.at(0) |> Map.get("url")
+              {:ok, %{"pages" => pages}} ->
+                first_page = pages |> Enum.at(0) |> Map.get("url")
 
                 CriticalWriter.add(fn ->
                   Repo.get(Chapter, chapter.id)
@@ -572,10 +598,11 @@ defmodule LL.Sources.Dynasty do
       first_chapter ->
         Downloader.add(
           "#{@root}/chapters/#{first_chapter.source_id}.json",
-          fn {:ok, data} ->
+          :get,
+          fn {:ok, data, _headers} ->
             case Jason.decode(data) do
-              {:ok, data} ->
-                first_page = data["pages"] |> Enum.at(0) |> Map.get("url")
+              {:ok, %{"pages" => pages}} ->
+                first_page = pages |> Enum.at(0) |> Map.get("url")
 
                 CriticalWriter.add(fn ->
                   Repo.get(Series, series.id)
@@ -604,10 +631,10 @@ defmodule LL.Sources.Dynasty do
       |> Path.rootname()
       |> Kernel.<>(".webp")
 
-    Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
+    Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path, _headers ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")
-      new_path_disk = Path.join(@files_root, new_path)
+      new_path_disk = Path.join(LL.files_root(), new_path)
 
       case System.cmd("python3", ["covers.py", path, new_path_disk]) do
         {_, 0} ->
@@ -635,10 +662,10 @@ defmodule LL.Sources.Dynasty do
       |> Path.basename()
       |> IO.inspect()
 
-    Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path ->
+    Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path, _headers ->
       File.mkdir_p(@file_path_covers)
       new_path = Path.join(@file_path_covers, "series_#{series.id}_#{filename}")
-      new_path_disk = Path.join(@files_root, new_path)
+      new_path_disk = Path.join(LL.files_root(), new_path)
 
       case File.copy(path, new_path_disk) do
         {:ok, _} ->

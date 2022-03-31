@@ -39,7 +39,7 @@ defmodule LLWeb.PageView do
 
   def authors(tags) do
     tags
-    |> Enum.filter(& &1.type == 2)
+    |> Enum.filter(&(&1.type == 2))
   end
 
   def sort_tags(tags) do

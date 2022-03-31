@@ -18,6 +18,10 @@ defmodule LL.Chapter do
     field :cover, :string
     field :path, :string
     field :files, {:array, :string}
+    field :filesize, :integer
+
+    field :original_files, {:array, :string}
+    field :original_files_sizes, {:array, :integer}
 
     field :enc, :string
     field :enc_params, :string
@@ -40,8 +44,11 @@ defmodule LL.Chapter do
       :cover,
       :path,
       :files,
+      :filesize,
       :enc,
-      :enc_params
+      :enc_params,
+      :original_files,
+      :original_files_sizes
     ])
   end
 
@@ -51,20 +58,44 @@ defmodule LL.Chapter do
 
   def update_file(id, n, new_path, encoded) do
     CriticalWriter.add(fn ->
-      chapter = Repo.get(LL.Chapter, id)
+      chapter = Repo.get(__MODULE__, id)
       new_files = Enum.take(chapter.files, n) ++ [new_path] ++ Enum.drop(chapter.files, n + 1)
 
       if encoded do
-        LL.Chapter.change(chapter, %{
+        new_filesize =
+          chapter.files
+          |> Stream.filter(&(not String.starts_with?(elem(&1, 1), "tmp")))
+          |> Stream.filter(&(not String.starts_with?(elem(&1, 1), "/")))
+          |> Stream.map(&(LL.files_root() <> &1))
+          |> Stream.map(&(File.stat!(&1) |> Map.get(:size)))
+          |> Enum.sum()
+
+        __MODULE__.change(chapter, %{
           enc: Application.get_env(:ll, :cjxl),
           enc_params: "-q 100 -e 9 -E 3 -I 1",
-          files: new_files
+          files: new_files,
+          filesize: new_filesize
         })
       else
-        LL.Chapter.change(chapter, %{
+        __MODULE__.change(chapter, %{
           files: new_files
         })
       end
+      |> Repo.update()
+    end)
+  end
+
+  def update_original_filesize(id, n, filesize) do
+    CriticalWriter.add(fn ->
+      chapter = Repo.get(__MODULE__, id)
+
+      new_files_sizes =
+        chapter.original_files_sizes
+        |> Enum.take(n)
+        |> Kernel.++([filesize])
+        |> Kernel.++(Enum.drop(chapter.original_files_sizes, n + 1))
+
+      __MODULE__.change(chapter, %{original_files_sizes: new_files_sizes})
       |> Repo.update()
     end)
   end

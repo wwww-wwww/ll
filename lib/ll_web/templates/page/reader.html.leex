@@ -4,6 +4,11 @@
     gap: 0.5em;
   }
 
+  .cover {
+    max-width: 12em;
+    max-height: 12em;
+  }
+
   #img_container {
     margin-top: 1em;
     display: flex;
@@ -41,7 +46,7 @@
 <div class="chapter_header">
 
 <%= if @type == :series do %>
-<img src="/<%= @series.cover %>" alt="<%= @title %>">
+<img class="cover" src="/<%= @series.cover %>" alt="<%= @title %>">
 <% end %>
 
 <h1><%= @title %></h1>
@@ -130,13 +135,15 @@
 
 <%= if assigns[:chapter] do %>
 
-<% source_url = LL.Sources.source_module(@chapter.source).chapter_url(@chapter.source_id) %>
+<% source_url = LL.Sources.source_module(@chapter.source).chapter_url(@chapter) %>
 
 <div class="card">
   <div><a href="<%= source_url %>"><%= source_url %></a></div>
+  <div><%= @chapter.files |> length %> pages</div>
+  <div>Original filesize: <%= @chapter.original_files_sizes |> Enum.sum() |> Size.humanize!(round: 1) %></div>
+  <div>Filesize: <%= @chapter.filesize |> Size.humanize!(round: 1) %></div>
   <div><%= @chapter.enc %></div>
   <div><%= @chapter.enc_params %></div>
-  <div><%= @chapter.files |> length %> pages</div>
 </div>
 
 <div id="img_container">

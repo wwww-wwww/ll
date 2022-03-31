@@ -33,14 +33,18 @@ defmodule LL.Downloader do
 
         {:noreply, %{state | active: false}}
 
-      {url, cb, guard} = job ->
+      {url, type, cb, guard} = job ->
         if guard == nil or guard.() do
           Status.put(state.id, "Downloading #{url}")
 
-          HTTPoison.get(url, [], recv_timeout: 30000)
+          HTTPoison.request(%HTTPoison.Request{
+            method: type,
+            url: url,
+            options: [recv_timeout: 30000]
+          })
           |> case do
-            {:ok, %HTTPoison.Response{body: body}} ->
-              cb.({:ok, body})
+            {:ok, %HTTPoison.Response{body: body, headers: headers}} ->
+              cb.({:ok, body, headers})
 
             err ->
               cb.({:err, url, err})
@@ -61,11 +65,11 @@ defmodule LL.Downloader do
     WorkerManager.get(DownloaderManager)
   end
 
-  def add(url, cb, guard \\ nil) do
-    WorkerManager.add(DownloaderManager, {url, cb, guard})
+  def add(url, type, cb, guard \\ nil) do
+    WorkerManager.add(DownloaderManager, {url, type, cb, guard})
   end
 
-  def _save({:ok, data}, suffix, cb) do
+  def _save({:ok, data, headers}, suffix, cb) do
     prefix = UUID.uuid3(UUID.uuid1(), suffix)
 
     path = Path.join(@tmp_dir, "#{prefix}_#{suffix}")
@@ -74,7 +78,7 @@ defmodule LL.Downloader do
     IO.binwrite(file, data)
     File.close(file)
 
-    cb.(path)
+    cb.(path, headers)
   end
 
   def _save({:err, url, _err}, suffix, cb) do
@@ -82,7 +86,7 @@ defmodule LL.Downloader do
   end
 
   def save(url, suffix, cb) do
-    WorkerManager.add(DownloaderManager, {url, &_save(&1, suffix, cb), nil})
+    add(url, :get, &_save(&1, suffix, cb), nil)
   end
 
   def save_all(files) do

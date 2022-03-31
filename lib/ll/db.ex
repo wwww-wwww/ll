@@ -10,7 +10,9 @@ defmodule LL.DB do
   defstruct time: nil,
             n_files: 0,
             all: [],
-            all_safe: "{}"
+            all_safe: "{}",
+            original_filesize: 0,
+            filesize: 0
 
   def start_link(_opts) do
     Agent.start_link(fn -> %__MODULE__{} end, name: __MODULE__)
@@ -38,6 +40,17 @@ defmodule LL.DB do
       series
       |> Enum.map(& &1.chapters)
       |> List.flatten()
+
+    original_filesize =
+      (chapters ++ series_chapters)
+      |> Enum.map(& &1.original_files_sizes)
+      |> List.flatten()
+      |> Enum.sum()
+
+    filesize =
+      (chapters ++ series_chapters)
+      |> Stream.map(& &1.filesize)
+      |> Enum.sum()
 
     n_files =
       (chapters ++ series_chapters)
@@ -98,7 +111,14 @@ defmodule LL.DB do
         }
       )
 
-    %__MODULE__{time: Time.utc_now(), n_files: n_files, all: all, all_safe: all_safe}
+    %__MODULE__{
+      time: Time.utc_now(),
+      n_files: n_files,
+      all: all,
+      all_safe: all_safe,
+      filesize: filesize,
+      original_filesize: original_filesize
+    }
   end
 
   def reset() do

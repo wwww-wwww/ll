@@ -20,6 +20,8 @@ defmodule LLWeb.IndexLive do
     {:ok,
      assign(socket,
        n_files: DB.n_files(),
+       original_filesize: DB.get(:original_filesize),
+       filesize: DB.get(:filesize),
        query: query,
        results: results,
        suggestions: [],

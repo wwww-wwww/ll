@@ -3,7 +3,6 @@ defmodule LL.Encoder do
 
   alias LL.{Chapter, WorkerManager, EncoderManager, Status}
 
-  @files_root "/tank/llm"
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
   defstruct id: nil, active: false
@@ -38,7 +37,7 @@ defmodule LL.Encoder do
         if (Path.extname(path) |> String.downcase()) in @accepted_exts do
           Status.put(state.id, "Encoding #{id} #{n} #{path} -> #{new_path}")
 
-          new_path_disk = Path.join(@files_root, new_path)
+          new_path_disk = Path.join(LL.files_root(), new_path)
 
           new_path_disk
           |> Path.dirname()

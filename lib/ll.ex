@@ -9,6 +9,8 @@ defmodule LL do
 
   alias LL.{Repo, Downloader, Encoder, Chapter, Series, Tag, Sources}
 
+  def files_root(), do: Application.get_env(:ll, :files_root)
+
   def reset_reset_reset_reset_reset() do
     Repo.delete_all(Tag)
     Repo.delete_all(Chapter)
@@ -151,8 +153,8 @@ defmodule LL do
 
     files
     # |> Enum.filter(&not String.starts_with?(elem(&1, 1), "tmp"))
-    # |> Enum.filter(&String.starts_with?(elem(&1, 1), "/tank"))
-    |> Enum.filter(&(not File.exists?("/tank/llm/" <> elem(&1, 1))))
+    # |> Enum.filter(&String.starts_with?(elem(&1, 1), "/"))
+    |> Enum.filter(&(not File.exists?(LL.files_root() <> elem(&1, 1))))
 
     # |> Enum.filter(&(!File.exists?(&1)))
   end
@@ -187,6 +189,76 @@ defmodule LL do
       |> Repo.update()
 
       # |> Repo.insert()
+    end)
+  end
+
+  def get_original_files_sizes(chapter_id) do
+    root = "https://dynasty-scans.com"
+
+    Repo.get(Chapter, chapter_id)
+    |> Map.get(:original_files)
+    |> Enum.map(&(root <> &1))
+    |> Enum.with_index()
+    |> Enum.each(fn {url, n} ->
+      Downloader.add(url, :head, fn {:ok, _data, headers} ->
+        case headers |> Enum.filter(&(elem(&1, 0) == "Content-Length")) do
+          [{"Content-Length", content_length}] ->
+            Chapter.update_original_filesize(
+              chapter_id,
+              n,
+              Integer.parse(content_length) |> elem(0)
+            )
+
+          _ ->
+            nil
+        end
+      end)
+    end)
+  end
+
+  def get_original_files() do
+    Repo.all(Chapter)
+    |> Enum.each(fn chapter ->
+      if chapter.original_files_sizes == nil do
+        chapter
+        |> Sources.Dynasty.chapter_url()
+        |> Kernel.<>(".json")
+        |> Downloader.add(:get, fn {:ok, data, _resp} ->
+          case Jason.decode(data) do
+            {:ok, %{"pages" => pages}} ->
+              pages = Enum.map(pages, & &1["url"])
+              files_sizes = List.duplicate(0, length(pages))
+
+              Chapter.change(chapter, %{original_files: pages, original_files_sizes: files_sizes})
+              |> Repo.update()
+
+              get_original_files_sizes(chapter.id)
+
+            _ ->
+              nil
+          end
+        end)
+      else
+        if Enum.any?(chapter.original_files_sizes, &(&1 == 0)) do
+          get_original_files_sizes(chapter.id)
+        end
+      end
+    end)
+  end
+
+  def get_filesizes() do
+    Repo.all(Chapter)
+    |> Enum.each(fn chapter ->
+      new_filesize =
+        chapter.files
+        |> Stream.filter(&(not String.starts_with?(&1, "tmp")))
+        |> Stream.filter(&(not String.starts_with?(&1, "/")))
+        |> Stream.map(&(LL.files_root() <> &1))
+        |> Stream.map(&(File.stat!(&1) |> Map.get(:size)))
+        |> Enum.sum()
+
+      Chapter.change(chapter, %{filesize: new_filesize})
+      |> Repo.update()
     end)
   end
 end

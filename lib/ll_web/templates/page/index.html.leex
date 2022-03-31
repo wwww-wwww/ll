@@ -38,10 +38,18 @@
 </style>
 
 <div>
-<div style="margin-bottom: 1em;">
-<p>Hosting <%= @n_files %> jxl files</p>
-<a href="/apk/app-standard-universal-debug.apk">app-standard-universal-debug.apk</a> [2022-03-18]
-<a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
+
+<p>
+  <div>Hosting <%= @n_files %> jxl files</div>
+  <div>Filesize: <%= Size.humanize!(@filesize, round: 1) %></div>
+  <div>Compression ratio: <%= round(@original_filesize / @filesize * 10000) / 100 %>%</div>
+</p>
+
+<p>
+  <a href="/apk/app-standard-universal-debug.apk">app-standard-universal-debug.apk</a> [2022-03-18]
+  <a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
+</p>
+
 </div>
 
 <div>
