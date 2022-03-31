@@ -343,6 +343,8 @@ defmodule LL.Sources.Dynasty do
             |> Chapter.put_tags(tags)
             |> Repo.insert()
 
+          LL.DB.reset()
+
           # Request series to retrieve chapter/listing number
           if series do
             grouping_path = @grouping_from_ids[series.type]
@@ -428,6 +430,8 @@ defmodule LL.Sources.Dynasty do
             get_tags(Enum.map(all_tags, &%{"permalink" => &1.id})) ++ [cat_tag]
           )
           |> Repo.insert_or_update()
+
+        LL.DB.reset()
 
         download_cover(series)
 
