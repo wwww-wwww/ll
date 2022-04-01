@@ -45,11 +45,13 @@ defmodule LL.DB do
       (chapters ++ series_chapters)
       |> Enum.map(& &1.original_files_sizes)
       |> List.flatten()
+      |> Stream.filter(&(!is_nil(&1)))
       |> Enum.sum()
 
     filesize =
       (chapters ++ series_chapters)
       |> Stream.map(& &1.filesize)
+      |> Stream.filter(&(!is_nil(&1)))
       |> Enum.sum()
 
     n_files =

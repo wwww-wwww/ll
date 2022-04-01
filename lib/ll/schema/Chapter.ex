@@ -64,8 +64,8 @@ defmodule LL.Chapter do
       if encoded do
         new_filesize =
           chapter.files
-          |> Stream.filter(&(not String.starts_with?(elem(&1, 1), "tmp")))
-          |> Stream.filter(&(not String.starts_with?(elem(&1, 1), "/")))
+          |> Stream.filter(&(not String.starts_with?(&1, "tmp")))
+          |> Stream.filter(&(not String.starts_with?(&1, "/")))
           |> Stream.map(&(LL.files_root() <> &1))
           |> Stream.map(&(File.stat!(&1) |> Map.get(:size)))
           |> Enum.sum()

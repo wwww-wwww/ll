@@ -92,7 +92,7 @@ defmodule LL.Downloader do
   def save_all(files) do
     files =
       Enum.map(files, fn {url, suffix, cb} ->
-        {url, &_save(&1, suffix, cb), nil}
+        {url, :get, &_save(&1, suffix, cb), nil}
       end)
 
     WorkerManager.add_all(DownloaderManager, files)
