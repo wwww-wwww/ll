@@ -18,7 +18,7 @@ defmodule LL.Chapter do
     field :cover, :string
     field :path, :string
     field :files, {:array, :string}
-    field :filesize, :integer
+    field :filesize, :integer, default: 0
 
     field :original_files, {:array, :string}
     field :original_files_sizes, {:array, :integer}
