@@ -1,0 +1,10 @@
+<h1>Tags</h1>
+
+<table>
+<%= for tag <- LL.Repo.all(LL.Tag) |> Enum.sort_by(& &1.id) do %>
+  <tr>
+    <td><%= live_redirect(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %></td>
+    <td><%= tag_type(tag) %></td>
+  </tr>
+<% end %>
+</table>

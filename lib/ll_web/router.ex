@@ -17,9 +17,9 @@ defmodule LLWeb.Router do
   scope "/", LLWeb do
     pipe_through :browser
 
-    get "/tags", PageController, :tags
-    get "/routes", PageController, :routes
-    get "/sources", PageController, :sources
+    live "/tags", TagsLive
+    live "/routes", RoutesLive
+    live "/sources", SourcesLive
     get "/f/files/:path", PageController, :file
 
     live "/", IndexLive

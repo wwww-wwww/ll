@@ -1,18 +1,6 @@
 defmodule LLWeb.PageController do
   use LLWeb, :controller
 
-  def routes(conn, _params) do
-    render(conn, "routes.html")
-  end
-
-  def tags(conn, _params) do
-    render(conn, "tags.html")
-  end
-
-  def sources(conn, _params) do
-    render(conn, "sources.html")
-  end
-
   def mime(path) do
     cond do
       String.ends_with?(path, ".jxl") -> "image/jxl"

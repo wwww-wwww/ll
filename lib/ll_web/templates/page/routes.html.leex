@@ -1,0 +1,15 @@
+<h1>Routes</h1>
+
+<ul>
+<%= for route <- Phoenix.Router.routes(LLWeb.Router) do %>
+<li>
+<%= if Map.get(route.metadata, :phoenix_live_view) do %>
+  live "<%= route.path %>",
+  <%= Map.get(route.metadata, :phoenix_live_view) |> elem(0) %>,
+  :<%= route.plug_opts %>
+<% else %>
+  <%= route.verb %> "<%= route.path %>", <%= route.plug %>, :<%= route.plug_opts %>
+<% end %>
+</li>
+<% end %>
+</ul>

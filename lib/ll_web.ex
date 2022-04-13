@@ -45,7 +45,8 @@ defmodule LLWeb do
   def live_view do
     quote do
       use Phoenix.LiveView,
-        layout: {LLWeb.LayoutView, "live.html"}
+        layout: {LLWeb.LayoutView, "live.html"},
+        container: {:div, class: __MODULE__ |> to_string() |> String.split(".") |> Enum.at(-1)}
 
       unquote(view_helpers())
     end

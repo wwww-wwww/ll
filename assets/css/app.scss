@@ -13,3 +13,104 @@
 .alert-info:not(:empty)::before {
   content: "INFO: ";
 }
+
+.IndexLive {
+  table {
+    border-collapse: collapse;
+  }
+
+  table img {
+    max-height: 6em;
+    max-width: 6em;
+  }
+
+  table td {
+    border: 1px solid black;
+  }
+
+  table td:nth-child(2),
+  table td:nth-child(4) {
+    padding: 0.5em;
+  }
+
+  table .tags {
+    padding: 0.25em;
+    gap: 0.5em;
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  table .tags > a {
+    border-radius: 0.25em;
+    padding: 0.2em 0.25em;
+    border: 1px solid black;
+    display: inline-block;
+    text-decoration: none;
+  }
+
+  table .tags > a.author {
+    border: 1px solid rgb(0, 200, 200);
+  }
+}
+
+.SourcesLive {
+  table {
+    border-collapse: collapse;
+  }
+
+  table,
+  th,
+  td {
+    border: 1px solid black;
+  }
+
+  th,
+  td {
+    padding: 0.25em;
+  }
+}
+
+.ReaderLive {
+  .tags {
+    display: flex;
+    gap: 0.5em;
+  }
+
+  .cover {
+    max-width: 12em;
+    max-height: 12em;
+  }
+
+  #img_container {
+    margin-top: 1em;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    align-items: center;
+  }
+
+  #img_container img {
+    max-height: 1000px;
+  }
+
+  .chapter_header {
+    display: flex;
+    align-items: flex-end;
+    gap: 1em;
+  }
+
+  .card {
+    margin-top: 1em;
+    padding: 1em;
+    box-shadow: 0 0 0.5em rgba(0, 0, 0, 0.5);
+    border-radius: 0.25em;
+  }
+
+  .card > h2 {
+    margin-top: 0;
+  }
+
+  .card > *:last-child {
+    margin-bottom: 0;
+  }
+}

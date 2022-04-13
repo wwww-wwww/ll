@@ -1,47 +1,4 @@
-<style>
-  .tags {
-    display: flex:
-    gap: 0.5em;
-  }
-
-  .cover {
-    max-width: 12em;
-    max-height: 12em;
-  }
-
-  #img_container {
-    margin-top: 1em;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    align-items: center;
-  }
-
-  #img_container img {
-    max-height: 1000px;
-  }
-
-  .chapter_header {
-    display: flex;
-    align-items: flex-end;
-    gap: 1em;
-  }
-
-  .card {
-    margin-top: 1em;
-    padding: 1em;
-    box-shadow: 0 0 0.5em rgba(0, 0, 0, 0.5);
-    border-radius: 0.25em;
-  }
-
-  .card > h2 {
-    margin-top: 0;
-  }
-
-  .card > *:last-child {
-    margin-bottom: 0;
-  }
-</style>
+<% authors = authors(@tags) %>
 
 <div class="chapter_header">
 
@@ -49,7 +6,18 @@
 <img class="cover" src="/<%= @series.cover %>" alt="<%= @title %>">
 <% end %>
 
-<h1><%= @title %></h1>
+<div class="right">
+  <h1><%= @title %></h1>
+
+  <%= if length(authors) > 0 do %>
+  <p class="authors">
+    by
+    <%= for tag <- sort_tags(authors) do %>
+      <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+    <% end %>
+  </p>
+  <% end %>
+</div>
 
 </div>
 
@@ -68,23 +36,15 @@
   <span><%= @date %></span>
 </div>
 
-<% authors = authors(@tags) %>
 <% tags = @tags -- authors %>
 
-<%= if length(authors) > 0 do %>
-<p class="authors">
-  by
-  <%= for tag <- sort_tags(authors) do %>
-    <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
-  <% end %>
-</p>
-<% end %>
-
+<%= if length(tags) > 0 do %>
 <p class="tags">
   <%= for tag <- sort_tags(tags) do %>
     <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
   <% end %>
 </p>
+<% end %>
 
 <%= if @type == :series do %>
 <% series_source_url = LL.Sources.source_module(@series.source).series_url(@series) %>

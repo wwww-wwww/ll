@@ -18,9 +18,9 @@
           <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
             <%= link "LiveDashboard", to: Routes.live_dashboard_path(@conn, :home) %>
           <% end %>
-          <%= live_redirect "Tags", to: Routes.page_path(@conn, :tags) %>
-          <%= live_redirect "Routes", to: Routes.page_path(@conn, :routes) %>
-          <%= live_redirect "Sources", to: Routes.page_path(@conn, :sources) %>
+          <%= live_redirect "Tags", to: Routes.live_path(@conn, LLWeb.TagsLive) %>
+          <%= live_redirect "Routes", to: Routes.live_path(@conn, LLWeb.RoutesLive) %>
+          <%= live_redirect "Sources", to: Routes.live_path(@conn, LLWeb.SourcesLive) %>
         </nav>
       </section>
     </header>
