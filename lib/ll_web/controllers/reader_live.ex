@@ -43,7 +43,7 @@ defmodule LLWeb.ReaderLive do
             chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
           end
 
-        chapters = Enum.sort_by(series.chapters, & &1.number || 0)
+        chapters = Enum.sort_by(series.chapters, &(&1.number || 0))
 
         common_tags = chapters |> Enum.map(& &1.tags) |> List.flatten()
 

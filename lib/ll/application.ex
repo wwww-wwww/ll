@@ -28,6 +28,18 @@ defmodule LL.Application do
       ),
       Supervisor.child_spec({LL.WorkerManager, name: LL.EncoderManager},
         id: LL.EncoderManager
+      ),
+      Supervisor.child_spec(
+        {LL.Timer,
+         id: :sync, fun: &LL.sync_all/0, interval: Application.fetch_env!(:ll, :sync_interval)},
+        id: LL.TimerSync
+      ),
+      Supervisor.child_spec(
+        {LL.Timer,
+         id: :encode,
+         fun: &LL.encode_missing/0,
+         interval: Application.fetch_env!(:ll, :encode_interval)},
+        id: LL.TimerEncoode
       )
     ]
 

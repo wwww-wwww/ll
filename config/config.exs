@@ -12,7 +12,9 @@ config :ll,
   n_downloaders: 4,
   n_encoders: 4,
   ecto_repos: [LL.Repo],
-  files_root: "/tank/llm/"
+  files_root: "/tank/llm/",
+  sync_interval: 7_200_000,
+  encode_interval: 3_600_000
 
 # Configures the endpoint
 config :ll, LLWeb.Endpoint,

@@ -39,6 +39,17 @@ defmodule LL do
     |> Enum.each(&Sources.add_source("dynasty", 3, &1, "revue_starlight"))
   end
 
+  def sync_all() do
+    downloader = Downloader.get()
+
+    if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
+      sync_assoc()
+      update_covers()
+      sync_pages()
+      sync()
+    end
+  end
+
   def sync() do
     Sources.sync()
   end
@@ -50,6 +61,14 @@ defmodule LL do
     end)
     |> List.flatten()
     |> Downloader.save_all()
+  end
+
+  def encode_missing() do
+    encoder = Encoder.get()
+
+    if length(encoder.working) == 0 and :queue.len(encoder.queue) == 0 do
+      encode_pages(true)
+    end
   end
 
   def encode_pages(exec) do
