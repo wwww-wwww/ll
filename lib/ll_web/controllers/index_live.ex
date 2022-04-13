@@ -17,6 +17,12 @@ defmodule LLWeb.IndexLive do
 
     {size, page, results} = search(query, page, @limit)
 
+    apk_date =
+      case File.lstat("apk/app-standard-universal-debug.apk") do
+        {:ok, %{ctime: {date, _}}} -> Date.from_erl!(date) |> to_string()
+        _ -> nil
+      end
+
     {:ok,
      assign(socket,
        n_files: DB.n_files(),
@@ -28,7 +34,8 @@ defmodule LLWeb.IndexLive do
        total: size,
        pages: ceil(size / @limit),
        page: page,
-       limit: @limit
+       limit: @limit,
+       apk_date: apk_date
      )}
   end
 

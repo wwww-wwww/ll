@@ -1,19 +1,18 @@
 <h1>Index</h1>
 
 <div>
-
-<p>
   <div>Hosting <%= @n_files %> jxl files</div>
   <div>Filesize: <%= Size.humanize!(@filesize, round: 1) %></div>
   <div>Compression ratio: <%= round(@original_filesize / @filesize * 10000) / 100 %>%</div>
-</p>
-
-<p>
-  <a href="/apk/app-standard-universal-debug.apk">app-standard-universal-debug.apk</a> [2022-03-18]
-  <a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
-</p>
-
 </div>
+
+<%= if @apk_date != nil do %>
+<div>
+  <a href="/apk/app-standard-universal-debug.apk">app-standard-universal-debug.apk</a>
+  <span>[<%= @apk_date %>]</span>
+  <a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
+</div>
+<% end %>
 
 <div>
   <%= for cat <- categories() do %>
@@ -57,8 +56,8 @@
   <% end %>
 </table>
 
-<%= live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) %>
-<%= live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) %>
-<span><%= (@page - 1) * @limit + 1 %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
-
+<div>
+  <%= live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) %>
+  <%= live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) %>
+  <span><%= (@page - 1) * @limit + 1 %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
 </div>
