@@ -76,7 +76,7 @@ defmodule LL.DB do
           type: :series,
           date: date,
           e: s,
-          search: ([s.title] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
+          search: ([s.id, s.title, "series"] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
         }
       end)
 
