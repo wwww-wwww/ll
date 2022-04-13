@@ -224,4 +224,33 @@ defmodule LL do
       |> Repo.update()
     end)
   end
+
+  def create_category() do
+    %LL.Category{
+      id: "love_live",
+      name: "Love Live!"
+    }
+    |> Repo.insert()
+
+    %LL.Category{
+      id: "bang_dream",
+      name: "BanG Dream!"
+    }
+    |> Repo.insert()
+  end
+
+  def add_category() do
+    # ll = Repo.get(Category, "love_live")
+    bandori = Repo.get(LL.Category, "bang_dream")
+
+    Repo.all(Source)
+    |> Repo.preload(:category)
+    |> Enum.each(fn source ->
+      if source.id >= 6 do
+        Ecto.Changeset.change(source, %{})
+        |> Ecto.Changeset.put_assoc(:category, bandori)
+        |> Repo.update()
+      end
+    end)
+  end
 end
