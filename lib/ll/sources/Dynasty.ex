@@ -257,6 +257,10 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
+  def on_chapters(:doujin, data_url, category, {:err, url, {:error, %{reason: :timeout}}}) do
+    Downloader.add(url, :get, &on_chapters(:doujin, data_url, category, &1))
+  end
+
   def on_authors(data_url, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
       {:ok, %{"taggables" => taggables}} ->
@@ -284,7 +288,7 @@ defmodule LL.Sources.Dynasty do
   end
 
   # safe
-  def on_chapter(data_url, category, {:ok, data, _headers}, series \\ nil) do
+  def on_chapter(data_url, category, {:ok, data, _headers}, series \\ nil, c_n \\ nil) do
     if !chapter_exists?(data_url) do
       case Jason.decode(data) do
         {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
@@ -328,7 +332,8 @@ defmodule LL.Sources.Dynasty do
               date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
               files: pages,
               original_files: pages,
-              original_files_sizes: files_sizes
+              original_files_sizes: files_sizes,
+              number: c_n
             })
 
           {:ok, chapter} =
@@ -346,7 +351,7 @@ defmodule LL.Sources.Dynasty do
           LL.DB.reset()
 
           # Request series to retrieve chapter/listing number
-          if series do
+          if is_nil(c_n) and series do
             grouping_path = @grouping_from_ids[series.type]
 
             Downloader.add(
@@ -438,12 +443,13 @@ defmodule LL.Sources.Dynasty do
         taggings
         |> Enum.filter(&(&1["permalink"] != nil))
         |> Enum.map(& &1["permalink"])
-        |> Enum.filter(&(!chapter_exists?(&1)))
-        |> Enum.each(fn permalink ->
+        |> Enum.with_index(1)
+        |> Enum.filter(&(!chapter_exists?(elem(&1, 0))))
+        |> Enum.each(fn {permalink, c_n} ->
           Downloader.add(
             "#{@root}/chapters/#{permalink}.json",
             :get,
-            &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series) end),
+            &CriticalWriter.add(fn -> on_chapter(permalink, category, &1, series, c_n) end),
             fn -> !chapter_exists?(permalink) end
           )
         end)
