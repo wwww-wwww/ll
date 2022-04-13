@@ -7,15 +7,9 @@ defmodule LL do
   if it comes from the database, an external API or others.
   """
 
-  alias LL.{Repo, Downloader, Encoder, Chapter, Series, Tag, Sources}
+  alias LL.{Repo, Downloader, Encoder, Chapter, Series, Sources}
 
   def files_root(), do: Application.get_env(:ll, :files_root)
-
-  def reset_reset_reset_reset_reset() do
-    Repo.delete_all(Tag)
-    Repo.delete_all(Chapter)
-    Repo.delete_all(Series)
-  end
 
   def add_sources() do
     Sources.add_source("dynasty", 0, "love_live", "love_live")
@@ -152,44 +146,13 @@ defmodule LL do
       |> List.flatten()
 
     files
-    # |> Enum.filter(&not String.starts_with?(elem(&1, 1), "tmp"))
-    # |> Enum.filter(&String.starts_with?(elem(&1, 1), "/"))
     |> Enum.filter(&(not File.exists?(LL.files_root() <> elem(&1, 1))))
-
-    # |> Enum.filter(&(!File.exists?(&1)))
   end
 
-  def fix_covers() do
+  def update_covers() do
     Repo.all(Series)
     |> Kernel.++(Repo.all(Chapter) |> Enum.filter(&(&1.series == nil)))
     |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
-  end
-
-  def set_category() do
-    ll =
-      Repo.insert_all(Tag, [%{id: "category_love_live", name: "Love Live!", type: 4}],
-        on_conflict: :nothing
-      )
-
-    ll = Repo.get(Tag, "category_love_live")
-
-    bandori =
-      Repo.insert_all(Tag, [%{id: "category_bang_dream", name: "BanG Dream!", type: 4}],
-        on_conflict: :nothing
-      )
-
-    bandori = Repo.get(Tag, "category_bang_dream")
-
-    Repo.all(Series)
-    |> Repo.preload([:tags, :chapters])
-    |> Enum.map(fn c ->
-      c
-      |> Ecto.Changeset.change(%{})
-      |> Chapter.put_tags(c.tags ++ [ll])
-      |> Repo.update()
-
-      # |> Repo.insert()
-    end)
   end
 
   def get_original_files_sizes(chapter_id) do
