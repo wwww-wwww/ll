@@ -17,3 +17,7 @@ Ready to run in production? Please [check our deployment guides](https://hexdocs
   * Docs: https://hexdocs.pm/phoenix
   * Forum: https://elixirforum.com/c/phoenix-forum
   * Source: https://github.com/phoenixframework/phoenix
+
+#### 6fdb604a-61ee-31dd-b544-4a5ddc2c6043_dont_accept_unpardonable_acts_at_a_public_place_credits.jpg
+
+This image (CMYK jpeg) has caused so many issues so it's here for keepsakes.
