@@ -374,6 +374,28 @@ defmodule LL.Sources.Dynasty do
     end
   end
 
+  def on_series_chapter_tags(taggings) do
+    taggings
+    |> Enum.filter(&(&1["permalink"] != nil))
+    |> Enum.each(fn tagging ->
+      case get_chapter(tagging["permalink"]) do
+        nil ->
+          nil
+
+        c ->
+          add_tags(tagging["tags"])
+
+          Repo.preload(c, :tags)
+          |> Chapter.change(%{})
+          |> Ecto.Changeset.put_assoc(
+            :tags,
+            get_tags(tagging["tags"])
+          )
+          |> Repo.update()
+      end
+    end)
+  end
+
   # safe
   def on_series(data_url, grouping_type, category, {:ok, data, _headers}) do
     case Jason.decode(data) do
@@ -470,6 +492,8 @@ defmodule LL.Sources.Dynasty do
               |> Repo.update()
           end
         end)
+
+        on_series_chapter_tags(taggings)
 
       err ->
         Status.put("dynasty/#{grouping_type}/#{data_url}", "Error: #{inspect(err)}")

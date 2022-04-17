@@ -27,7 +27,7 @@ defmodule LL.Chapter do
     field :enc_params, :string
 
     belongs_to :series, LL.Series, type: :string
-    many_to_many :tags, LL.Tag, join_through: LL.ChaptersTags
+    many_to_many :tags, LL.Tag, join_through: LL.ChaptersTags, on_replace: :delete
 
     timestamps()
   end
