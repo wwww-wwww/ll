@@ -12,7 +12,6 @@ defmodule LL.Repo.Migrations.CreateChapters do
       add :date, :date
 
       add :cover, :string
-      add :path, :string
       add :files, {:array, :string}
 
       add :enc, :string

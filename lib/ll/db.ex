@@ -1,9 +1,10 @@
 defmodule LL.DB do
   use Agent
+  require Ecto.Query.API
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Chapter, Series}
+  alias LL.{Repo, Chapter, Series, Tag}
 
   @cooldown 300
 
@@ -149,4 +150,53 @@ defmodule LL.DB do
   def all(), do: get(:all)
 
   def all_safe(), do: get(:all_safe)
+
+  def search_tags(terms) do
+    conditions =
+      Enum.reduce(terms, false, &Ecto.Query.dynamic([t], ilike(t.name, ^"%#{&1}%") or ^&2))
+
+    from t in Tag, where: ^conditions
+  end
+
+  def search(terms) when is_list(terms) do
+    nil
+  end
+
+  @re_search ~r/((?:-){0,1}(?:\"(?:\\(?:\\\\)*\")+(?:[^\\](?:\\(?:\\\\)*\")+|[^\"])*\"|\"(?:[^\\](?:\\(?:\\\\)*\")+|[^\"])*\"|[^ ]+))/iu
+
+  def search(query) do
+    {terms_include, terms_exclude} =
+      Regex.scan(@re_search, query)
+      |> Enum.map(&Enum.at(&1, 1))
+      |> Enum.map(&String.downcase(&1))
+      |> Enum.map(fn term ->
+        case term do
+          "-" <> term ->
+            {false, term}
+
+          term ->
+            {true, term}
+        end
+      end)
+      |> Enum.map(fn {inc, term} ->
+        {inc,
+         if String.length(term) > 1 and String.starts_with?(term, "\"") and
+              String.ends_with?(term, "\"") do
+           String.slice(term, 1, String.length(term) - 2)
+         else
+           term
+         end}
+      end)
+      |> Enum.map(&{elem(&1, 0), String.replace(elem(&1, 1), "\\\"", "\"")})
+      |> Enum.filter(&(String.length(elem(&1, 1)) > 0))
+      |> Enum.reduce({[], []}, fn {term_include, term}, {include, exclude} ->
+        if term_include do
+          {include ++ [term], exclude}
+        else
+          {include, exclude ++ [term]}
+        end
+      end)
+
+    {terms_include, terms_exclude}
+  end
 end

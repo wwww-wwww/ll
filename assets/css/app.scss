@@ -81,9 +81,14 @@
 }
 
 .ReaderLive {
+  li .tags {
+    display: inline-flex;
+  }
+
   .tags {
     display: flex;
     gap: 0.5em;
+    flex-wrap: wrap;
   }
 
   .cover {

@@ -16,7 +16,6 @@ defmodule LL.Chapter do
     field :date, :date
 
     field :cover, :string
-    field :path, :string
     field :files, {:array, :string}
     field :filesize, :integer, default: 0
 
@@ -42,7 +41,6 @@ defmodule LL.Chapter do
       :source_id,
       :date,
       :cover,
-      :path,
       :files,
       :filesize,
       :enc,

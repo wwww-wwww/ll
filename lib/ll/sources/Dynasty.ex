@@ -309,64 +309,78 @@ defmodule LL.Sources.Dynasty do
                     nil
 
                   [tag] ->
-                    Repo.one(from(s in Series, where: s.source_id == ^tag.id))
+                    case Repo.get_by(Series, source_id: tag.id) do
+                      nil ->
+                        grouping_path = @grouping_from_ids[tag.type]
+
+                        Downloader.add(
+                          "#{@root}/#{grouping_path}/#{tag.id}.json",
+                          :get,
+                          &CriticalWriter.add(fn ->
+                            on_series(tag.id, grouping_path, category, &1)
+                          end)
+                        )
+
+                        :skip
+
+                      series ->
+                        series
+                    end
                 end
 
               series ->
                 series
             end
 
-          title = data["long_title"] || data["title"]
+          if series != :skip do
+            pages = Enum.map(pages, & &1["url"])
+            files_sizes = List.duplicate(0, length(pages))
 
-          pages = Enum.map(pages, & &1["url"])
-          files_sizes = List.duplicate(0, length(pages))
+            # TODO: id collision
 
-          # TODO: id collision
+            changeset =
+              Chapter.change(%Chapter{}, %{
+                id: data_url,
+                title: data["long_title"] || data["title"],
+                source: "dynasty",
+                source_id: data_url,
+                date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
+                files: pages,
+                original_files: pages,
+                original_files_sizes: files_sizes,
+                number: c_n
+              })
 
-          changeset =
-            Chapter.change(%Chapter{}, %{
-              id: data_url,
-              title: title,
-              source: "dynasty",
-              source_id: data_url,
-              date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
-              files: pages,
-              original_files: pages,
-              original_files_sizes: files_sizes,
-              number: c_n
-            })
+            {:ok, chapter} =
+              if series do
+                changeset
+                |> Chapter.put_series(series)
+              else
+                changeset
+                |> Chapter.change(%{cover: Enum.at(pages, 0)})
+              end
+              |> Chapter.put_tags(tags)
+              |> Repo.insert()
 
-          {:ok, chapter} =
-            if series do
-              changeset
-              |> Chapter.change(%{path: series.id})
-              |> Chapter.put_series(series)
-            else
-              changeset
-              |> Chapter.change(%{cover: Enum.at(pages, 0)})
+            LL.DB.reset()
+
+            download_cover(chapter)
+
+            download_pages(chapter)
+            |> Downloader.save_all()
+
+            if !is_nil(series) and is_nil(c_n) do
+              grouping_path = @grouping_from_ids[series.type]
+
+              Downloader.add(
+                "#{@root}/#{grouping_path}/#{series.source_id}.json",
+                :get,
+                &CriticalWriter.add(fn ->
+                  on_series(series.source_id, grouping_path, category, &1)
+                end)
+              )
             end
-            |> Chapter.put_tags(tags)
-            |> Repo.insert()
-
-          LL.DB.reset()
-
-          # Request series to retrieve chapter/listing number
-          if is_nil(c_n) and series do
-            grouping_path = @grouping_from_ids[series.type]
-
-            Downloader.add(
-              "#{@root}/#{grouping_path}/#{series.source_id}.json",
-              :get,
-              &CriticalWriter.add(fn ->
-                on_series(series.source_id, grouping_path, category, &1)
-              end)
-            )
           end
-
-          download_cover(chapter)
-
-          download_pages(chapter)
-          |> Downloader.save_all()
 
         err ->
           Status.put("dynasty/chapters/#{data_url}", "Error: #{inspect(err)}")
@@ -694,7 +708,6 @@ defmodule LL.Sources.Dynasty do
       |> Kernel.||("cover.jpg")
       |> URI.decode()
       |> Path.basename()
-      |> IO.inspect()
 
     Downloader.save("#{@root}/#{cover}", "#{series.id}_cover_#{filename}", fn path, _headers ->
       File.mkdir_p(@file_path_covers)

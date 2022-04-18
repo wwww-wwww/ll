@@ -50,6 +50,26 @@ defmodule LL do
     end
   end
 
+  def test2() do
+    Repo.get(Chapter, "meteoroid_ch01")
+    |> case do
+      nil -> nil
+      s -> Repo.delete(s)
+    end
+
+    Repo.get(Chapter, "meteoroid_ch02")
+    |> case do
+      nil -> nil
+      s -> Repo.delete(s)
+    end
+
+    Repo.get(Series, "meteoroid_ch02")
+    |> case do
+      nil -> nil
+      s -> Repo.delete(s)
+    end
+  end
+
   def sync() do
     Sources.sync()
   end
@@ -270,6 +290,44 @@ defmodule LL do
         |> Ecto.Changeset.put_assoc(:category, bandori)
         |> Repo.update()
       end
+    end)
+  end
+
+  def fix_series_paths() do
+    Repo.all(Chapter)
+    |> Repo.preload(:series)
+    |> Enum.filter(&(&1.series != nil))
+    |> Enum.each(fn chapter ->
+      chapter.files
+      |> Enum.with_index()
+      |> Enum.each(fn {file, n} ->
+        if not String.starts_with?(file, Path.join("files/dynasty", chapter.series.id)) and
+             not String.starts_with?(file, "tmp") do
+          new_path =
+            Path.join("files/dynasty", chapter.series.id)
+            |> Path.join(chapter.id)
+            |> Path.join(Path.basename(file))
+
+          ch2 = Repo.get(Chapter, chapter.id)
+          new_files = Enum.take(ch2.files, n) ++ [new_path] ++ Enum.drop(ch2.files, n + 1)
+
+          IO.inspect("#{file} -> #{new_path}")
+
+          Path.join(files_root(), new_path)
+          |> Path.dirname()
+          |> File.mkdir_p()
+
+          File.rename(Path.join(files_root(), file), Path.join(files_root(), new_path))
+          |> case do
+            :ok ->
+              Chapter.change(ch2, %{files: new_files})
+              |> Repo.update()
+
+            err ->
+              IO.inspect(err)
+          end
+        end
+      end)
     end)
   end
 end
