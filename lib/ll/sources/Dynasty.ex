@@ -40,6 +40,8 @@ defmodule LL.Sources.Dynasty do
 
   @groupings Map.keys(@grouping_paths)
 
+  @series_ignore ["pixiv"]
+
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
   def sync(%{type: 0, data_url: data_url, category: category}) do
@@ -119,8 +121,7 @@ defmodule LL.Sources.Dynasty do
 
   def get_series(tagging) do
     series_id =
-      tagging["tags"]
-      |> Enum.filter(&(&1["type"] in @groupings))
+      series_tags(tagging["tags"])
       |> Enum.map(& &1["permalink"])
       |> Enum.at(0)
 
@@ -145,8 +146,11 @@ defmodule LL.Sources.Dynasty do
     Repo.insert_all(Tag, tags, on_conflict: :nothing)
   end
 
-  def get_tags(tags) do
-    Enum.map(tags, &Repo.get(Tag, &1["permalink"]))
+  def get_tags(tags), do: Enum.map(tags, &Repo.get(Tag, &1["permalink"]))
+
+  def series_tags(tags) do
+    Enum.filter(tags, &(&1["type"] in @groupings))
+    |> Enum.filter(&(&1["permalink"] not in @series_ignore))
   end
 
   def add_taggings_tags(taggings) do
@@ -302,9 +306,7 @@ defmodule LL.Sources.Dynasty do
           series =
             case series do
               nil ->
-                tags
-                |> Enum.filter(&(&1.type in @groupings))
-                |> case do
+                case series_tags(tags) do
                   [] ->
                     nil
 
