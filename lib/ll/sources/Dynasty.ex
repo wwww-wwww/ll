@@ -592,6 +592,8 @@ defmodule LL.Sources.Dynasty do
               |> Ecto.Changeset.change(%{cover: new_path})
               |> Repo.update()
 
+              LL.DB.reset()
+
               File.rm(path)
             end)
           end
