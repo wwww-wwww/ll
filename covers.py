@@ -25,10 +25,10 @@ if __name__ == "__main__":
     im = im.convert("RGB")
 
   size = im.size
-  if size[1] > size[0] and size[1] > 768:
+  if size[1] >= size[0] and size[1] > 768:
     height = 768
     width = round(height * size[0] / size[1])
-  elif size[0] > size[1] and size[0] > 768:
+  elif size[0] >= size[1] and size[0] > 768:
     width = 768
     height = round(width * size[1] / size[0])
   else:

@@ -141,7 +141,7 @@ defmodule LL.DB do
           state
         end
 
-      {state |> Map.get(key), state}
+      {Map.get(state, key), state}
     end)
   end
 

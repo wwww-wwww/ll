@@ -298,11 +298,6 @@ defmodule LL.Sources.Dynasty do
         {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
           add_tags(tags)
 
-          tags =
-            get_tags(tags)
-            |> Kernel.++([category_tag(category)])
-            |> Enum.uniq()
-
           series =
             case series do
               nil ->
@@ -352,6 +347,11 @@ defmodule LL.Sources.Dynasty do
                 original_files_sizes: files_sizes,
                 number: c_n
               })
+
+            tags =
+              get_tags(tags)
+              |> Kernel.++([category_tag(category)])
+              |> Enum.uniq()
 
             {:ok, chapter} =
               if series do

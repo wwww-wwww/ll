@@ -22,11 +22,6 @@
 
 <div>
 <input phx-hook="search" id="search" type="text" name="q" value="<%= @query %>" />
-<datalist id="results">
-  <%= for tag <- @suggestions do %>
-  <option value="<%= tag %>"><%= tag %></option>
-  <% end %>
-</datalist>
 
 <%= live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) %>
 <%= live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) %>
