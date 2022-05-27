@@ -1,12 +1,8 @@
-import subprocess, os, time
+import os, shutil, subprocess, time
 from PIL import Image, ImageChops
 from argparse import ArgumentParser
-import shutil
-
-jobs = []
 
 cjxl_args = ["cjxl", "-q", "100", "-e", "9", "-E", "3", "-I", "1"]
-#cjxl_args = ["cjxl", "-q", "100", "-e", "6"]
 
 
 def is_gray(im):
@@ -18,6 +14,16 @@ def is_gray(im):
   return True
 
 
+def has_no_alpha(im):
+  return im.getextrema()[-1][0] == 255
+
+
+def encode(file):
+  p = subprocess.run(cjxl_args + [file, file + ".jxl"], capture_output=True)
+  if p.returncode != 0: exit(1)
+  return file + ".jxl"
+
+
 if __name__ == "__main__":
   argparser = ArgumentParser()
   argparser.add_argument("input")
@@ -26,84 +32,43 @@ if __name__ == "__main__":
   args = argparser.parse_args()
 
   inputs = [args.input]
-  gray = False
+
+  im = Image.open(args.input)
 
   if args.check_color:
-    im = Image.open(args.input)
-    # assume not JPEG if LA or RGBA
-    gray = im.mode == "L" or im.mode == "LA"
-    if im.mode == "LA":
-      if im.getextrema()[-1][0] == 255:
-        im.convert("L").save(args.input + "_L.png")
-        inputs.append(args.input + "_L.png")
-    elif im.mode == "RGB":
+    if im.mode == "RGB":
       if is_gray(im):
         im.convert("L").save(args.input + "_L.png")
         inputs.append(args.input + "_L.png")
-      elif os.path.splitext(args.input)[1].lower() in [".jpg", ".jpeg"]:
-        im.save(args.input + "_RGB.png")
+
+    if im.mode == "RGBA":
+      if has_no_alpha(im) and is_gray(im):
+        im.convert("L").save(args.input + "_L.png")
+        inputs.append(args.input + "_L.png")
+
+      elif has_no_alpha(im):
+        im.convert("RGB").save(args.input + "_RGB.png")
         inputs.append(args.input + "_RGB.png")
-    elif im.mode == "RGBA":
-      if is_gray(im):
-        if im.getextrema()[-1][0] == 255:
-          im.convert("L").save(args.input + "_L.png")
-          inputs.append(args.input + "_L.png")
-        else:
-          im.convert("LA").save(args.input + "_LA.png")
-          inputs.append(args.input + "_LA.png")
-      else:
-        if im.getextrema()[-1][0] == 255:
-          im.convert("RGB").save(args.input + "_RGB.png")
-          inputs.append(args.input + "_RGB.png")
-    elif im.mode == "L":
-      if os.path.splitext(args.input)[1].lower() in [".jpg", ".jpeg"]:
-        im.save(args.input + "_L.png")
+
+      elif is_gray(im):
+        im.convert("LA").save(args.input + "_LA.png")
+        inputs.append(args.input + "_LA.png")
+
+    if im.mode == "LA":
+      if has_no_alpha(im):
+        im.convert("L").save(args.input + "_L.png")
         inputs.append(args.input + "_L.png")
+
+  if im.format != "PNG":
+    im.save(args.input + ".png")
+    inputs.append(args.input + ".png")
 
   outputs = []
-
   for file in inputs:
-    ext = os.path.splitext(file)[1].lower()
-    if ext == ".png":
-      cmd = cjxl_args + [
-        file,
-        file + ".jxl",
-      ]
-      print(" ".join(cmd))
-      subprocess.run(cmd, capture_output=False)
-      outputs.append(file + ".jxl")
-    elif ext == ".jpg" or ext == ".jpeg":
-      cmd = cjxl_args + [
-        file,
-        file + ".jxl",
-      ]
-      print(" ".join(cmd))
-      subprocess.run(cmd, capture_output=False)
-      outputs.append(file + ".jxl")
-
-      #if not gray:
-      #  # lossy transcode
-      #  cmd = cjxl_args + [
-      #    "-j",
-      #    file,
-      #    file + ".j.jxl",
-      #  ]
-      #  print(" ".join(cmd))
-      #  subprocess.run(cmd, capture_output=False)
-      #  outputs.append(file + ".j.jxl")
-    elif ext == ".gif":
-      cmd = cjxl_args + [
-        file,
-        file + ".jxl",
-      ]
-      subprocess.run(cmd, capture_output=False)
-      outputs.append(file + ".jxl")
+    outputs.append(encode(file))
 
   outputs.sort(key=lambda f: os.path.getsize(f))
-
   shutil.copyfile(outputs[0], args.output)
-  #os.remove(outputs[0])
-  #os.rename(outputs[0], args.output)
 
   while True:
     try:
