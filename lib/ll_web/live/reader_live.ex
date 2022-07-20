@@ -40,7 +40,7 @@ defmodule LLWeb.ReaderLive do
         date =
           case series.chapters do
             [] -> series.inserted_at
-            chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+            chapters -> chapters |> Enum.max_by(& &1.date, Date) |> Map.get(:date)
           end
 
         chapters = Enum.sort_by(series.chapters, &(&1.number || 0))

@@ -67,7 +67,7 @@ defmodule LL.DB do
         date =
           case s.chapters do
             [] -> s.inserted_at
-            chapters -> chapters |> Enum.max_by(& &1.date) |> Map.get(:date)
+            chapters -> chapters |> Enum.max_by(& &1.date, Date) |> Map.get(:date)
           end
 
         tags = tag_names(s.tags)
