@@ -83,4 +83,10 @@ defmodule LLWeb.ReaderLive do
   def handle_params(_params, _session, socket) do
     {:noreply, socket}
   end
+
+  def handle_event("update", _, socket) do
+    LL.Sources.source_module(socket.assigns.series.source).update(socket.assigns.series)
+
+    {:noreply, socket}
+  end
 end

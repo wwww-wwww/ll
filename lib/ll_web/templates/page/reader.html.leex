@@ -36,6 +36,10 @@
   <span><%= @date %></span>
 </div>
 
+<%= if @type == :series do %>
+<button phx-click="update">Update</button>
+<% end %>
+
 <% tags = @tags -- authors %>
 
 <%= if length(tags) > 0 do %>

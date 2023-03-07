@@ -733,4 +733,30 @@ defmodule LL.Sources.Dynasty do
   end
 
   def download_cover(_), do: nil
+
+  def update(%Series{} = series) do
+    grouping_path = @grouping_from_ids[series.type]
+
+    series.tags
+    |> Enum.filter(&(&1.type == 4))
+    |> case do
+      [%{id: category}] ->
+        case Repo.get(LL.Category, String.slice(category, 9..-1)) do
+          nil ->
+            nil
+
+          category ->
+            Downloader.add(
+              "#{@root}/#{grouping_path}/#{series.source_id}.json",
+              :get,
+              &CriticalWriter.add(fn ->
+                on_series(series.source_id, grouping_path, category, &1)
+              end)
+            )
+        end
+
+      _ ->
+        nil
+    end
+  end
 end
