@@ -450,7 +450,7 @@ defmodule LL.Sources.Dynasty do
           |> Enum.filter(&(&1.type != 1))
 
         {:ok, series} =
-          case Repo.get(Series, data_url) do
+          case Repo.get_by(Series, source_id: data_url) do
             nil ->
               # TODO: id collision
               %Series{
@@ -510,6 +510,44 @@ defmodule LL.Sources.Dynasty do
         end)
 
         on_series_chapter_tags(taggings)
+
+      {:error, %{data: data} = err} ->
+        case Regex.run(
+               ~r/^<html><body>You are being <a href="https:\/\/dynasty-scans.com\/series\/(.+?)\.json">redirected<\/a>\.<\/body><\/html>$/,
+               data
+             ) do
+          [_, new_id] ->
+            Status.put(
+              "dynasty/#{grouping_type}/#{data_url}",
+              "Source #{data_url} changed id to #{new_id}"
+            )
+
+            case Repo.get_by(Series, source_id: data_url) do
+              nil ->
+                Status.put("dynasty/#{grouping_type}/#{data_url}", "Error: #{inspect(err)}")
+
+              series ->
+                Ecto.Changeset.change(series, source_id: new_id)
+                |> Repo.update()
+                |> case do
+                  {:ok, series} ->
+                    Repo.preload(series, :chapters)
+                    |> Map.get(:chapters)
+                    |> Enum.each(&Repo.delete/1)
+
+                    Path.join(@file_path, series.id)
+                    |> File.rm_rf()
+
+                    update(Repo.preload(series, :tags))
+
+                  err ->
+                    Status.put("dynasty/#{grouping_type}/#{data_url}", "Error: #{inspect(err)}")
+                end
+            end
+
+          _ ->
+            Status.put("dynasty/#{grouping_type}/#{data_url}", "Error: #{inspect(err)}")
+        end
 
       err ->
         Status.put("dynasty/#{grouping_type}/#{data_url}", "Error: #{inspect(err)}")
@@ -657,11 +695,11 @@ defmodule LL.Sources.Dynasty do
                 first_page = pages |> Enum.at(0) |> Map.get("url")
 
                 CriticalWriter.add(fn ->
-                  Repo.get(Series, series.id)
+                  Repo.get_by(Series, source_id: series.id)
                   |> Ecto.Changeset.change(%{cover: "!0" <> first_page})
                   |> Repo.update()
 
-                  Repo.get(Series, series.id)
+                  Repo.get_by(Series, source_id: series.id)
                   |> download_cover()
                 end)
 
