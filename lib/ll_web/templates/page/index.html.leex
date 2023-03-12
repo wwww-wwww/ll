@@ -3,6 +3,7 @@
 <div>
   <div>Hosting <%= @n_files %> jxl files</div>
   <div>Filesize: <%= Size.humanize!(@filesize, round: 1) %></div>
+  <div>Original filesize: <%= Size.humanize!(@original_filesize, round: 1) %></div>
   <div>Compression ratio: <%= round(@original_filesize / @filesize * 10000) / 100 %>%</div>
 </div>
 
@@ -10,7 +11,7 @@
 <div>
   <a href="/apk/app-standard-universal-debug.apk">app-standard-universal-debug.apk</a>
   <span>[<%= @apk_date %>]</span>
-  <a href="/apk/tachiyomi-en.grass-v1.2.3-debug.apk">tachiyomi-en.grass-v1.2.3-debug.apk</a>
+  <a href="/apk/tachiyomi-en.grass-v1.3.4-debug.apk">tachiyomi-en.grass-v1.3.4-debug.apk</a>
 </div>
 <% end %>
 
