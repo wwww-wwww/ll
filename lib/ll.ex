@@ -7,6 +7,8 @@ defmodule LL do
   if it comes from the database, an external API or others.
   """
 
+  import Ecto.Query, only: [from: 2]
+
   alias LL.{Repo, Downloader, Encoder, Chapter, Series, Sources}
 
   def files_root(), do: Application.get_env(:ll, :files_root)
@@ -329,5 +331,30 @@ defmodule LL do
         end
       end)
     end)
+  end
+
+  def stats() do
+    series =
+      Repo.all(Series)
+      |> Repo.preload([:tags, {:chapters, :tags}])
+
+    chapters =
+      Repo.all(from(u in Chapter, where: is_nil(u.series_id)))
+      |> Repo.preload(:tags)
+
+    series_chapters =
+      series
+      |> Enum.map(& &1.chapters)
+      |> List.flatten()
+
+    (chapters ++ series_chapters)
+    |> Enum.map(fn chapter ->
+      chapter.files
+      |> Enum.map(&Path.join(LL.files_root(), &1))
+      |> Enum.zip(chapter.original_files_sizes)
+      |> Enum.filter(&(elem(&1, 0) |> File.exists?()))
+      |> Enum.map(&{elem(&1, 0), elem(&1, 1) / Map.get(File.stat!(elem(&1, 0)), :size)})
+    end)
+    |> List.flatten()
   end
 end

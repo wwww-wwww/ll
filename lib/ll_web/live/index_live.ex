@@ -28,6 +28,7 @@ defmodule LLWeb.IndexLive do
        n_files: DB.n_files(),
        original_filesize: DB.get(:original_filesize),
        filesize: DB.get(:filesize),
+       ratios: DB.get(:ratios),
        query: query,
        results: results,
        suggestions: [],

@@ -52,4 +52,22 @@ defmodule LLWeb.PageView do
       type -> type
     end
   end
+
+  def percent(n), do: round(n * 10000) / 100
+
+  def percentile(list, n) do
+    s = Enum.sort(list)
+    r = n / 100.0 * (length(list) - 1)
+    f = :erlang.trunc(r)
+    lower = Enum.at(s, f)
+    upper = Enum.at(s, f + 1)
+    lower + (upper - lower) * (r - f)
+  end
+
+  def mean(list), do: Enum.sum(list) / length(list)
+
+  def var(list) do
+    list_mean = mean(list)
+    list |> Enum.map(fn x -> (list_mean - x) * (list_mean - x) end) |> mean
+  end
 end

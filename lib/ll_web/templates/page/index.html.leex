@@ -1,10 +1,19 @@
 <h1>Index</h1>
 
 <div>
-  <div>Hosting <%= @n_files %> jxl files</div>
+  <div><%= @n_files %> jxl files</div>
   <div>Filesize: <%= Size.humanize!(@filesize, round: 1) %></div>
   <div>Original filesize: <%= Size.humanize!(@original_filesize, round: 1) %></div>
-  <div>Compression ratio: <%= round(@original_filesize / @filesize * 10000) / 100 %>%</div>
+  <div>Compression ratio: <%= percent(@original_filesize / @filesize) %>%</div>
+  <div>
+    <span>Mean: <%= percent(Enum.sum(@ratios) / length(@ratios)) %>%</span>,
+    <span>Median: <%= Enum.sort(@ratios) |> Enum.at(trunc(length(@ratios) / 2)) |> percent() %>%</span>,
+    <span>Min: <%= Enum.min(@ratios) |> percent() %>%</span>,
+    <span>Max: <%= Enum.max(@ratios) |> percent() %>%</span>,
+    <span>10th %ile: <%= percentile(@ratios, 10) |> percent() %>%</span>,
+    <span>90th %ile: <%= percentile(@ratios, 90) |> percent() %>%</span>,
+    <span>sd: <%= var(@ratios) |> :math.sqrt() |> percent() %>%</span>
+  </div>
 </div>
 
 <%= if @apk_date != nil do %>

@@ -13,7 +13,8 @@ defmodule LL.DB do
             all: [],
             all_safe: "{}",
             original_filesize: 0,
-            filesize: 0
+            filesize: 0,
+            ratios: []
 
   def start_link(_opts) do
     Agent.start_link(fn -> %__MODULE__{} end, name: __MODULE__)
@@ -54,6 +55,10 @@ defmodule LL.DB do
       |> Stream.map(& &1.filesize)
       |> Stream.filter(&(!is_nil(&1)))
       |> Enum.sum()
+
+    ratios =
+      (chapters ++ series_chapters)
+      |> Enum.map(&(Enum.sum(&1.original_files_sizes) / &1.filesize))
 
     n_files =
       (chapters ++ series_chapters)
@@ -120,7 +125,8 @@ defmodule LL.DB do
       all: all,
       all_safe: all_safe,
       filesize: filesize,
-      original_filesize: original_filesize
+      original_filesize: original_filesize,
+      ratios: ratios
     }
   end
 
