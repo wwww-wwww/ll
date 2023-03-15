@@ -535,7 +535,8 @@ defmodule LL.Sources.Dynasty do
                     |> Map.get(:chapters)
                     |> Enum.each(&Repo.delete/1)
 
-                    Path.join(@file_path, series.id)
+                    Path.join(LL.files_root(), @file_path)
+                    |> Path.join(series.id)
                     |> File.rm_rf()
 
                     update(Repo.preload(series, :tags))
