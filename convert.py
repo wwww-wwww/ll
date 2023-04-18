@@ -2,7 +2,7 @@ import os, shutil, subprocess, time
 from PIL import Image, ImageChops
 from argparse import ArgumentParser
 
-cjxl_args = ["cjxl", "-q", "100", "-e", "9", "-E", "3", "-I", "1"]
+cjxl_args = ["cjxl", "-q", "100", "-e", "9", "-E", "3", "-I", "100"]
 
 
 def is_gray(im):
