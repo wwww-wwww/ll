@@ -5,7 +5,7 @@ defmodule LL.Series do
   schema "series" do
     field :id, :string, primary_key: true
     field :title, :string
-    field :description, :string, size: 4096
+    field :description, :string
     field :source, :string
     field :source_id, :string
 
