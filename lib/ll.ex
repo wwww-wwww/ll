@@ -357,4 +357,16 @@ defmodule LL do
     end)
     |> List.flatten()
   end
+
+  def update_series(series) do
+    Sources.source_module(series.source).update(series)
+  end
+
+  def sync_series() do
+    downloader = Downloader.get()
+
+    if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
+      Repo.all(Series) |> Repo.preload(:tags) |> Enum.each(&update_series/1)
+    end
+  end
 end

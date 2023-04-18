@@ -32,6 +32,12 @@ defmodule LLWeb.StatusLive do
     {:noreply, socket}
   end
 
+  def handle_event("sync_series", _, socket) do
+    LL.sync_series()
+
+    {:noreply, socket}
+  end
+
   def handle_event("encode_pages", _, socket) do
     LL.encode_missing()
 
