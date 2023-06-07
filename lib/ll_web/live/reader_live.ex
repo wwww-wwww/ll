@@ -102,4 +102,14 @@ defmodule LLWeb.ReaderLive do
 
     {:noreply, socket}
   end
+
+  def handle_event("update_chapters", _, socket) do
+    case Map.get(socket.assigns, :series) do
+      nil -> [socket.assigns.chapter]
+      series -> series.chapters
+    end
+    |> Enum.each(&LL.Sources.source_module(&1.source).update(&1))
+
+    {:noreply, socket}
+  end
 end

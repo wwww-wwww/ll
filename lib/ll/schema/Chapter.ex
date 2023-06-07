@@ -50,6 +50,7 @@ defmodule LL.Chapter do
     ])
   end
 
+  def put_series(changeset, nil), do: changeset
   def put_series(changeset, series), do: put_assoc(changeset, :series, series)
 
   def put_tags(changeset, tags), do: put_assoc(changeset, :tags, tags)
@@ -98,19 +99,46 @@ defmodule LL.Chapter do
     end)
   end
 
-  def delete(%__MODULE__{} = chapter) do
+  def files_path(%__MODULE__{series_id: series_id, source_id: source_id} = chapter) do
+    root =
+      Path.join(
+        LL.files_root(),
+        LL.Sources.source_module(chapter.source).file_path()
+      )
+
+    case series_id do
+      nil -> Path.join(root, source_id)
+      series_id -> Path.join(root, series_id) |> Path.join(source_id)
+    end
+  end
+
+  def delete_files(%__MODULE__{} = chapter) do
     Enum.each(chapter.files, &File.rm(Path.join(LL.files_root(), &1)))
+    files_path(chapter) |> File.rmdir()
+  end
 
-    Path.join(
-      LL.files_root(),
-      LL.Sources.source_module(chapter.source).file_path()
-    )
-    |> Path.join(chapter.source_id)
-    |> File.rmdir()
+  def delete(%__MODULE__{} = chapter) do
+    delete_files(chapter)
 
-    Path.join(LL.files_root(), chapter.cover)
-    |> File.rm()
+    case chapter.cover do
+      nil -> nil
+      cover -> Path.join(LL.files_root(), cover) |> File.rm()
+    end
 
     Repo.delete(chapter)
+  end
+
+  def get_category(%__MODULE__{} = chapter) do
+    case Repo.preload(chapter, [:tags, :series]) do
+      %{series: nil, tags: tags} ->
+        tags
+
+      %{series: series} ->
+        Repo.preload(series, [:tags])
+        |> Map.get(:tags)
+    end
+    |> Enum.filter(&(&1.type == 4))
+    |> Enum.at(0)
+    |> LL.Category.from_tag()
   end
 end

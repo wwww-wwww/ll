@@ -192,7 +192,7 @@ defmodule LL do
 
   def update_covers() do
     Repo.all(Series)
-    |> Kernel.++(Repo.all(Chapter) |> Enum.filter(&(&1.series == nil)))
+    |> Kernel.++(Repo.all(Chapter))
     |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
   end
 
@@ -368,5 +368,13 @@ defmodule LL do
     if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
       Repo.all(Series) |> Repo.preload(:tags) |> Enum.each(&update_series/1)
     end
+  end
+
+  def sync_chapters() do
+    Repo.all(Chapter)
+    |> Enum.filter(
+      &(NaiveDateTime.diff(DateTime.now!("Etc/UTC") |> DateTime.to_naive(), &1.updated_at) > 3600)
+    )
+    |> Enum.each(&Sources.source_module(&1.source).update(&1))
   end
 end

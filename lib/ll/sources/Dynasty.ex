@@ -1,7 +1,7 @@
 defmodule LL.Sources.Dynasty do
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Chapter, Series, Tag, Downloader, Encoder, Status, Repo, CriticalWriter}
+  alias LL.{Category, Chapter, Series, Tag, Downloader, Encoder, Status, Repo, CriticalWriter}
 
   @root "https://dynasty-scans.com"
 
@@ -40,7 +40,7 @@ defmodule LL.Sources.Dynasty do
 
   @groupings Map.keys(@grouping_paths)
 
-  @series_ignore ["pixiv"]
+  @series_ignore ["pixiv", "no_title"]
 
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
@@ -105,22 +105,6 @@ defmodule LL.Sources.Dynasty do
 
   def series_exists?(permalink) when not is_nil(permalink),
     do: Repo.one(from(s in Series, where: s.source_id == ^permalink)) != nil
-
-  def category_tag(category) do
-    Repo.insert_all(
-      Tag,
-      [
-        %{
-          id: "category_#{category.id}",
-          name: category.name,
-          type: 4
-        }
-      ],
-      on_conflict: :nothing
-    )
-
-    Repo.get(Tag, "category_#{category.id}")
-  end
 
   def get_series(tagging) do
     series_id =
@@ -296,100 +280,117 @@ defmodule LL.Sources.Dynasty do
 
   # safe
   def on_chapter(data_url, category, {:ok, data, _headers}, series \\ nil, c_n \\ nil) do
-    if !chapter_exists?(data_url) do
-      case Jason.decode(data) do
-        {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
-          add_tags(tags)
+    case Jason.decode(data) do
+      {:ok, %{"added_on" => added_on, "pages" => pages, "tags" => tags} = data} ->
+        add_tags(tags)
 
-          series =
-            case series do
-              nil ->
-                case series_tags(tags) do
-                  [] ->
-                    nil
+        series =
+          case series do
+            nil ->
+              case series_tags(tags) do
+                [] ->
+                  nil
 
-                  [tag] ->
-                    case Repo.get_by(Series, source_id: tag.id) do
-                      nil ->
-                        grouping_path = @grouping_from_ids[tag.type]
+                [tag] ->
+                  case Repo.get_by(Series, source_id: tag["permalink"]) do
+                    nil ->
+                      grouping_path = @grouping_paths[tag["type"]]
 
-                        Downloader.add(
-                          "#{@root}/#{grouping_path}/#{tag.id}.json",
-                          :get,
-                          &CriticalWriter.add(fn ->
-                            on_series(tag.id, grouping_path, category, &1)
-                          end)
-                        )
+                      IO.inspect("DOWNLOAD SERIES")
+                      IO.inspect("#{@root}/#{grouping_path}/#{tag["permalink"]}.json")
 
-                        :skip
+                      Downloader.add(
+                        "#{@root}/#{grouping_path}/#{tag["permalink"]}.json",
+                        :get,
+                        &CriticalWriter.add(fn ->
+                          on_series(tag["permalink"], grouping_path, category, &1)
+                        end)
+                      )
 
-                      series ->
-                        series
-                    end
-                end
+                      :skip
 
-              series ->
-                series
-            end
-
-          if series != :skip do
-            pages = Enum.map(pages, & &1["url"])
-            files_sizes = List.duplicate(0, length(pages))
-
-            # TODO: id collision
-
-            changeset =
-              Chapter.change(%Chapter{}, %{
-                id: data_url,
-                title: data["long_title"] || data["title"],
-                source: "dynasty",
-                source_id: data_url,
-                date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
-                files: pages,
-                original_files: pages,
-                original_files_sizes: files_sizes,
-                number: c_n
-              })
-
-            tags =
-              get_tags(tags)
-              |> Kernel.++([category_tag(category)])
-              |> Enum.uniq()
-
-            {:ok, chapter} =
-              if series do
-                changeset
-                |> Chapter.put_series(series)
-              else
-                changeset
-                |> Chapter.change(%{cover: Enum.at(pages, 0)})
+                    series ->
+                      series
+                  end
               end
-              |> Chapter.put_tags(tags)
-              |> Repo.insert()
 
-            LL.DB.reset()
-
-            download_cover(chapter)
-
-            download_pages(chapter)
-            |> Downloader.save_all()
-
-            if !is_nil(series) and is_nil(c_n) do
-              grouping_path = @grouping_from_ids[series.type]
-
-              Downloader.add(
-                "#{@root}/#{grouping_path}/#{series.source_id}.json",
-                :get,
-                &CriticalWriter.add(fn ->
-                  on_series(series.source_id, grouping_path, category, &1)
-                end)
-              )
-            end
+            series ->
+              series
           end
 
-        err ->
-          Status.put("dynasty/chapters/#{data_url}", "Error: #{inspect(err)}")
-      end
+        if series != :skip do
+          pages = Enum.map(pages, & &1["url"])
+          files_sizes = List.duplicate(0, length(pages))
+
+          # TODO: id collision
+
+          changeset =
+            case get_chapter(data_url) do
+              nil ->
+                %Chapter{
+                  id: data_url,
+                  original_files: pages,
+                  original_files_sizes: files_sizes,
+                  files: pages,
+                  cover: Enum.at(pages, 0)
+                }
+
+              chapter ->
+                chapter = Repo.preload(chapter, [:tags, :series])
+
+                if pages != chapter.original_files do
+                  Chapter.delete_files(chapter)
+
+                  Chapter.change(chapter, %{
+                    original_files: pages,
+                    original_files_sizes: files_sizes,
+                    files: pages
+                  })
+                else
+                  chapter
+                end
+            end
+            |> Chapter.change(%{
+              title: data["long_title"] || data["title"],
+              source: "dynasty",
+              source_id: data_url,
+              date: NaiveDateTime.from_iso8601!(added_on) |> NaiveDateTime.to_date(),
+              number: c_n
+            })
+
+          tags =
+            get_tags(tags)
+            |> Kernel.++([Category.tag(category)])
+            |> Enum.uniq()
+
+          {:ok, chapter} =
+            changeset
+            |> Chapter.put_series(series)
+            |> Chapter.put_tags(tags)
+            |> Repo.insert_or_update(force: true)
+
+          LL.DB.reset()
+
+          download_cover(chapter)
+
+          download_pages(chapter)
+          |> Downloader.save_all()
+
+          if !is_nil(series) and is_nil(c_n) do
+            grouping_path = @grouping_from_ids[series.type]
+
+            Downloader.add(
+              "#{@root}/#{grouping_path}/#{series.source_id}.json",
+              :get,
+              &CriticalWriter.add(fn ->
+                on_series(series.source_id, grouping_path, category, &1)
+              end)
+            )
+          end
+        end
+
+      err ->
+        Status.put("dynasty/chapters/#{data_url}", "Error: #{inspect(err)}")
     end
   end
 
@@ -446,7 +447,7 @@ defmodule LL.Sources.Dynasty do
 
         Repo.insert_all(Tag, all_tags, on_conflict: :nothing)
 
-        cat_tag = category_tag(category)
+        cat_tag = Category.tag(category)
 
         all_tags =
           all_tags
@@ -621,10 +622,11 @@ defmodule LL.Sources.Dynasty do
       |> Path.rootname()
       |> Kernel.<>(".webp")
 
+    new_path = Path.join(@file_path_covers, "chapter_#{chapter.id}_#{filename}")
+    new_path_disk = Path.join(LL.files_root(), new_path)
+
     Downloader.save("#{@root}/#{cover}", "#{chapter.id}_cover_#{filename}", fn path, _headers ->
       File.mkdir_p(@file_path_covers)
-      new_path = Path.join(@file_path_covers, "chapter_#{chapter.id}_#{filename}")
-      new_path_disk = Path.join(LL.files_root(), new_path)
 
       case System.cmd("python3", ["covers.py", path, new_path_disk]) do
         {_, 0} ->
@@ -800,5 +802,17 @@ defmodule LL.Sources.Dynasty do
       _ ->
         nil
     end
+  end
+
+  def update(%Chapter{} = chapter) do
+    chapter = Repo.preload(chapter, :series)
+
+    Downloader.add(
+      "#{@root}/chapters/#{chapter.source_id}.json",
+      :get,
+      &CriticalWriter.add(fn ->
+        on_chapter(chapter.source_id, Chapter.get_category(chapter), &1, chapter.series)
+      end)
+    )
   end
 end
