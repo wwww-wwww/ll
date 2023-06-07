@@ -5,6 +5,8 @@ defmodule LL.Encoder do
 
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
+  @tmp_dir "tmp"
+
   defstruct id: nil, active: false
 
   def start_link(opts) do
@@ -37,18 +39,20 @@ defmodule LL.Encoder do
         if (Path.extname(path) |> String.downcase()) in @accepted_exts do
           Status.put(state.id, "Encoding #{id} #{n} #{path} -> #{new_path}")
 
+          tmp_path = Path.join(@tmp_dir, UUID.uuid4() <> ".jxl")
+
           new_path_disk = Path.join(LL.files_root(), new_path)
 
-          new_path_disk
-          |> Path.dirname()
-          |> File.mkdir_p()
-
           if not File.exists?(new_path_disk) do
-            case System.cmd("python3", ["convert.py", path, new_path_disk, "--check-color"],
+            case System.cmd("python3", ["convert.py", path, tmp_path, "--check-color"],
                    stderr_to_stdout: true
                  ) do
               {_, 0} ->
-                nil
+                new_path_disk
+                |> Path.dirname()
+                |> File.mkdir_p()
+
+                File.rename(tmp_path, new_path_disk)
 
               err ->
                 IO.inspect(err)
