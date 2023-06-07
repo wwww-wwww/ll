@@ -18,7 +18,7 @@ defmodule LLWeb.IndexLive do
     {size, page, results} = search(query, page, @limit)
 
     apk_date =
-      case File.lstat("apk/app-standard-universal-debug.apk") do
+      case File.lstat("apk/app-standard-universal-release.apk") do
         {:ok, %{ctime: {date, _}}} -> Date.from_erl!(date) |> to_string()
         _ -> nil
       end
