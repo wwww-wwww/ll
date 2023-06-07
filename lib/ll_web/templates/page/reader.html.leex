@@ -13,7 +13,7 @@
   <p class="authors">
     by
     <%= for tag <- sort_tags(authors) do %>
-      <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+      <%= live_redirect(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
     <% end %>
   </p>
   <% end %>
@@ -45,7 +45,7 @@
 <%= if length(tags) > 0 do %>
 <p class="tags">
   <%= for tag <- sort_tags(tags) do %>
-    <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+    <%= live_redirect(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
   <% end %>
 </p>
 <% end %>
@@ -78,14 +78,14 @@
     by
     <span class="authors">
       <%= for tag <- authors do %>
-        <%= live_patch(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+        <%= live_redirect(tag.name, to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
       <% end %>
     </span>
     <% end %>
     <%= if length(tags) > 0 do %>-<% end %>
     <span class="tags">
       <%= for tag <- tags do %>
-        <%= live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
+        <%= live_redirect(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) %>
       <% end %>
     </span>
   </li>

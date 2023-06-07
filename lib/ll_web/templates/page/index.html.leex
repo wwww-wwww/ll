@@ -45,7 +45,7 @@
       <img src="/<%= s.e.cover %>" />
     </td>
     <td class="title">
-      <%= live_patch(s.e.title, to: Routes.reader_path(@socket, s.type, s.e.id)) %>
+      <%= live_redirect(s.e.title, to: Routes.reader_path(@socket, s.type, s.e.id)) %>
     </td>
     <td>
       <div class="tags">
