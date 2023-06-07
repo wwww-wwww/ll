@@ -58,6 +58,7 @@ defmodule LL.DB do
 
     ratios =
       (chapters ++ series_chapters)
+      |> Enum.filter(&(&1.filesize > 0))
       |> Enum.map(&(Enum.sum(&1.original_files_sizes) / &1.filesize))
 
     n_files =
