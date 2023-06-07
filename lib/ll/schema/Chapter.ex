@@ -97,4 +97,20 @@ defmodule LL.Chapter do
       |> Repo.update()
     end)
   end
+
+  def delete(%__MODULE__{} = chapter) do
+    Enum.each(chapter.files, &File.rm(Path.join(LL.files_root(), &1)))
+
+    Path.join(
+      LL.files_root(),
+      LL.Sources.source_module(chapter.source).file_path()
+    )
+    |> Path.join(chapter.source_id)
+    |> File.rmdir()
+
+    Path.join(LL.files_root(), chapter.cover)
+    |> File.rm()
+
+    Repo.delete(chapter)
+  end
 end

@@ -44,6 +44,9 @@ defmodule LL.Sources.Dynasty do
 
   @accepted_exts [".png", ".jpg", ".jpeg"]
 
+  def file_path, do: @file_path
+  def file_path_covers, do: @file_path_covers
+
   def sync(%{type: 0, data_url: data_url, category: category}) do
     Status.put("dynasty/doujins/#{data_url}/groupings", "Syncing")
     Status.put("dynasty/doujins/#{data_url}/chapters", "Syncing")
