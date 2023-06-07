@@ -25,7 +25,7 @@ config :ll, LLWeb.Endpoint,
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.14.0",
+  version: "0.17.19",
   default: [
     args:
       ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static/assets --external:/fonts/* --external:/images/*),
@@ -34,7 +34,7 @@ config :esbuild,
   ]
 
 config :dart_sass,
-  version: "1.39.0",
+  version: "1.62.1",
   default: [
     args: ~w(css/app.scss ../priv/static/assets/app.css),
     cd: Path.expand("../assets", __DIR__)
