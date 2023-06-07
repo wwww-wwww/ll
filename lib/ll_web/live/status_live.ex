@@ -18,6 +18,7 @@ defmodule LLWeb.StatusLive do
     socket =
       socket
       |> assign(status: status())
+      |> assign(page_title: "Status")
 
     {:ok, socket}
   end

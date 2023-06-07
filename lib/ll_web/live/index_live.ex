@@ -23,21 +23,23 @@ defmodule LLWeb.IndexLive do
         _ -> nil
       end
 
-    {:ok,
-     assign(socket,
-       n_files: DB.n_files(),
-       original_filesize: DB.get(:original_filesize),
-       filesize: DB.get(:filesize),
-       ratios: DB.get(:ratios),
-       query: query,
-       results: results,
-       suggestions: [],
-       total: size,
-       pages: ceil(size / @limit),
-       page: page,
-       limit: @limit,
-       apk_date: apk_date
-     )}
+    socket =
+      socket
+      |> assign(n_files: DB.n_files())
+      |> assign(original_filesize: DB.get(:original_filesize))
+      |> assign(filesize: DB.get(:filesize))
+      |> assign(ratios: DB.get(:ratios))
+      |> assign(query: query)
+      |> assign(results: results)
+      |> assign(suggestions: [])
+      |> assign(total: size)
+      |> assign(pages: ceil(size / @limit))
+      |> assign(page: page)
+      |> assign(limit: @limit)
+      |> assign(apk_date: apk_date)
+      |> assign(page_title: "Index")
+
+    {:ok, socket}
   end
 
   def mount(%{"page" => page}, session, socket) do

@@ -6,6 +6,7 @@ defmodule LLWeb.SourcesLive do
   end
 
   def mount(_, _session, socket) do
+    socket = assign(socket, page_title: "Sources")
     {:ok, socket}
   end
 end

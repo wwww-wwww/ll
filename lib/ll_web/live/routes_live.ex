@@ -6,6 +6,7 @@ defmodule LLWeb.RoutesLive do
   end
 
   def mount(_, _session, socket) do
+    socket = assign(socket, page_title: "Routes")
     {:ok, socket}
   end
 end

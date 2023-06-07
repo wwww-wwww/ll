@@ -12,18 +12,24 @@ defmodule LLWeb.ReaderLive do
     |> Repo.preload([:tags, :series])
     |> case do
       nil ->
-        {:ok,
-         redirect(socket, to: "/")
-         |> put_flash(:error, "Chapter not found")}
+        socket =
+          socket
+          |> redirect(to: "/")
+          |> put_flash(:error, "Chapter not found")
+
+        {:ok, socket}
 
       chapter ->
-        {:ok,
-         socket
-         |> assign(type: :chapter)
-         |> assign(title: chapter.title)
-         |> assign(tags: chapter.tags)
-         |> assign(chapter: chapter)
-         |> assign(date: chapter.date)}
+        socket =
+          socket
+          |> assign(page_title: chapter.title)
+          |> assign(type: :chapter)
+          |> assign(title: chapter.title)
+          |> assign(tags: chapter.tags)
+          |> assign(chapter: chapter)
+          |> assign(date: chapter.date)
+
+        {:ok, socket}
     end
   end
 
@@ -32,9 +38,12 @@ defmodule LLWeb.ReaderLive do
     |> Repo.preload([{:chapters, :tags}, :tags])
     |> case do
       nil ->
-        {:ok,
-         redirect(socket, to: "/")
-         |> put_flash(:error, "Series not found")}
+        socket =
+          socket
+          |> redirect(to: "/")
+          |> put_flash(:error, "Series not found")
+
+        {:ok, socket}
 
       series ->
         date =
@@ -52,14 +61,17 @@ defmodule LLWeb.ReaderLive do
             acc -- Enum.uniq(common_tags)
           end)
 
-        {:ok,
-         socket
-         |> assign(type: :series)
-         |> assign(series: series)
-         |> assign(chapters: chapters)
-         |> assign(title: series.title)
-         |> assign(tags: common_tags)
-         |> assign(date: date)}
+        socket =
+          socket
+          |> assign(page_title: series.title)
+          |> assign(type: :series)
+          |> assign(series: series)
+          |> assign(chapters: chapters)
+          |> assign(title: series.title)
+          |> assign(tags: common_tags)
+          |> assign(date: date)
+
+        {:ok, socket}
     end
   end
 
@@ -75,6 +87,7 @@ defmodule LLWeb.ReaderLive do
 
     socket =
       socket
+      |> assign(page_title: "#{series.title} - #{n}. #{chapter.title}")
       |> assign(chapter: chapter)
 
     {:noreply, socket}

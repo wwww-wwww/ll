@@ -6,6 +6,7 @@ defmodule LLWeb.TagsLive do
   end
 
   def mount(_, _session, socket) do
+    socket = assign(socket, page_title: "Tags")
     {:ok, socket}
   end
 end
