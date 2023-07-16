@@ -52,7 +52,8 @@ defmodule LL.Encoder do
                 |> Path.dirname()
                 |> File.mkdir_p()
 
-                File.rename(tmp_path, new_path_disk)
+                File.copy(tmp_path, new_path_disk)
+                File.rm(tmp_path)
 
               err ->
                 IO.inspect(err)
