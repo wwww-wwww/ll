@@ -4,7 +4,8 @@ defmodule LL.Sources do
   alias LL.{Repo, Source, Status, Category}
 
   @source_modules %{
-    "dynasty" => LL.Sources.Dynasty
+    "dynasty" => LL.Sources.Dynasty,
+    "test" => LL.Sources.Test
   }
 
   def start_link(opts) do
