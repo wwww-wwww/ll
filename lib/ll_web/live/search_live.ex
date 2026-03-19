@@ -13,16 +13,31 @@ defmodule LLWeb.SearchLive do
   end
 
   def mount(_, _session, socket) do
-    if connected?(socket), do: LLWeb.Endpoint.subscribe(@topic <> socket.id)
+    if connected?(socket) do
+      LLWeb.Endpoint.subscribe(@topic)
+      LLWeb.Endpoint.subscribe(@topic <> socket.id)
+    end
+
+    sources = LL.SourceManager.get().sources
 
     socket =
       socket
       |> assign(search: %{query: "", page: 0, id: 0, results: %{}})
-      |> assign(sources: LL.SourceManager.get().sources)
-      |> assign(enabled_sources: LL.SourceManager.get().sources |> Enum.map(& &1.id))
+      |> assign(sources: sources)
+      |> assign(enabled_sources: sources |> Enum.map(& &1.id))
       |> assign(results: %{})
 
     {:ok, socket}
+  end
+
+  def update_sources(arr) do
+    LLWeb.Endpoint.broadcast(@topic, "update_assigns", {:sources, arr})
+  end
+
+  def handle_info(%{topic: @topic, event: "update_assigns", payload: {key, val}}, socket) do
+    socket = assign(socket, key, val)
+
+    {:noreply, socket}
   end
 
   def handle_info(
@@ -43,7 +58,7 @@ defmodule LLWeb.SearchLive do
     source =
       socket.assigns.sources
       |> Enum.filter(&(&1.id in socket.assigns.enabled_sources))
-      |> Enum.at(4)
+      |> Enum.at(0)
 
     search_id = Ecto.UUID.generate()
     socket = socket |> assign(search: %{socket.assigns.search | query: query, id: search_id})

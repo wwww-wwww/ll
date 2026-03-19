@@ -52,10 +52,6 @@ defmodule LLWeb.ExtensionsLive do
 
   def handle_event("install", %{"pkg" => pkg}, socket) do
     ExtensionManager.install(pkg)
-    # Downloader.get()
-    # Ecto.Changeset.new(%Extension{}, %{
-    #
-    # }) |> IO.inspect
     {:noreply, socket}
   end
 end

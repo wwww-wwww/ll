@@ -81,6 +81,8 @@ defmodule LL.ExtensionManager do
                     {:ok, sources}
                   end)
 
+                  LL.SourceManager.update_sources()
+
                   update_local()
                 else
                   err -> IO.inspect(err)
