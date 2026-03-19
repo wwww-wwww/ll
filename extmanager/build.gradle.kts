@@ -5,13 +5,13 @@ import org.jlleitschuh.gradle.ktlint.KtlintPlugin
 plugins {
     application
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.ktor)
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ktlint) apply false
     alias(libs.plugins.download) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.moko) apply false
     alias(libs.plugins.jte) apply false
+    alias(libs.plugins.ktor)
 }
 
 group = "moe.grass"
@@ -32,19 +32,16 @@ allprojects {
 }
 
 dependencies {
-    implementation(libs.bundles.shared)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
-    implementation(libs.asm)
+
+    implementation(libs.bundles.shared)
+
     implementation(libs.dex2jar.translator)
     implementation(libs.dex2jar.tools)
     implementation(libs.apk.parser)
     implementation(libs.apksig)
     implementation(libs.android.annotations)
-
-    implementation(projects.androidCompat)
-    implementation(projects.androidCompat.config)
-//    implementation(projects.server.serverConfig)
 
     // OkHttp
     implementation(libs.bundles.okhttp)
@@ -95,10 +92,10 @@ dependencies {
 
     // AES/CBC/PKCS7Padding Cypher provider for zh.copymanga
     implementation(libs.bouncycastle)
-}
 
-kotlin {
-    jvmToolchain(25)
+    // AndroidCompat
+    implementation(projects.androidCompat)
+    implementation(projects.androidCompat.config)
 }
 
 subprojects {
@@ -117,7 +114,7 @@ subprojects {
             }
             compilerOptions {
                 jvmTarget = JvmTarget.fromTarget(libs.versions.jvmTarget.get())
-                freeCompilerArgs.add("-Xcontext-receivers")
+                freeCompilerArgs.add("-Xcontext-parameters")
             }
         }
     }

@@ -27,10 +27,8 @@ import java.io.File
 import java.net.URL
 import java.net.URLClassLoader
 import java.nio.file.Files
-import java.nio.file.Path
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.io.path.Path
-import kotlin.io.path.relativeTo
 
 object PackageTools {
     private val logger = KotlinLogging.logger {}
@@ -46,11 +44,7 @@ object PackageTools {
     /**
      * Convert dex to jar, a wrapper for the dex2jar library
      */
-    fun dex2jar(
-        dexFile: String,
-        jarFile: String,
-        fileNameWithoutType: String,
-    ) {
+    fun dex2jar(dexFile: String, jarFile: String) {
         // adopted from com.googlecode.dex2jar.tools.Dex2jarCmd.doCommandLine
         // source at: https://github.com/DexPatcher/dex2jar/tree/v2.1-20190905-lanchon/dex-tools/src/main/java/com/googlecode/dex2jar/tools/Dex2jarCmd.java
 
@@ -71,18 +65,6 @@ object PackageTools {
             .to(jarFilePath)
         if (handler.hasException()) {
             val rootPath = Path(applicationDirs.extensionsRoot)
-            val errorFile: Path = rootPath.resolve("$fileNameWithoutType-error.txt")
-            logger.error {
-                """
-                Detail Error Information in File ${errorFile.relativeTo(rootPath)}
-                Please report this file to one of following link if possible (any one).
-                https://sourceforge.net/p/dex2jar/tickets/
-                https://bitbucket.org/pxb1988/dex2jar/issues
-                https://github.com/pxb1988/dex2jar/issues
-                dex2jar@googlegroups.com
-                """.trimIndent()
-            }
-            handler.dump(errorFile, emptyArray<String>())
         } else {
             BytecodeEditor.fixAndroidClasses(jarFilePath)
         }

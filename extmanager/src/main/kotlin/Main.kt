@@ -15,8 +15,9 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.*
-import moe.grass.PackageTools.getPackageInfo
-import moe.grass.PackageTools.loadExtensionSources
+import suwayomi.tachidesk.manga.impl.util.PackageTools
+import suwayomi.tachidesk.manga.impl.util.PackageTools.getPackageInfo
+import suwayomi.tachidesk.manga.impl.util.PackageTools.loadExtensionSources
 import suwayomi.tachidesk.server.applicationSetup
 import java.io.File
 import java.io.FileOutputStream
@@ -30,7 +31,7 @@ import kotlin.io.path.name
 
 const val METADATA_SOURCE_CLASS = "tachiyomi.extension.class"
 
-fun main(args: Array<String>) {
+fun main() {
     println("start")
 
     applicationSetup()
@@ -129,6 +130,7 @@ private fun get_sources(path: Path): List<CatalogueSource> {
 
     val jar_path = path.resolveSibling(path.name + ".jar")
     if (!jar_path.exists()) {
+        PackageTools.dex2jar(path.toString(), jar_path.toString())
         Dex2jar.from(path.toString()).to(jar_path)
         extractAssetsFromApk(path.toString(), jar_path.toString())
     }
