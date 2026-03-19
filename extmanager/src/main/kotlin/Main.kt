@@ -14,20 +14,18 @@ import io.ktor.server.netty.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import moe.grass.PackageTools.getPackageInfo
 import moe.grass.PackageTools.loadExtensionSources
 import suwayomi.tachidesk.server.applicationSetup
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Path
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlin.io.path.Path
 import kotlin.io.path.exists
-import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 
 const val METADATA_SOURCE_CLASS = "tachiyomi.extension.class"
@@ -37,69 +35,114 @@ fun main(args: Array<String>) {
 
     applicationSetup()
 
-    var sources: List<CatalogueSource> = emptyList()
+    var extensions: MutableMap<String, Map<Long, CatalogueSource>> = mutableMapOf()
 
     embeddedServer(Netty, port = 8000, host = "0.0.0.0") {
         routing {
-            get("/sources") {
-                val j = Json.encodeToString(sources.map { it.name })
-                call.respond(j)
-            }
-            post("/search") {
-                println(call.receiveText())
-                sources.forEach {
-                    println(it.name)
-                    val filters = it.getFilterList()
-                    val req = (it as HttpSource).getSearchManga(0, "", filters)
-                    req.mangas.map {
-                        it.title
-                    }
-                    val req2 = it.getMangaDetails(req.mangas.get(0))
-                    val j = buildJsonObject {
-                        put("title", req2.title)
-                        put("description", req2.description)
+            post("/filters") {
+                val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+
+                if (extension != "" && source_id != 0L) {
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
                     }
 
-                    call.respond(Json.encodeToString(j))
+                    extensions[extension]?.let {
+                        it[source_id]?.let { source ->
+                            call.respond(Json.encodeToString(source.getFilterList()))
+                        }
+                    }
                 }
+            }
+            post("/search") {
+                val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                val page = el["page"]?.jsonPrimitive?.int ?: 0
+                val query = el["query"]?.jsonPrimitive?.content ?: ""
+                val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+
+                if (extension != "" && source_id != 0L) {
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+                    extensions[extension]?.let {
+                        it[source_id]?.let { source ->
+                            if (source.id == source_id) {
+                                println("search with " + source.name + " " + source.lang)
+                                val search = source.getSearchManga(page, query, source.getFilterList())
+                                val j = buildJsonArray {
+                                    search.mangas.forEach {
+                                        add(buildJsonObject {
+                                            put("url", it.url)
+                                            put("title", it.title)
+                                            put("artist", it.artist)
+                                            put("author", it.author)
+                                            put("description", it.description)
+                                            put("genre", it.genre)
+                                            put("status", it.status)
+                                            put("thumbnail_url", it.thumbnail_url)
+                                        })
+                                    }
+                                }
+                                call.respond(Json.encodeToString(j))
+                            }
+                        }
+                    }
+                }
+
+//              val req2 = it.getMangaDetails(req.mangas.get(0))
+//              val j = buildJsonObject {
+//                  put("title", req2.title)
+//                  put("description", req2.description)
+//              }
             }
             post("/process_extension") {
                 val path = Path(call.receiveText())
 
-                val info = getPackageInfo(path.toString())
-                val className =
-                    info.packageName + info.applicationInfo.metaData.getString(METADATA_SOURCE_CLASS)
-
-                val jar_path = path.resolveSibling(path.name + ".jar")
-                if (!jar_path.exists()) {
-                    Dex2jar.from(path.toString()).to(jar_path)
-                    extractAssetsFromApk(path.toString(), jar_path.toString())
-                }
-
-                val extensionMainClassInstance = loadExtensionSources(jar_path.toString(), className)
-                val sources =
-                    when (extensionMainClassInstance) {
-                        is Source -> listOf(extensionMainClassInstance)
-                        is SourceFactory -> extensionMainClassInstance.createSources()
-                        else -> throw RuntimeException("Unknown source class type! ${extensionMainClassInstance.javaClass}")
-                    }
-                        .map { it as CatalogueSource }
-                        .map {
-                            buildJsonObject {
-                                put("id", it.id)
-                                put("name", it.name)
-                                put("lang", it.lang)
-                            }
+                val sources = get_sources(path)
+                    .map {
+                        buildJsonObject {
+                            put("id", it.id)
+                            put("name", it.name)
+                            put("lang", it.lang)
                         }
+                    }
 
-//                val j = buildJsonObject {
-//                    put("name", req2.title)
-//                    put("description", req2.description)
-//                }
                 call.respond(Json.encodeToString(sources))
             }
         }
     }.start(wait = true)
+}
+
+private fun get_sources(path: Path): List<CatalogueSource> {
+    val info = getPackageInfo(path.toString())
+    val className =
+        info.packageName + info.applicationInfo.metaData.getString(METADATA_SOURCE_CLASS)
+
+    val jar_path = path.resolveSibling(path.name + ".jar")
+    if (!jar_path.exists()) {
+        Dex2jar.from(path.toString()).to(jar_path)
+        extractAssetsFromApk(path.toString(), jar_path.toString())
+    }
+
+    val extensionMainClassInstance = loadExtensionSources(jar_path.toString(), className)
+    val sources =
+        when (extensionMainClassInstance) {
+            is Source -> listOf(extensionMainClassInstance)
+            is SourceFactory -> extensionMainClassInstance.createSources()
+            else -> throw RuntimeException("Unknown source class type! ${extensionMainClassInstance.javaClass}")
+        }
+            .map { it as CatalogueSource }
+
+    return sources
 }
 
 private fun extractAssetsFromApk(
