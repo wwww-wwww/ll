@@ -98,7 +98,7 @@ defmodule LLWeb.ReaderLive do
   end
 
   def handle_event("update", _, socket) do
-    LL.Sources.source_module(socket.assigns.series.source).update(socket.assigns.series)
+    # LL.Sources.source_module(socket.assigns.series.source).update(socket.assigns.series)
 
     {:noreply, socket}
   end
@@ -108,7 +108,7 @@ defmodule LLWeb.ReaderLive do
       nil -> [socket.assigns.chapter]
       series -> series.chapters
     end
-    |> Enum.each(&LL.Sources.source_module(&1.source).update(&1))
+    # |> Enum.each(&LL.Sources.source_module(&1.source).update(&1))
 
     {:noreply, socket}
   end

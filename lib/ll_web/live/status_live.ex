@@ -3,6 +3,8 @@ defmodule LLWeb.StatusLive do
 
   @topic "status-updates"
 
+  def title(), do: "Status"
+
   def render(assigns) do
     LLWeb.PageView.render("status.html", assigns)
   end
@@ -28,19 +30,19 @@ defmodule LLWeb.StatusLive do
   end
 
   def handle_event("sync", _, socket) do
-    LL.sync_all()
+    # LL.sync_all()
 
     {:noreply, socket}
   end
 
   def handle_event("sync_series", _, socket) do
-    LL.sync_series()
+    # LL.sync_series()
 
     {:noreply, socket}
   end
 
   def handle_event("encode_pages", _, socket) do
-    LL.encode_missing()
+    # LL.encode_missing()
 
     {:noreply, socket}
   end

@@ -7,51 +7,60 @@ defmodule LL.Application do
 
   @impl true
   def start(_type, _args) do
-    {cjxl_ver, 0} = System.cmd("cjxl", ["-V"])
-    cjxl_ver = cjxl_ver |> String.split("\n") |> Enum.at(0)
-    Application.put_env(:ll, :cjxl, cjxl_ver)
-
     children = [
       LL.Repo,
       LLWeb.Telemetry,
       {Phoenix.PubSub, name: LL.PubSub},
       LLWeb.Endpoint,
-      LL.DB,
+      LL.ExtensionManager,
+      LL.SourceManager,
+      # LL.DB,
       LL.Status,
-      LL.Sources,
-      Supervisor.child_spec({LL.WorkerManager, name: LL.CriticalQueue},
-        id: LL.CriticalQueue
+      # Supervisor.child_spec({LL.WorkerManager, name: LL.CriticalQueue},
+      #  id: LL.CriticalQueue
+      # ),
+      # LL.CriticalWriter,
+      Supervisor.child_spec({LL.WorkerManager, name: :downloader},
+        id: :downloader
       ),
-      LL.CriticalWriter,
-      Supervisor.child_spec({LL.WorkerManager, name: LL.DownloaderManager},
-        id: LL.DownloaderManager
-      ),
-      Supervisor.child_spec({LL.WorkerManager, name: LL.EncoderManager},
-        id: LL.EncoderManager
-      ),
-      Supervisor.child_spec(
-        {LL.Timer,
-         id: :sync, fun: &LL.sync_all/0, interval: Application.fetch_env!(:ll, :sync_interval)},
-        id: LL.TimerSync
-      ),
-      Supervisor.child_spec(
-        {LL.Timer,
-         id: :encode,
-         fun: &LL.encode_missing/0,
-         interval: Application.fetch_env!(:ll, :encode_interval)},
-        id: LL.TimerEncoode
+      Supervisor.child_spec({LL.WorkerManager, name: :local},
+        id: :local
       )
+      # Supervisor.child_spec(
+      #  {LL.Timer,
+      #   id: :sync, fun: &LL.sync_all/0, interval: Application.fetch_env!(:ll, :sync_interval)},
+      #  id: LL.TimerSync
+      # ),
+      # Supervisor.child_spec(
+      #  {LL.Timer,
+      #   id: :encode,
+      #   fun: &LL.encode_missing/0,
+      #   interval: Application.fetch_env!(:ll, :encode_interval)},
+      #  id: LL.TimerEncoode
+      # )
     ]
 
     downloaders =
-      1..Application.fetch_env!(:ll, :n_downloaders)
-      |> Enum.map(&Supervisor.child_spec({LL.Downloader, id: &1}, id: "LL.Downloader#{&1}"))
+      Enum.map(
+        1..5,
+        &Supervisor.child_spec({LL.Downloader, id: &1, queue: :downloader},
+          id: "LL.Downloader.downloader.#{&1}"
+        )
+      )
 
-    encoders =
-      1..Application.fetch_env!(:ll, :n_encoders)
-      |> Enum.map(&Supervisor.child_spec({LL.Encoder, id: &1}, id: "LL.Encoder#{&1}"))
+    downloaders2 =
+      Enum.map(
+        1..5,
+        &Supervisor.child_spec({LL.Downloader, id: &1, queue: :local},
+          id: "LL.Downloader.local.#{&1}"
+        )
+      )
 
-    children = children ++ downloaders ++ encoders
+    # encoders =
+    #   1..Application.fetch_env!(:ll, :n_encoders)
+    #   |> Enum.map(&Supervisor.child_spec({LL.Encoder, id: &1}, id: "LL.Encoder#{&1}"))
+
+    children = children ++ downloaders ++ downloaders2
 
     opts = [strategy: :one_for_one, name: LL.Supervisor]
     Supervisor.start_link(children, opts)

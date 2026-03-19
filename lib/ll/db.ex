@@ -9,12 +9,8 @@ defmodule LL.DB do
   @cooldown 300
 
   defstruct time: nil,
-            n_files: 0,
             all: [],
-            all_safe: "{}",
-            original_filesize: 0,
-            filesize: 0,
-            ratios: []
+            all_safe: "{}"
 
   def start_link(_opts) do
     Agent.start_link(fn -> %__MODULE__{} end, name: __MODULE__)
@@ -42,31 +38,6 @@ defmodule LL.DB do
       series
       |> Enum.map(& &1.chapters)
       |> List.flatten()
-
-    original_filesize =
-      (chapters ++ series_chapters)
-      |> Enum.map(& &1.original_files_sizes)
-      |> List.flatten()
-      |> Stream.filter(&(!is_nil(&1)))
-      |> Enum.sum()
-
-    filesize =
-      (chapters ++ series_chapters)
-      |> Stream.map(& &1.filesize)
-      |> Stream.filter(&(!is_nil(&1)))
-      |> Enum.sum()
-
-    ratios =
-      (chapters ++ series_chapters)
-      |> Enum.filter(&(&1.filesize > 0))
-      |> Enum.map(&(Enum.sum(&1.original_files_sizes) / &1.filesize))
-
-    n_files =
-      (chapters ++ series_chapters)
-      |> Enum.map(& &1.files)
-      |> List.flatten()
-      |> Enum.filter(&String.ends_with?(&1, ".jxl"))
-      |> length()
 
     series =
       Enum.map(series, fn s ->
@@ -122,12 +93,8 @@ defmodule LL.DB do
 
     %__MODULE__{
       time: Time.utc_now(),
-      n_files: n_files,
       all: all,
-      all_safe: all_safe,
-      filesize: filesize,
-      original_filesize: original_filesize,
-      ratios: ratios
+      all_safe: all_safe
     }
   end
 

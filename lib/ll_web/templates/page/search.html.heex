@@ -1,0 +1,14 @@
+<.form let={f} for={%{}} phx-submit="search">
+  <%= text_input f, :query %>
+  <%= submit "Search" %>
+</.form>
+
+<h3>Sources</h3>
+<div>
+    <%= for source <- @sources do %>
+    <div>
+        <span><%= source.name %></span>
+        <span><%= source.lang %></span>
+    </div>
+    <% end %>
+</div>

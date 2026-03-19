@@ -1,20 +1,17 @@
 defmodule LL.Series do
   use Ecto.Schema
 
-  @primary_key false
   schema "series" do
-    field :id, :string, primary_key: true
     field :title, :string
     field :description, :string
-    field :source, :string
-    field :source_id, :string
-
-    # series, anthology
-    field :type, :integer, default: 0
+    field :type, :string
 
     field :cover, :string
 
-    has_many :chapters, LL.Chapter, references: :id
+    belongs_to :source, LL.Source
+    field :source_remote_id, :string
+
+    has_many :chapters, LL.Chapter
     many_to_many :tags, LL.Tag, join_through: LL.SeriesTags, on_replace: :delete
 
     timestamps()

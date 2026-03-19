@@ -17,16 +17,19 @@ defmodule LLWeb.Router do
   scope "/", LLWeb do
     pipe_through :browser
 
-    live "/tags", TagsLive
-    live "/routes", RoutesLive
-    live "/sources", SourcesLive
-    get "/f/files/:path", PageController, :file
-
     live "/", IndexLive
-    live "/status", StatusLive
+    live "/search", SearchLive
+    live "/tags", TagsLive
+    live "/extensions", ExtensionsLive
+
     live "/series/:series_id/:n", ReaderLive, :series
     live "/series/:series_id", ReaderLive, :series
     live "/chapter/:chapter_id", ReaderLive, :chapter
+
+    get "/f/files/:path", PageController, :file
+
+    live "/routes", RoutesLive
+    live "/status", StatusLive
   end
 
   # Other scopes may use custom stacks.

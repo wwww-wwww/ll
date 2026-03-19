@@ -4,7 +4,7 @@ defmodule LLWeb.ApiController do
   alias LL.{Repo, Chapter, Series}
 
   def all(conn, _params) do
-    conn |> json(LL.DB.all_safe())
+    conn |> json(%{})
   end
 
   def map_tags(tags) do

@@ -1,6 +1,8 @@
 defmodule LLWeb.TagsLive do
   use LLWeb, :live_view
 
+  def title(), do: "Tags"
+
   def render(assigns) do
     LLWeb.PageView.render("tags.html", assigns)
   end

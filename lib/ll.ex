@@ -9,47 +9,19 @@ defmodule LL do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Downloader, Encoder, Chapter, Series, Sources}
+  alias LL.{Repo, Downloader, Chapter, Series}
 
   def files_root(), do: Application.get_env(:ll, :files_root)
 
-  def add_sources() do
-    Sources.add_source("dynasty", 0, "love_live", "love_live")
-    Sources.add_source("dynasty", 0, "love_live_sunshine", "love_live")
-    Sources.add_source("dynasty", 0, "love_live_nijigasaki_academy_school_idol_club", "love_live")
-    Sources.add_source("dynasty", 0, "love_live_superstar", "love_live")
-
-    Sources.add_source("dynasty", 1, "kimino_sakurako", "love_live")
-
-    Sources.add_source("dynasty", 0, "bang_dream", "bang_dream")
-
-    [
-      "bang_dream_girls_band_party_roselia_stage",
-      "bang_dream_4_koma_bandori",
-      "bang_dream_raise_the_story_of_my_music",
-      "bangdream_star_beat"
-    ]
-    |> Enum.each(&Sources.add_source("dynasty", 3, &1, "bang_dream"))
-
-    Sources.add_source("dynasty", 0, "shoujo_kageki_revue_starlight", "revue_starlight")
-
-    [
-      "shoujokageki_revue_starlight_overture",
-      "shoujokageki_revue_starlight_the_live_show_must_go_on",
-      "shoujokageki_revue_starlight_the_live_2_transition"
-    ]
-    |> Enum.each(&Sources.add_source("dynasty", 3, &1, "revue_starlight"))
-  end
-
   def sync_all() do
-    downloader = Downloader.get()
+    # downloader = Downloader.get()
 
-    if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
-      sync_assoc()
-      update_covers()
-      sync_pages()
-      sync()
-    end
+    # if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
+      #sync_assoc()
+      #update_covers()
+      #sync_pages()
+    #   sync()
+    # end
   end
 
   def test2() do
@@ -73,60 +45,16 @@ defmodule LL do
   end
 
   def sync() do
-    Sources.sync()
+
   end
 
   def sync_pages() do
-    Repo.all(Chapter)
-    |> Enum.map(fn c ->
-      Sources.Dynasty.download_pages(c)
-    end)
-    |> List.flatten()
-    |> Downloader.save_all()
-  end
-
-  def encode_missing() do
-    encoder = Encoder.get()
-
-    if length(encoder.working) == 0 and :queue.len(encoder.queue) == 0 do
-      encode_pages(true)
-    end
-  end
-
-  def encode_pages(exec) do
-    pages =
-      Repo.all(Chapter)
-      |> Repo.preload(:series)
-      |> Enum.map(fn c ->
-        Enum.with_index(c.files)
-        |> Enum.filter(&String.starts_with?(elem(&1, 0), "tmp/"))
-        |> Enum.map(fn {path, i} ->
-          filename =
-            path
-            |> String.slice(41..-1)
-            |> String.slice((String.length(c.id) + 1)..-1)
-
-          new_filename = Path.rootname(filename) <> ".jxl"
-
-          new_path =
-            if c.series do
-              Path.join("files/dynasty", c.series.id)
-            else
-              "files/dynasty"
-            end
-            |> Path.join(c.id)
-            |> Path.join(new_filename)
-
-          {c.id, i, path, new_path}
-        end)
-      end)
-      |> List.flatten()
-
-    if exec do
-      pages |> Encoder.add_all()
-    else
-      pages
-    end
+    # Repo.all(Chapter)
+    # |> Enum.map(fn c ->
+    #   Sources.Dynasty.download_pages(c)
+    # end)
+    # |> List.flatten()
+    # |> Downloader.save_all()
   end
 
   def sync_assoc() do
@@ -193,62 +121,62 @@ defmodule LL do
   def update_covers() do
     Repo.all(Series)
     |> Kernel.++(Repo.all(Chapter))
-    |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
+    # |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
   end
 
   def get_original_files_sizes(chapter_id) do
-    root = "https://dynasty-scans.com"
+    # root = "https://dynasty-scans.com"
 
-    Repo.get(Chapter, chapter_id)
-    |> Map.get(:original_files)
-    |> Enum.map(&(root <> &1))
-    |> Enum.with_index()
-    |> Enum.each(fn {url, n} ->
-      Downloader.add(url, :head, fn {:ok, _data, headers} ->
-        case headers |> Enum.filter(&(elem(&1, 0) == "Content-Length")) do
-          [{"Content-Length", content_length}] ->
-            Chapter.update_original_filesize(
-              chapter_id,
-              n,
-              Integer.parse(content_length) |> elem(0)
-            )
+    # Repo.get(Chapter, chapter_id)
+    # |> Map.get(:original_files)
+    # |> Enum.map(&(root <> &1))
+    # |> Enum.with_index()
+    # |> Enum.each(fn {url, n} ->
+    #   Downloader.add(url, :head, fn {:ok, _data, headers} ->
+    #     case headers |> Enum.filter(&(elem(&1, 0) == "Content-Length")) do
+    #       [{"Content-Length", content_length}] ->
+    #         Chapter.update_original_filesize(
+    #           chapter_id,
+    #           n,
+    #           Integer.parse(content_length) |> elem(0)
+    #         )
 
-          _ ->
-            nil
-        end
-      end)
-    end)
+    #       _ ->
+    #         nil
+    #     end
+    #   end)
+    # end)
   end
 
-  def get_original_files() do
-    Repo.all(Chapter)
-    |> Enum.each(fn chapter ->
-      if chapter.original_files_sizes == nil do
-        chapter
-        |> Sources.Dynasty.chapter_url()
-        |> Kernel.<>(".json")
-        |> Downloader.add(:get, fn {:ok, data, _resp} ->
-          case Jason.decode(data) do
-            {:ok, %{"pages" => pages}} ->
-              pages = Enum.map(pages, & &1["url"])
-              files_sizes = List.duplicate(0, length(pages))
+  # def get_original_files() do
+  #   Repo.all(Chapter)
+  #   |> Enum.each(fn chapter ->
+  #     if chapter.original_files_sizes == nil do
+  #       chapter
+  #       |> Sources.Dynasty.chapter_url()
+  #       |> Kernel.<>(".json")
+  #       |> Downloader.add(:get, fn {:ok, data, _resp} ->
+  #         case Jason.decode(data) do
+  #           {:ok, %{"pages" => pages}} ->
+  #             pages = Enum.map(pages, & &1["url"])
+  #             files_sizes = List.duplicate(0, length(pages))
 
-              Chapter.change(chapter, %{original_files: pages, original_files_sizes: files_sizes})
-              |> Repo.update()
+  #             Chapter.change(chapter, %{original_files: pages, original_files_sizes: files_sizes})
+  #             |> Repo.update()
 
-              get_original_files_sizes(chapter.id)
+  #             get_original_files_sizes(chapter.id)
 
-            _ ->
-              nil
-          end
-        end)
-      else
-        if Enum.any?(chapter.original_files_sizes, &(&1 == 0)) do
-          get_original_files_sizes(chapter.id)
-        end
-      end
-    end)
-  end
+  #           _ ->
+  #             nil
+  #         end
+  #       end)
+  #     else
+  #       if Enum.any?(chapter.original_files_sizes, &(&1 == 0)) do
+  #         get_original_files_sizes(chapter.id)
+  #       end
+  #     end
+  #   end)
+  # end
 
   def get_filesizes() do
     Repo.all(Chapter)
@@ -263,35 +191,6 @@ defmodule LL do
 
       Chapter.change(chapter, %{filesize: new_filesize})
       |> Repo.update()
-    end)
-  end
-
-  def create_category() do
-    %LL.Category{
-      id: "love_live",
-      name: "Love Live!"
-    }
-    |> Repo.insert()
-
-    %LL.Category{
-      id: "bang_dream",
-      name: "BanG Dream!"
-    }
-    |> Repo.insert()
-  end
-
-  def add_category() do
-    # ll = Repo.get(Category, "love_live")
-    bandori = Repo.get(LL.Category, "bang_dream")
-
-    Repo.all(Source)
-    |> Repo.preload(:category)
-    |> Enum.each(fn source ->
-      if source.id >= 6 do
-        Ecto.Changeset.change(source, %{})
-        |> Ecto.Changeset.put_assoc(:category, bandori)
-        |> Repo.update()
-      end
     end)
   end
 
@@ -359,22 +258,22 @@ defmodule LL do
   end
 
   def update_series(series) do
-    Sources.source_module(series.source).update(series)
+    # Sources.source_module(series.source).update(series)
   end
 
   def sync_series() do
-    downloader = Downloader.get()
+    # downloader = Downloader.get()
 
-    if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
-      Repo.all(Series) |> Repo.preload(:tags) |> Enum.each(&update_series/1)
-    end
+    # if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
+    #   Repo.all(Series) |> Repo.preload(:tags) |> Enum.each(&update_series/1)
+    # end
   end
 
   def sync_chapters() do
-    Repo.all(Chapter)
-    |> Enum.filter(
-      &(NaiveDateTime.diff(DateTime.now!("Etc/UTC") |> DateTime.to_naive(), &1.updated_at) > 3600)
-    )
-    |> Enum.each(&Sources.source_module(&1.source).update(&1))
+    # Repo.all(Chapter)
+    # |> Enum.filter(
+    #   &(NaiveDateTime.diff(DateTime.now!("Etc/UTC") |> DateTime.to_naive(), &1.updated_at) > 3600)
+    # )
+    # |> Enum.each(&Sources.source_module(&1.source).update(&1))
   end
 end

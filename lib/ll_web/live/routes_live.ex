@@ -1,6 +1,8 @@
 defmodule LLWeb.RoutesLive do
   use LLWeb, :live_view
 
+  def title(), do: "Routes"
+
   def render(assigns) do
     LLWeb.PageView.render("routes.html", assigns)
   end

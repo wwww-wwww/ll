@@ -5,6 +5,8 @@ defmodule LLWeb.IndexLive do
 
   @limit 20
 
+  def title(), do: "Index"
+
   def render(assigns) do
     LLWeb.PageView.render("index.html", assigns)
   end
@@ -15,28 +17,28 @@ defmodule LLWeb.IndexLive do
       |> Integer.parse()
       |> elem(0)
 
-    {size, page, results} = search(query, page, @limit)
+    {count, page, results} = search(query, page, @limit)
 
-    apk_date =
-      case File.lstat("apk/app-standard-universal-release.apk") do
-        {:ok, %{ctime: {date, _}}} -> Date.from_erl!(date) |> to_string()
-        _ -> nil
-      end
+    # apk_date =
+    #   case File.lstat("apk/app-standard-universal-release.apk") do
+    #     {:ok, %{ctime: {date, _}}} -> Date.from_erl!(date) |> to_string()
+    #     _ -> nil
+    #   end
 
     socket =
       socket
-      |> assign(n_files: DB.n_files())
-      |> assign(original_filesize: DB.get(:original_filesize))
-      |> assign(filesize: DB.get(:filesize))
-      |> assign(ratios: DB.get(:ratios))
+      # |> assign(n_files: DB.n_files())
+      # |> assign(original_filesize: DB.get(:original_filesize))
+      # |> assign(filesize: DB.get(:filesize))
+      # |> assign(ratios: DB.get(:ratios))
       |> assign(query: query)
       |> assign(results: results)
       |> assign(suggestions: [])
-      |> assign(total: size)
-      |> assign(pages: ceil(size / @limit))
+      |> assign(total: count)
+      |> assign(pages: ceil(count / @limit))
       |> assign(page: page)
       |> assign(limit: @limit)
-      |> assign(apk_date: apk_date)
+      # |> assign(apk_date: apk_date)
       |> assign(page_title: "Index")
 
     {:ok, socket}
@@ -60,15 +62,15 @@ defmodule LLWeb.IndexLive do
       |> Integer.parse()
       |> elem(0)
 
-    {size, page, results} = search(query, page, @limit)
+    {count, page, results} = search(query, page, @limit)
 
     {:noreply,
      assign(socket,
        query: query,
        results: results,
        suggestions: [],
-       total: size,
-       pages: ceil(size / @limit),
+       total: count,
+       pages: ceil(count / @limit),
        page: page,
        limit: @limit
      )}
@@ -102,26 +104,26 @@ defmodule LLWeb.IndexLive do
   defp search(query, page, limit) do
     {terms_include, terms_exclude} = DB.search(query)
 
-    results =
-      DB.all()
-      |> Enum.filter(fn s ->
-        Enum.all?(terms_include, fn term ->
-          Enum.any?(s.search, &String.contains?(&1, term))
-        end) and
-          Enum.all?(terms_exclude, fn term ->
-            Enum.all?(s.search, &(not String.contains?(&1, term)))
-          end)
-      end)
+    results = []
+      # DB.all()
+      # |> Enum.filter(fn s ->
+      #   Enum.all?(terms_include, fn term ->
+      #     Enum.any?(s.search, &String.contains?(&1, term))
+      #   end) and
+      #     Enum.all?(terms_exclude, fn term ->
+      #       Enum.all?(s.search, &(not String.contains?(&1, term)))
+      #     end)
+      # end)
 
-    pages = length(results)
+    count = length(results)
 
-    page = min(max(page, 1), ceil(pages / limit))
+    page = min(max(page, 1), ceil(count / limit))
 
     results =
       results
       |> Enum.drop((page - 1) * limit)
       |> Enum.take(limit)
 
-    {pages, page, results}
+    {count, page, results}
   end
 end

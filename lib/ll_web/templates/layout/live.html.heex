@@ -1,3 +1,17 @@
+<header>
+  <nav>
+    <%= nav(@socket, LLWeb.IndexLive) %>
+    <%= nav(@socket, LLWeb.SearchLive) %>
+    <%= nav(@socket, LLWeb.TagsLive) %>
+    <%= nav(@socket, LLWeb.ExtensionsLive) %>
+    <span></span>
+    <%= nav(@socket, LLWeb.RoutesLive) %>
+    <%= nav(@socket, LLWeb.StatusLive) %>
+    <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
+      <%= link "LiveDashboard", to: Routes.live_dashboard_path(@socket, :home) %>
+    <% end %>
+  </nav>
+</header>
 <main class="container">
   <p class="alert alert-info" role="alert"
     phx-click="lv:clear-flash"

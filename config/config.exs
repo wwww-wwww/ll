@@ -9,8 +9,7 @@ import Config
 
 config :ll,
   get_all_pages: false,
-  n_downloaders: 4,
-  n_encoders: 4,
+  n_downloaders: 1,
   ecto_repos: [LL.Repo],
   files_root: "/tank/llm/",
   sync_interval: 7_200_000,
