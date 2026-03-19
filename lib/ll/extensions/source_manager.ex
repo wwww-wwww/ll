@@ -22,6 +22,7 @@ defmodule LL.SourceManager do
   def update_sources() do
     sources =
       Repo.all(Source)
+      |> Repo.preload(:extension)
       |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
 
     Agent.update(__MODULE__, &%{&1 | sources: sources})

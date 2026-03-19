@@ -58,23 +58,23 @@ defmodule LL do
   end
 
   def sync_assoc() do
-    Repo.all(Chapter)
-    |> Repo.preload([:tags, :series])
-    |> Enum.filter(&(&1.series == nil))
-    |> Enum.each(fn c ->
-      Enum.filter(c.tags, &(&1.type == 1))
-      |> Enum.each(fn tag ->
-        case Repo.get(Series, tag.id) do
-          nil ->
-            nil
+    # Repo.all(Chapter)
+    # |> Repo.preload([:tags, :series])
+    # |> Enum.filter(&(&1.series == nil))
+    # |> Enum.each(fn c ->
+    #   Enum.filter(c.tags, &(&1.type == 1))
+    #   |> Enum.each(fn tag ->
+    #     case Repo.get(Series, tag.id) do
+    #       nil ->
+    #         nil
 
-          series ->
-            Chapter.change(c, %{})
-            |> Chapter.put_series(series)
-            |> Repo.update()
-        end
-      end)
-    end)
+    #       series ->
+    #         Chapter.change(c, %{})
+    #         |> Chapter.put_series(series)
+    #         |> Repo.update()
+    #     end
+    #   end)
+    # end)
   end
 
   def all() do
@@ -178,83 +178,67 @@ defmodule LL do
   #   end)
   # end
 
-  def get_filesizes() do
-    Repo.all(Chapter)
-    |> Enum.each(fn chapter ->
-      new_filesize =
-        chapter.files
-        |> Stream.filter(&(not String.starts_with?(&1, "tmp")))
-        |> Stream.filter(&(not String.starts_with?(&1, "/")))
-        |> Stream.map(&(LL.files_root() <> &1))
-        |> Stream.map(&(File.stat!(&1) |> Map.get(:size)))
-        |> Enum.sum()
-
-      Chapter.change(chapter, %{filesize: new_filesize})
-      |> Repo.update()
-    end)
-  end
-
   def fix_series_paths() do
-    Repo.all(Chapter)
-    |> Repo.preload(:series)
-    |> Enum.filter(&(&1.series != nil))
-    |> Enum.each(fn chapter ->
-      chapter.files
-      |> Enum.with_index()
-      |> Enum.each(fn {file, n} ->
-        if not String.starts_with?(file, Path.join("files/dynasty", chapter.series.id)) and
-             not String.starts_with?(file, "tmp") do
-          new_path =
-            Path.join("files/dynasty", chapter.series.id)
-            |> Path.join(chapter.id)
-            |> Path.join(Path.basename(file))
+    # Repo.all(Chapter)
+    # |> Repo.preload(:series)
+    # |> Enum.filter(&(&1.series != nil))
+    # |> Enum.each(fn chapter ->
+    #   chapter.files
+    #   |> Enum.with_index()
+    #   |> Enum.each(fn {file, n} ->
+    #     if not String.starts_with?(file, Path.join("files/dynasty", chapter.series.id)) and
+    #          not String.starts_with?(file, "tmp") do
+    #       new_path =
+    #         Path.join("files/dynasty", chapter.series.id)
+    #         |> Path.join(chapter.id)
+    #         |> Path.join(Path.basename(file))
 
-          ch2 = Repo.get(Chapter, chapter.id)
-          new_files = Enum.take(ch2.files, n) ++ [new_path] ++ Enum.drop(ch2.files, n + 1)
+    #       ch2 = Repo.get(Chapter, chapter.id)
+    #       new_files = Enum.take(ch2.files, n) ++ [new_path] ++ Enum.drop(ch2.files, n + 1)
 
-          IO.inspect("#{file} -> #{new_path}")
+    #       IO.inspect("#{file} -> #{new_path}")
 
-          Path.join(files_root(), new_path)
-          |> Path.dirname()
-          |> File.mkdir_p()
+    #       Path.join(files_root(), new_path)
+    #       |> Path.dirname()
+    #       |> File.mkdir_p()
 
-          File.rename(Path.join(files_root(), file), Path.join(files_root(), new_path))
-          |> case do
-            :ok ->
-              Chapter.change(ch2, %{files: new_files})
-              |> Repo.update()
+    #       File.rename(Path.join(files_root(), file), Path.join(files_root(), new_path))
+    #       |> case do
+    #         :ok ->
+    #           Chapter.change(ch2, %{files: new_files})
+    #           |> Repo.update()
 
-            err ->
-              IO.inspect(err)
-          end
-        end
-      end)
-    end)
+    #         err ->
+    #           IO.inspect(err)
+    #       end
+    #     end
+    #   end)
+    # end)
   end
 
   def stats() do
-    series =
-      Repo.all(Series)
-      |> Repo.preload([:tags, {:chapters, :tags}])
+    # series =
+    #   Repo.all(Series)
+    #   |> Repo.preload([:tags, {:chapters, :tags}])
 
-    chapters =
-      Repo.all(from(u in Chapter, where: is_nil(u.series_id)))
-      |> Repo.preload(:tags)
+    # chapters =
+    #   Repo.all(from(u in Chapter, where: is_nil(u.series_id)))
+    #   |> Repo.preload(:tags)
 
-    series_chapters =
-      series
-      |> Enum.map(& &1.chapters)
-      |> List.flatten()
+    # series_chapters =
+    #   series
+    #   |> Enum.map(& &1.chapters)
+    #   |> List.flatten()
 
-    (chapters ++ series_chapters)
-    |> Enum.map(fn chapter ->
-      chapter.files
-      |> Enum.map(&Path.join(LL.files_root(), &1))
-      |> Enum.zip(chapter.original_files_sizes)
-      |> Enum.filter(&(elem(&1, 0) |> File.exists?()))
-      |> Enum.map(&{elem(&1, 0), elem(&1, 1) / Map.get(File.stat!(elem(&1, 0)), :size)})
-    end)
-    |> List.flatten()
+    # (chapters ++ series_chapters)
+    # |> Enum.map(fn chapter ->
+    #   chapter.files
+    #   |> Enum.map(&Path.join(LL.files_root(), &1))
+    #   |> Enum.zip(chapter.original_files_sizes)
+    #   |> Enum.filter(&(elem(&1, 0) |> File.exists?()))
+    #   |> Enum.map(&{elem(&1, 0), elem(&1, 1) / Map.get(File.stat!(elem(&1, 0)), :size)})
+    # end)
+    # |> List.flatten()
   end
 
   def update_series(series) do

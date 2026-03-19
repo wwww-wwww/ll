@@ -3,8 +3,6 @@ defmodule LL.Downloader do
 
   alias LL.{WorkerManager, Status}
 
-  @tmp_dir "tmp"
-
   defstruct id: nil,
             active: false,
             queue: nil
