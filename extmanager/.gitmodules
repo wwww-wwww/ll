@@ -1,0 +1,3 @@
+[submodule "Suwayomi-Server"]
+	path = Suwayomi-Server
+	url = https://github.com/Suwayomi/Suwayomi-Server
