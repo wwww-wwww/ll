@@ -36,3 +36,4 @@ npm-debug.log
 /covers/
 /tmp/
 *.apk
+/thumbnails/
