@@ -7,8 +7,8 @@ defmodule LL.Chapter do
     field :url, :string
 
     field :title, :string
-    field :number, :integer
-    field :date, :date
+    field :number, :float
+    field :date, :utc_datetime
     field :scanlator, :string
 
     field :files, {:array, :string}

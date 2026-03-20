@@ -20,10 +20,14 @@
 </.form>
 
 <%= for {source_id, results} <- @search.results do %>
-<h4><%= source_id %></h4>
+<h4>{@sources |> Enum.filter(& &1.source_id ==source_id) |> Enum.at(0) |> Map.get(:name)}</h4>
 <div class="library">
     <%= for series <- results do %>
-        <.library_card series={series}/>
+        <.live_component
+          id={"series_#{series.id}"}
+          module={LLWeb.LibraryCard}
+          series={series}
+          on_card_update={fn series -> send(self(), {:series, series}) end} />
     <% end %>
 </div>
 <% end %>

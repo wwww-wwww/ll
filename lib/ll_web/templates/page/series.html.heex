@@ -15,6 +15,7 @@
     </div>
     <div class="actions">
         <button phx-click="refresh">Refresh</button>
+        <button phx-click="refresh_chapters">Refresh chapters</button>
         <%= if @series.in_library do %>
         <button phx-click="library_remove">Remove from library</button>
         <% else %>
@@ -23,4 +24,13 @@
     </div>
     <div class="tags">[tags]</div>
     <div class="description">{@series.description}</div>
+</div>
+<div class="right">
+    <%= for c <- @chapters do %>
+    <div>
+        <span>{c.title}</span>
+        <span>{c.date}</span>
+        <span>{c.scanlator}</span>
+    </div>
+    <% end %>
 </div>

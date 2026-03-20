@@ -82,10 +82,10 @@ fun main() {
 
                     println("search with " + source.name + " " + source.lang)
                     try {
-                        val search = source.getSearchManga(page, query, source.getFilterList())
+                        val req = source.getSearchManga(page, query, source.getFilterList())
                         return@future buildJsonObject {
                             put("results", buildJsonArray {
-                                search.mangas.forEach {
+                                req.mangas.forEach {
                                     add(buildJsonObject {
                                         put("url", it.url)
                                         put("title", it.title)
@@ -116,7 +116,6 @@ fun main() {
 
                     val extension = el["extension"]?.jsonPrimitive?.content ?: ""
                     val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
-                    val title = el["title"]?.jsonPrimitive?.content ?: ""
                     val url = el["url"]?.jsonPrimitive?.content ?: ""
 
                     if (extension == "" || source_id == 0L) {
@@ -135,7 +134,6 @@ fun main() {
                     }
 
                     val smanga = SManga.create().apply {
-                        this.title = title
                         this.url = url
                     }
 
@@ -149,6 +147,57 @@ fun main() {
                             put("genre", req.genre)
                             put("status", req.status)
                             put("thumbnail_url", req.thumbnail_url)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        return@future buildJsonObject {}
+                    }
+                }.await()
+
+                call.respond(Json.encodeToString(resp))
+            }
+
+            post("/get_chapters") {
+                val resp = future {
+                    val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                    val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                    val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+                    val url = el["url"]?.jsonPrimitive?.content ?: ""
+
+                    if (extension == "" || source_id == 0L) {
+                        return@future buildJsonObject {}
+                    }
+
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+
+                    val source = extensions[extension]?.get(source_id)
+                    if (source == null || source.id != source_id) {
+                        return@future buildJsonObject {}
+                    }
+
+                    val smanga = SManga.create().apply {
+                        this.url = url
+                    }
+
+                    try {
+                        val req = source.getChapterList(smanga)
+                        return@future buildJsonObject {
+                            put("results", buildJsonArray {
+                                req.forEach {
+                                    add(buildJsonObject {
+                                        put("url", it.url)
+                                        put("title", it.name)
+                                        put("date", it.date_upload)
+                                        put("number", it.chapter_number)
+                                        put("scanlator", it.scanlator)
+                                    })
+                                }
+                            })
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()

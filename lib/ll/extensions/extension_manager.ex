@@ -6,6 +6,7 @@ defmodule LL.ExtensionManager do
 
   @extension_repo "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
   @extensions_path "extensions"
+  @manager_api "http://localhost:8000"
 
   defstruct remote: [],
             local: []
@@ -53,7 +54,7 @@ defmodule LL.ExtensionManager do
             IO.binwrite(file, body)
             File.close(file)
 
-            Downloader.post path, "http://localhost:8000/process_extension", :local do
+            Downloader.post path, @manager_api <> "/process_extension", :local do
               {:ok, sources} ->
                 Repo.transact(fn ->
                   {:ok, extension} =
@@ -107,8 +108,11 @@ defmodule LL.ExtensionManager do
           IO.binwrite(file, body)
           File.close(file)
 
-          Ecto.Changeset.change(series, %{thumbnail_path: path})
-          |> Repo.update()
+          {:ok, series} =
+            Ecto.Changeset.change(series, %{thumbnail_path: path})
+            |> Repo.update()
+
+          LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
 
         err ->
           IO.inspect(err)
@@ -124,7 +128,7 @@ defmodule LL.ExtensionManager do
       page: page
     }
     |> Jason.encode!()
-    |> Downloader.post "http://localhost:8000/search", :local do
+    |> Downloader.post @manager_api <> "/search", :local do
       {:ok, %{"results" => results}} ->
         results =
           Enum.map(results, fn m ->
@@ -160,15 +164,14 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def series_details(series, cb) do
+  def series_details(series) do
     %{
       "extension" => series.source.extension.path,
       "source" => series.source.source_id,
-      "title" => series.title,
       "url" => series.url
     }
     |> Jason.encode!()
-    |> Downloader.post "http://localhost:8000/get_details", :local do
+    |> Downloader.post @manager_api <> "/get_details", :local do
       {:ok, j} ->
         {:ok, series} =
           Ecto.Changeset.change(series, %{
@@ -180,12 +183,60 @@ defmodule LL.ExtensionManager do
             status: j["status"],
             thumbnail_url: j["thumbnail_url"]
           })
-          |> IO.inspect
           |> Repo.update()
 
-        cb.(series)
+        LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
 
       # TODO: if thumbnail url is different, redownload
+
+      err ->
+        IO.inspect(err)
+    end
+  end
+
+  def series_chapters(series) do
+    %{
+      "extension" => series.source.extension.path,
+      "source" => series.source.source_id,
+      "url" => series.url
+    }
+    |> Jason.encode!()
+    |> Downloader.post @manager_api <> "/get_chapters", :local do
+      {:ok, j} ->
+        {:ok, chapters} =
+          Repo.transact(fn ->
+            chapters =
+              Enum.map(j["results"], fn chapter_j ->
+                case Repo.get_by(Chapter,
+                       series_id: series.id,
+                       source_id: series.source_id,
+                       url: chapter_j["url"]
+                     ) do
+                  nil ->
+                    %Chapter{
+                      series_id: series.id,
+                      source_id: series.source_id,
+                      url: chapter_j["url"]
+                    }
+
+                  chapter ->
+                    chapter
+                end
+                |> Ecto.Changeset.change(%{
+                  number: chapter_j["number"],
+                  scanlator: chapter_j["scanlator"],
+                  title: chapter_j["title"],
+                  date:
+                    DateTime.from_unix!(chapter_j["date"], :millisecond)
+                    |> DateTime.truncate(:second)
+                })
+                |> Repo.insert_or_update!()
+              end)
+
+            {:ok, chapters}
+          end)
+
+        LLWeb.Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
 
       err ->
         IO.inspect(err)

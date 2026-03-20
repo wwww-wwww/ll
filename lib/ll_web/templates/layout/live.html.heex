@@ -5,11 +5,8 @@
     <.nav socket={@socket} view={LLWeb.TagsLive} />
     <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
     <span></span>
-    <.nav socket={@socket} view={LLWeb.RoutesLive} />
     <.nav socket={@socket} view={LLWeb.StatusLive} />
-    <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
-      <.link navigate={Routes.live_dashboard_path(@socket, :home)}>LiveDashboard</.link>
-    <% end %>
+    <.nav socket={@socket} view={LLWeb.RoutesLive} />
   </nav>
 </header>
 <main class="container">

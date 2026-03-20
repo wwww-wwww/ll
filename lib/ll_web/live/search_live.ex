@@ -63,8 +63,8 @@ defmodule LLWeb.SearchLive do
     {:noreply, socket}
   end
 
-  def handle_info(ev, socket) do
-    IO.inspect(ev)
+  def handle_info(%{topic: "series:" <> _, event: "update", payload: series}, socket) do
+    send_update(LLWeb.LibraryCard, id: "series_#{series.id}", series: series)
     {:noreply, socket}
   end
 

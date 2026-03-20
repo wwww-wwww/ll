@@ -8,8 +8,8 @@ defmodule LL.Repo.Migrations.CreateChapters do
       add :url, :text
 
       add :title, :text
-      add :number, :integer
-      add :date, :date
+      add :number, :float
+      add :date, :utc_datetime
       add :scanlator, :string
 
       add :files, {:array, :text}

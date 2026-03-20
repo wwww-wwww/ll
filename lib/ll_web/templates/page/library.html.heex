@@ -1,7 +1,5 @@
-<h1>Library</h1>
-
 <div class="library">
     <%= for series <- @library do %>
-        <.library_card series={series}/>
+        <.live_component id={"series_#{series.id}"} module={LLWeb.LibraryCard} series={series}/>
     <% end %>
 </div>

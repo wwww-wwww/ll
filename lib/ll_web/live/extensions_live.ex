@@ -34,7 +34,7 @@ defmodule LLWeb.ExtensionsLive do
     LLWeb.Endpoint.broadcast(@topic, "update_assigns", {:local, arr})
   end
 
-  def handle_info(%{topic: @topic, event: "update_assigns", payload: {key, val}}, socket) do
+  def handle_info(%{event: "update_assigns", payload: {key, val}}, socket) do
     socket = assign(socket, key, val)
 
     {:noreply, socket}
