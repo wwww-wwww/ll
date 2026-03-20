@@ -1,8 +1,16 @@
 package eu.kanade.tachiyomi.source.online
 
-import eu.kanade.tachiyomi.network.*
+import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.NetworkHelper
+import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.newCachelessCallWithProgress
 import eu.kanade.tachiyomi.source.CatalogueSource
-import eu.kanade.tachiyomi.source.model.*
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.MangasPage
+import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.source.model.SChapter
+import eu.kanade.tachiyomi.source.model.SManga
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -441,8 +449,7 @@ abstract class HttpSource : CatalogueSource {
     open fun prepareNewChapter(
         chapter: SChapter,
         manga: SManga,
-    ) {
-    }
+    ) {}
 
     /**
      * Returns the list of filters for the source.

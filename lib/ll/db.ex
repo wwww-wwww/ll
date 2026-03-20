@@ -22,80 +22,7 @@ defmodule LL.DB do
   def chapter?(%Chapter{}), do: true
   def chapter?(_), do: false
 
-  def tag_names(tags), do: Enum.map(tags, & &1.name)
-  def tag_ids(tags), do: Enum.map(tags, & &1.id)
-
   def update() do
-    series =
-      Repo.all(Series)
-      |> Repo.preload([:tags, {:chapters, :tags}])
-
-    chapters =
-      Repo.all(from(u in Chapter, where: is_nil(u.series_id)))
-      |> Repo.preload(:tags)
-
-    series_chapters =
-      series
-      |> Enum.map(& &1.chapters)
-      |> List.flatten()
-
-    series =
-      Enum.map(series, fn s ->
-        date =
-          case s.chapters do
-            [] -> s.inserted_at
-            chapters -> chapters |> Enum.max_by(& &1.date, Date) |> Map.get(:date)
-          end
-
-        tags = tag_names(s.tags)
-        tag_ids = tag_ids(s.tags)
-
-        %{
-          type: :series,
-          date: date,
-          e: s,
-          search: ([s.id, s.title, "series"] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
-        }
-      end)
-
-    chapters =
-      Enum.map(
-        chapters,
-        fn c ->
-          tags = tag_names(c.tags)
-          tag_ids = tag_ids(c.tags)
-
-          %{
-            type: :chapter,
-            date: c.date,
-            e: c,
-            search: ([c.title] ++ tags ++ tag_ids) |> Enum.map(&String.downcase(&1))
-          }
-        end
-      )
-
-    all =
-      (series ++ chapters)
-      |> Enum.sort_by(& &1.date, {:desc, Date})
-
-    all_safe =
-      all
-      |> Enum.map(
-        &%{
-          id: &1.e.id,
-          title: &1.e.title,
-          cover: &1.e.cover,
-          type: &1.type,
-          date: &1.date,
-          tags: Enum.map(&1.e.tags, fn tag -> %{name: tag.name, type: tag.type} end)
-        }
-      )
-
-    %__MODULE__{
-      time: Time.utc_now(),
-      all: all,
-      all_safe: all_safe
-    }
   end
 
   def reset() do
@@ -118,8 +45,6 @@ defmodule LL.DB do
       {Map.get(state, key), state}
     end)
   end
-
-  def n_files(), do: get(:n_files)
 
   def all(), do: get(:all)
 

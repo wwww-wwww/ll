@@ -5,7 +5,7 @@ import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.storage.EpubFile
 import java.text.ParseException
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 
 /**
  * Fills manga metadata using this epub file's metadata.

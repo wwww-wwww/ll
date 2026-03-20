@@ -3,7 +3,7 @@ defmodule LLWeb.StatusLive do
 
   @topic "status-updates"
 
-  def title(), do: "Status"
+  def title(_socket), do: "Status"
 
   def render(assigns) do
     LLWeb.PageView.render("status.html", assigns)

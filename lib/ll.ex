@@ -57,54 +57,12 @@ defmodule LL do
     # |> Downloader.save_all()
   end
 
-  def sync_assoc() do
-    # Repo.all(Chapter)
-    # |> Repo.preload([:tags, :series])
-    # |> Enum.filter(&(&1.series == nil))
-    # |> Enum.each(fn c ->
-    #   Enum.filter(c.tags, &(&1.type == 1))
-    #   |> Enum.each(fn tag ->
-    #     case Repo.get(Series, tag.id) do
-    #       nil ->
-    #         nil
-
-    #       series ->
-    #         Chapter.change(c, %{})
-    #         |> Chapter.put_series(series)
-    #         |> Repo.update()
-    #     end
-    #   end)
-    # end)
-  end
-
   def all() do
     Repo.all(Chapter)
     |> Repo.preload(:series)
     |> Enum.map(&if &1.series, do: &1.series, else: &1)
     |> Enum.map(& &1.id)
     |> Enum.uniq()
-  end
-
-  def series_tags() do
-    Repo.all(Series)
-    |> Repo.preload([:tags, {:chapters, :tags}])
-    |> Enum.each(fn s ->
-      s_tags = s.tags |> Enum.map(& &1.id)
-
-      tags =
-        Enum.map(s.chapters, & &1.tags)
-        |> List.flatten()
-        |> Enum.uniq()
-        |> Enum.filter(&(&1.id not in s_tags))
-
-      tags =
-        (s.tags ++ tags)
-        |> Enum.filter(&(&1.type != 1))
-
-      Ecto.Changeset.change(s, %{})
-      |> Ecto.Changeset.put_assoc(:tags, tags)
-      |> Repo.update()
-    end)
   end
 
   def check_missing_pages() do

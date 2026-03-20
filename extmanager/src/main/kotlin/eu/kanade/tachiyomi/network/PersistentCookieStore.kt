@@ -158,7 +158,7 @@ class PersistentCookieStore(
             val index =
                 cookies.indexOfFirst {
                     it.name == cookie.name &&
-                            it.path == cookie.path
+                        it.path == cookie.path
                 }
             if (index >= 0) {
                 val newList = cookies.toMutableList()

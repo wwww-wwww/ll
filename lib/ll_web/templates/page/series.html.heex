@@ -1,0 +1,26 @@
+<div class="left">
+    <div class="head">
+        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+        <div class="cover-image">
+            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}/>
+        </div>
+        <% end %>
+        <div class="info">
+            <h1>{@series.title}</h1>
+            <span>Author: <span class="author">{@series.author}</span></span>
+            <span>Artist: <span class="artist">{@series.artist}</span></span>
+            <span>Status: <span class="status">{@series.status}</span></span>
+            <span>Source: <span class="source">{@series.source.name} ({@series.source.lang})</span></span>
+        </div>
+    </div>
+    <div class="actions">
+        <button phx-click="refresh">Refresh</button>
+        <%= if @series.in_library do %>
+        <button phx-click="library_remove">Remove from library</button>
+        <% else %>
+        <button phx-click="library_add">Add to library</button>
+        <% end %>
+    </div>
+    <div class="tags">[tags]</div>
+    <div class="description">{@series.description}</div>
+</div>

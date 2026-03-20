@@ -98,7 +98,15 @@ defmodule LL.Downloader do
         unquote(body),
         fn resp ->
           case resp do
-            unquote(clauses)
+            {:ok, body, _headers} ->
+              case Jason.decode(body) do
+                unquote(clauses)
+              end
+
+            err ->
+              case err do
+                unquote(clauses)
+              end
           end
         end
       )

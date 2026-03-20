@@ -1,8 +1,17 @@
 package eu.kanade.tachiyomi.network
 
 import kotlinx.coroutines.suspendCancellableCoroutine
-import okhttp3.*
+import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.okio.decodeFromBufferedSource
+import kotlinx.serialization.serializer
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import rx.Observable
 import rx.Producer
 import rx.Subscription
@@ -130,6 +139,19 @@ fun OkHttpClient.newCachelessCallWithProgress(
 
     return progressClient.newCall(request)
 }
+
+context(Json)
+inline fun <reified T> Response.parseAs(): T = decodeFromJsonResponse(serializer(), this)
+
+@OptIn(ExperimentalSerializationApi::class)
+context(Json)
+fun <T> decodeFromJsonResponse(
+    deserializer: DeserializationStrategy<T>,
+    response: Response,
+): T =
+    response.body.source().use {
+        decodeFromBufferedSource(deserializer, it)
+    }
 
 class HttpException(
     val code: Int,

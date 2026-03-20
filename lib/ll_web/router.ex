@@ -4,7 +4,6 @@ defmodule LLWeb.Router do
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
-    plug :fetch_live_flash
     plug :put_root_layout, {LLWeb.LayoutView, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
@@ -17,14 +16,14 @@ defmodule LLWeb.Router do
   scope "/", LLWeb do
     pipe_through :browser
 
-    live "/", IndexLive
+    live "/", LibraryLive
     live "/search", SearchLive
     live "/tags", TagsLive
     live "/extensions", ExtensionsLive
 
+    live "/series/:series_id", SeriesLive
+
     live "/series/:series_id/:n", ReaderLive, :series
-    live "/series/:series_id", ReaderLive, :series
-    live "/chapter/:chapter_id", ReaderLive, :chapter
 
     get "/f/files/:path", PageController, :file
 

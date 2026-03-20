@@ -8,7 +8,11 @@ defmodule LL.SourceManager do
   def start_link(_opts) do
     Agent.start_link(
       fn ->
-        sources = Repo.all(Source)
+        sources =
+          Repo.all(Source)
+          |> Repo.preload(:extension)
+          |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
+
         %__MODULE__{sources: sources}
       end,
       name: __MODULE__

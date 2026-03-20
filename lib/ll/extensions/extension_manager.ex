@@ -2,7 +2,7 @@ defmodule LL.ExtensionManager do
   use Agent
 
   require LL.Downloader
-  alias LL.{Downloader, Repo, Extension, Source}
+  alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Tag}
 
   @extension_repo "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
   @extensions_path "extensions"
@@ -54,39 +54,35 @@ defmodule LL.ExtensionManager do
             File.close(file)
 
             Downloader.post path, "http://localhost:8000/process_extension", :local do
-              {:ok, body, _headers} ->
-                with {:ok, sources} <- Jason.decode(body) do
-                  Repo.transact(fn ->
-                    {:ok, extension} =
-                      Ecto.Changeset.change(%Extension{}, %{
-                        name: ext_name,
-                        pkg: pkg,
-                        version: ext_version,
-                        path: path
+              {:ok, sources} ->
+                Repo.transact(fn ->
+                  {:ok, extension} =
+                    Ecto.Changeset.change(%Extension{}, %{
+                      name: ext_name,
+                      pkg: pkg,
+                      version: ext_version,
+                      path: path
+                    })
+                    |> Repo.insert()
+
+                  sources =
+                    Enum.map(sources, fn source ->
+                      Ecto.Changeset.change(%Source{}, %{
+                        source_id: source["id"],
+                        name: source["name"],
+                        lang: source["lang"],
+                        extension_id: extension.id
                       })
                       |> Repo.insert()
+                      |> elem(1)
+                    end)
 
-                    sources =
-                      Enum.map(sources, fn source ->
-                        Ecto.Changeset.change(%Source{}, %{
-                          source_id: source["id"],
-                          name: source["name"],
-                          lang: source["lang"],
-                          extension_id: extension.id
-                        })
-                        |> Repo.insert()
-                        |> elem(1)
-                      end)
+                  {:ok, sources}
+                end)
 
-                    {:ok, sources}
-                  end)
+                LL.SourceManager.update_sources()
 
-                  LL.SourceManager.update_sources()
-
-                  update_local()
-                else
-                  err -> IO.inspect(err)
-                end
+                update_local()
 
               err ->
                 IO.inspect(err)
@@ -98,6 +94,101 @@ defmodule LL.ExtensionManager do
 
       _ ->
         IO.inspect("nothing")
+    end
+  end
+
+  def download_thumbnail(series) do
+    if series.thumbnail_url != nil do
+      Downloader.get series.thumbnail_url do
+        {:ok, body, _headers} ->
+          ext = Path.extname(series.thumbnail_url)
+          path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
+          {:ok, file} = File.open(path, [:write])
+          IO.binwrite(file, body)
+          File.close(file)
+
+          Ecto.Changeset.change(series, %{thumbnail_path: path})
+          |> Repo.update()
+
+        err ->
+          IO.inspect(err)
+      end
+    end
+  end
+
+  def search(source, %{id: search_id, query: query, page: page}, cb) do
+    %{
+      extension: source.extension.path,
+      source: source.source_id,
+      query: query,
+      page: page
+    }
+    |> Jason.encode!()
+    |> Downloader.post "http://localhost:8000/search", :local do
+      {:ok, %{"results" => results}} ->
+        results =
+          Enum.map(results, fn m ->
+            case Repo.get_by(Series, url: m["url"]) do
+              nil ->
+                {:ok, series} =
+                  Ecto.Changeset.change(%Series{}, %{
+                    source_id: source.id,
+                    url: m["url"],
+                    title: m["title"],
+                    artist: m["artist"],
+                    author: m["author"],
+                    description: m["description"],
+                    genre: m["genre"],
+                    status: m["status"],
+                    thumbnail_url: m["thumbnail_url"]
+                  })
+                  |> Repo.insert()
+
+                download_thumbnail(series)
+
+                series
+
+              series ->
+                series
+            end
+          end)
+
+        cb.(results)
+
+      err ->
+        IO.inspect(err)
+    end
+  end
+
+  def series_details(series, cb) do
+    %{
+      "extension" => series.source.extension.path,
+      "source" => series.source.source_id,
+      "title" => series.title,
+      "url" => series.url
+    }
+    |> Jason.encode!()
+    |> Downloader.post "http://localhost:8000/get_details", :local do
+      {:ok, j} ->
+        {:ok, series} =
+          Ecto.Changeset.change(series, %{
+            title: j["title"],
+            artist: j["artist"],
+            author: j["author"],
+            description: j["description"],
+            genre: j["genre"],
+            status: j["status"],
+            thumbnail_url: j["thumbnail_url"]
+          })
+          |> IO.inspect
+          |> Repo.update()
+
+        cb.(series)
+
+      # TODO: if thumbnail url is different, redownload
+
+      err ->
+        IO.inspect(err)
     end
   end
 end

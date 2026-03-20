@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ktlint) apply false
-    alias(libs.plugins.download) apply false
+    alias(libs.plugins.download)
     alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.moko) apply false
     alias(libs.plugins.jte) apply false
@@ -96,9 +96,11 @@ dependencies {
     // AndroidCompat
     implementation(projects.androidCompat)
     implementation(projects.androidCompat.config)
+
+    implementation(kotlin("script-runtime"))
 }
 
-subprojects {
+allprojects {
     plugins.withType<JavaPlugin> {
         extensions.configure<JavaPluginExtension> {
             val javaVersion = JavaVersion.toVersion(libs.versions.jvmTarget.get())
@@ -114,7 +116,7 @@ subprojects {
             }
             compilerOptions {
                 jvmTarget = JvmTarget.fromTarget(libs.versions.jvmTarget.get())
-                freeCompilerArgs.add("-Xcontext-parameters")
+                freeCompilerArgs.add("-Xcontext-receivers")
             }
         }
     }
@@ -124,7 +126,10 @@ tasks {
     shadowJar {
         isZip64 = true
         manifest {
-            attributes("Main-Class" to "moe.grass.MainKt")
+            attributes(
+                "Main-Class" to "moe.grass.MainKt",
+                "Implementation-Title" to rootProject.name,
+            )
         }
 
         archiveBaseName.set(rootProject.name)

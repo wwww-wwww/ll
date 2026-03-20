@@ -45,7 +45,7 @@ defmodule LLWeb do
   def live_view do
     quote do
       use Phoenix.LiveView,
-        layout: {LLWeb.LayoutView, "live.html"},
+        layout: {LLWeb.LayoutView, :live},
         container: {:div, class: __MODULE__ |> to_string() |> String.split(".") |> Enum.at(-1)}
 
       unquote(view_helpers())
@@ -89,6 +89,7 @@ defmodule LLWeb do
     quote do
       # Use all HTML functionality (forms, tags, etc)
       use Phoenix.HTML
+      use Phoenix.Component
 
       # Import LiveView and .heex helpers (live_render, live_patch, <.form>, etc)
       import Phoenix.LiveView.Helpers
@@ -99,6 +100,11 @@ defmodule LLWeb do
       import LLWeb.ErrorHelpers
       import LLWeb.Gettext
       alias LLWeb.Router.Helpers, as: Routes
+
+      use Phoenix.VerifiedRoutes,
+        router: LLWeb.Router,
+        endpoint: LLWeb.Endpoint,
+        statics: ~w(images)
     end
   end
 

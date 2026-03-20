@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.network.interceptor
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
+import eu.kanade.tachiyomi.network.parseAs
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,11 +15,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.okio.decodeFromBufferedSource
-import kotlinx.serialization.serializer
-import okhttp3.*
+import okhttp3.Cookie
+import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import suwayomi.tachidesk.server.serverConfig
@@ -35,7 +39,7 @@ class CloudflareInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
 
-        logger.trace { "CloudflareInterceptor is being used." }
+        logger.debug { "CloudflareInterceptor is being used." }
 
         val originalResponse = chain.proceed(originalRequest)
 
@@ -226,11 +230,7 @@ object CFClearance {
                                     ).toRequestBody(jsonMediaType),
                         ),
                     ).awaitSuccess()
-                    .use {
-                        it.body.source().use {
-                            decodeFromBufferedSource<FlareSolverResponse>(serializer(), it)
-                        }
-                    }
+                    .parseAs<FlareSolverResponse>()
             }
         }
     }

@@ -1,28 +1,29 @@
-<.form let={f} for={%{}} phx-submit="search">
-  <%= text_input f, :query %>
+<h1>Search</h1>
+
+<.form for={@search_form} phx-submit="search">
+  <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
   <%= submit "Search" %>
+
+    <h3>Sources</h3>
+    <div>
+        <%= for source <- @sources do %>
+        <% field = @search_form["enable_#{source.id}"] %>
+        <div>
+            <span><input type="checkbox" id={field.id} name={field.name} checked={field.value} /></span>
+            <span>{source.name}</span>
+            <span>{source.lang}</span>
+            <span>{source.extension.pkg}</span>
+            <span>{source.source_id}</span>
+        </div>
+        <% end %>
+    </div>
 </.form>
 
 <%= for {source_id, results} <- @search.results do %>
 <h4><%= source_id %></h4>
-<div>
-    <%= for entry <- results do %>
-    <div>
-        <span><%= entry["title"] %></span>
-    </div>
+<div class="library">
+    <%= for series <- results do %>
+        <.library_card series={series}/>
     <% end %>
 </div>
 <% end %>
-
-<h3>Sources</h3>
-<div>
-    <%= for source <- @sources do %>
-    <div>
-        <span><%= source.id in @enabled_sources %></span>
-        <span><%= source.name %></span>
-        <span><%= source.lang %></span>
-        <span><%= source.extension.pkg %></span>
-        <span><%= source.source_id %></span>
-    </div>
-    <% end %>
-</div>

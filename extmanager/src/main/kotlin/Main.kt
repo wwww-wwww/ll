@@ -1,6 +1,5 @@
 package moe.grass
 
-import com.googlecode.d2j.dex.Dex2jar
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
@@ -14,6 +13,8 @@ import io.ktor.server.netty.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.future.await
+import kotlinx.coroutines.future.future
 import kotlinx.serialization.json.*
 import suwayomi.tachidesk.manga.impl.util.PackageTools
 import suwayomi.tachidesk.manga.impl.util.PackageTools.getPackageInfo
@@ -40,6 +41,124 @@ fun main() {
 
     embeddedServer(Netty, port = 8000, host = "0.0.0.0") {
         routing {
+            post("/process_extension") {
+                val path = Path(call.receiveText())
+
+                val sources = get_sources(path)
+                    .map {
+                        buildJsonObject {
+                            put("id", it.id)
+                            put("name", it.name)
+                            put("lang", it.lang)
+                        }
+                    }
+
+                call.respond(Json.encodeToString(sources))
+            }
+
+            post("/search") {
+                val resp = future {
+                    val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                    val page = el["page"]?.jsonPrimitive?.int ?: 1
+                    val query = el["query"]?.jsonPrimitive?.content ?: ""
+                    val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                    val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+
+                    if (extension == "" || source_id == 0L) {
+                        return@future buildJsonObject {}
+                    }
+
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+
+                    val source = extensions[extension]?.get(source_id)
+                    if (source == null || source.id != source_id) {
+                        return@future buildJsonObject {}
+                    }
+
+                    println("search with " + source.name + " " + source.lang)
+                    try {
+                        val search = source.getSearchManga(page, query, source.getFilterList())
+                        return@future buildJsonObject {
+                            put("results", buildJsonArray {
+                                search.mangas.forEach {
+                                    add(buildJsonObject {
+                                        put("url", it.url)
+                                        put("title", it.title)
+                                        put("artist", it.artist)
+                                        put("author", it.author)
+                                        put("description", it.description)
+                                        put("genre", it.genre)
+                                        put("status", it.status)
+                                        put("thumbnail_url", it.thumbnail_url)
+                                    })
+                                }
+                            })
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        return@future buildJsonObject {}
+                    }
+
+                    return@future buildJsonObject {}
+                }.await()
+
+                call.respond(Json.encodeToString(resp))
+            }
+
+            post("/get_details") {
+                val resp = future {
+                    val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                    val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                    val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+                    val title = el["title"]?.jsonPrimitive?.content ?: ""
+                    val url = el["url"]?.jsonPrimitive?.content ?: ""
+
+                    if (extension == "" || source_id == 0L) {
+                        return@future buildJsonObject {}
+                    }
+
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+
+                    val source = extensions[extension]?.get(source_id)
+                    if (source == null || source.id != source_id) {
+                        return@future buildJsonObject {}
+                    }
+
+                    val smanga = SManga.create().apply {
+                        this.title = title
+                        this.url = url
+                    }
+
+                    try {
+                        val req = source.getMangaDetails(smanga)
+                        buildJsonObject {
+                            put("title", req.title)
+                            put("artist", req.artist)
+                            put("author", req.author)
+                            put("description", req.description)
+                            put("genre", req.genre)
+                            put("status", req.status)
+                            put("thumbnail_url", req.thumbnail_url)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        return@future buildJsonObject {}
+                    }
+                }.await()
+
+                call.respond(Json.encodeToString(resp))
+            }
+
             post("/filters") {
                 val el = Json.parseToJsonElement(call.receiveText()).jsonObject
 
@@ -60,65 +179,6 @@ fun main() {
                     }
                 }
             }
-            post("/search") {
-                val el = Json.parseToJsonElement(call.receiveText()).jsonObject
-
-                val page = el["page"]?.jsonPrimitive?.int ?: 0
-                val query = el["query"]?.jsonPrimitive?.content ?: ""
-                val extension = el["extension"]?.jsonPrimitive?.content ?: ""
-                val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
-
-                if (extension != "" && source_id != 0L) {
-                    if (!extensions.containsKey(extension)) {
-                        val sources: Map<Long, CatalogueSource> =
-                            get_sources(Path(extension)).map { it.id to it }.toMap()
-                        extensions[extension] = sources
-                    }
-                    extensions[extension]?.let {
-                        it[source_id]?.let { source ->
-                            if (source.id == source_id) {
-                                println("search with " + source.name + " " + source.lang)
-                                val search = source.getSearchManga(page, query, source.getFilterList())
-                                val j = buildJsonArray {
-                                    search.mangas.forEach {
-                                        add(buildJsonObject {
-                                            put("url", it.url)
-                                            put("title", it.title)
-                                            put("artist", it.artist)
-                                            put("author", it.author)
-                                            put("description", it.description)
-                                            put("genre", it.genre)
-                                            put("status", it.status)
-                                            put("thumbnail_url", it.thumbnail_url)
-                                        })
-                                    }
-                                }
-                                call.respond(Json.encodeToString(j))
-                            }
-                        }
-                    }
-                }
-
-//              val req2 = it.getMangaDetails(req.mangas.get(0))
-//              val j = buildJsonObject {
-//                  put("title", req2.title)
-//                  put("description", req2.description)
-//              }
-            }
-            post("/process_extension") {
-                val path = Path(call.receiveText())
-
-                val sources = get_sources(path)
-                    .map {
-                        buildJsonObject {
-                            put("id", it.id)
-                            put("name", it.name)
-                            put("lang", it.lang)
-                        }
-                    }
-
-                call.respond(Json.encodeToString(sources))
-            }
         }
     }.start(wait = true)
 }
@@ -131,7 +191,6 @@ private fun get_sources(path: Path): List<CatalogueSource> {
     val jar_path = path.resolveSibling(path.name + ".jar")
     if (!jar_path.exists()) {
         PackageTools.dex2jar(path.toString(), jar_path.toString())
-        Dex2jar.from(path.toString()).to(jar_path)
         extractAssetsFromApk(path.toString(), jar_path.toString())
     }
 
@@ -142,9 +201,8 @@ private fun get_sources(path: Path): List<CatalogueSource> {
             is SourceFactory -> extensionMainClassInstance.createSources()
             else -> throw RuntimeException("Unknown source class type! ${extensionMainClassInstance.javaClass}")
         }
-            .map { it as CatalogueSource }
 
-    return sources
+    return sources.map { it as CatalogueSource }
 }
 
 private fun extractAssetsFromApk(

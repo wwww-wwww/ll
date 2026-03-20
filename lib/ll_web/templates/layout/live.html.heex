@@ -1,25 +1,17 @@
 <header>
   <nav>
-    <%= nav(@socket, LLWeb.IndexLive) %>
-    <%= nav(@socket, LLWeb.SearchLive) %>
-    <%= nav(@socket, LLWeb.TagsLive) %>
-    <%= nav(@socket, LLWeb.ExtensionsLive) %>
+    <.nav socket={@socket} view={LLWeb.LibraryLive} />
+    <.nav socket={@socket} view={LLWeb.SearchLive} />
+    <.nav socket={@socket} view={LLWeb.TagsLive} />
+    <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
     <span></span>
-    <%= nav(@socket, LLWeb.RoutesLive) %>
-    <%= nav(@socket, LLWeb.StatusLive) %>
+    <.nav socket={@socket} view={LLWeb.RoutesLive} />
+    <.nav socket={@socket} view={LLWeb.StatusLive} />
     <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
-      <%= link "LiveDashboard", to: Routes.live_dashboard_path(@socket, :home) %>
+      <.link navigate={Routes.live_dashboard_path(@socket, :home)}>LiveDashboard</.link>
     <% end %>
   </nav>
 </header>
 <main class="container">
-  <p class="alert alert-info" role="alert"
-    phx-click="lv:clear-flash"
-    phx-value-key="info"><%= live_flash(@flash, :info) %></p>
-
-  <p class="alert alert-danger" role="alert"
-    phx-click="lv:clear-flash"
-    phx-value-key="error"><%= live_flash(@flash, :error) %></p>
-
   <%= @inner_content %>
 </main>

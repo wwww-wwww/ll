@@ -2,11 +2,11 @@ defmodule LLWeb.SearchLive do
   use LLWeb, :live_view
 
   require LL.Downloader
-  alias LL.{Downloader, Repo}
+  alias LL.{Downloader, Repo, Series, ExtensionManager}
 
   @topic to_string(__MODULE__)
 
-  def title(), do: "Search"
+  def title(_socket), do: "Search"
 
   def render(assigns) do
     LLWeb.PageView.render("search.html", assigns)
@@ -20,11 +20,19 @@ defmodule LLWeb.SearchLive do
 
     sources = LL.SourceManager.get().sources
 
+    form =
+      sources
+      |> Enum.map(&{"enable_#{&1.id}", true})
+      |> Map.new()
+      |> Map.merge(%{"query" => ""})
+      |> to_form()
+
     socket =
       socket
-      |> assign(search: %{query: "", page: 0, id: 0, results: %{}})
+      |> assign(topic: @topic <> socket.id)
+      |> assign(search: %{id: 0, query: "", page: 1, results: %{}})
+      |> assign(search_form: form)
       |> assign(sources: sources)
-      |> assign(enabled_sources: sources |> Enum.map(& &1.id))
       |> assign(results: %{})
 
     {:ok, socket}
@@ -34,7 +42,7 @@ defmodule LLWeb.SearchLive do
     LLWeb.Endpoint.broadcast(@topic, "update_assigns", {:sources, arr})
   end
 
-  def handle_info(%{topic: @topic, event: "update_assigns", payload: {key, val}}, socket) do
+  def handle_info(%{event: "update_assigns", payload: {key, val}}, socket) do
     socket = assign(socket, key, val)
 
     {:noreply, socket}
@@ -42,45 +50,48 @@ defmodule LLWeb.SearchLive do
 
   def handle_info(
         %{
-          topic: @topic <> socket_id,
           event: "search_result",
           payload: %{id: search_id, source_id: source_id, results: results}
         },
         socket
       )
-      when socket.id == socket_id and socket.assigns.search.id == search_id do
-    new_results = Map.put(socket.assigns.results, source_id, results)
+      when socket.assigns.search.id == search_id do
+    new_results =
+      Map.put(socket.assigns.search.results, source_id, results)
+
     socket = assign(socket, search: %{socket.assigns.search | results: new_results})
     {:noreply, socket}
   end
 
-  def handle_event("search", %{"query" => query}, socket) do
+  def handle_info(ev, socket) do
+    IO.inspect(ev)
+    {:noreply, socket}
+  end
+
+  def handle_event("search", %{"query" => query} = params, socket) do
+    search_id = Ecto.UUID.generate()
+
+    search = %{
+      id: search_id,
+      query: query,
+      page: 1,
+      results: %{}
+    }
+
+    socket = socket |> assign(search: search)
+
     source =
       socket.assigns.sources
-      |> Enum.filter(&(&1.id in socket.assigns.enabled_sources))
-      |> Enum.at(0)
-
-    search_id = Ecto.UUID.generate()
-    socket = socket |> assign(search: %{socket.assigns.search | query: query, id: search_id})
-
-    %{
-      extension: source.extension.path,
-      source: source.source_id,
-      query: query
-    }
-    |> Jason.encode!()
-    |> Downloader.post "http://localhost:8000/search", :local do
-      {:ok, body, _headers} ->
-        with {:ok, j} <- Jason.decode(body) do
-          LLWeb.Endpoint.broadcast(@topic <> socket.id, "search_result", %{
+      |> Enum.filter(&Map.get(params, "enable_#{&1.id}"))
+      |> Enum.each(fn source ->
+        ExtensionManager.search(source, search, fn results ->
+          LLWeb.Endpoint.broadcast(socket.assigns.topic, "search_result", %{
             source_id: source.source_id,
             id: search_id,
-            results: j
+            results: results
           })
-        else
-          err -> IO.inspect(err)
-        end
-    end
+        end)
+      end)
 
     {:noreply, socket}
   end

@@ -23,15 +23,18 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import org.bouncycastle.jce.provider.BouncyCastleProvider
+import org.cef.network.CefCookieManager
 import org.koin.core.context.startKoin
 import org.koin.core.module.Module
 import org.koin.dsl.module
+import suwayomi.tachidesk.global.impl.KcefWebView.Companion.toCefCookie
 import suwayomi.tachidesk.manga.impl.util.lang.renameTo
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import xyz.nulldev.androidcompat.AndroidCompat
 import xyz.nulldev.androidcompat.AndroidCompatInitializer
 import xyz.nulldev.androidcompat.androidCompatModule
+import xyz.nulldev.androidcompat.webkit.KcefWebViewProvider
 import xyz.nulldev.ts.config.ApplicationRootDir
 import xyz.nulldev.ts.config.configManagerModule
 import xyz.nulldev.ts.config.setLogLevelFor
@@ -98,23 +101,6 @@ fun applicationSetup() {
 
     logger.info { "Running Suwayomi-Server " }
 
-    logger.debug { "Data Root directory is set to: ${applicationDirs.dataRoot}" }
-
-    // Migrate Directories from old versions
-    File("$ApplicationRootDir/manga-thumbnails").renameTo(applicationDirs.tempThumbnailCacheRoot)
-    File("$ApplicationRootDir/manga-local").renameTo(applicationDirs.localMangaRoot)
-    File("$ApplicationRootDir/anime-thumbnails").delete()
-
-    // make dirs we need
-    listOf(
-        applicationDirs.dataRoot,
-        applicationDirs.extensionsRoot,
-        applicationDirs.extensionsRoot + "/icon",
-        applicationDirs.tempThumbnailCacheRoot,
-        applicationDirs.downloadsRoot,
-        applicationDirs.localMangaRoot,
-    ).forEach { File(it).mkdirs() }
-
     // initialize Koin modules
     val app = App()
     startKoin {
@@ -123,6 +109,33 @@ fun applicationSetup() {
             androidCompatModule(),
             configManagerModule(),
             serverModule(applicationDirs),
+            module {
+                single<KcefWebViewProvider.InitBrowserHandler> {
+                    object : KcefWebViewProvider.InitBrowserHandler {
+                        override fun init(provider: KcefWebViewProvider) {
+                            val networkHelper = Injekt.get<NetworkHelper>()
+                            val logger = KotlinLogging.logger {}
+                            logger.info { "Start loading cookies" }
+                            CefCookieManager.getGlobalManager().apply {
+                                val cookies = networkHelper.cookieStore.getStoredCookies()
+                                for (cookie in cookies) {
+                                    try {
+                                        if (!setCookie(
+                                                "https://" + cookie.domain,
+                                                cookie.toCefCookie(),
+                                            )
+                                        ) {
+                                            throw Exception()
+                                        }
+                                    } catch (e: Exception) {
+                                        logger.warn(e) { "Loading cookie ${cookie.name} failed" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
         )
     }
 
@@ -192,6 +205,7 @@ fun applicationSetup() {
             onError = { it?.printStackTrace() },
         )
     }
+
 
     Runtime.getRuntime().addShutdownHook(
         thread(start = false) {

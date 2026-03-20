@@ -19,10 +19,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.brotli.BrotliInterceptor
 import okhttp3.logging.HttpLoggingInterceptor
+//import suwayomi.tachidesk.manga.impl.util.source.GetCatalogueSource
 import java.net.CookieHandler
 import java.net.CookieManager
 import java.net.CookiePolicy
@@ -51,7 +53,7 @@ class NetworkHelper(
     private val userAgent =
         MutableStateFlow(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
     val userAgentFlow = userAgent.asStateFlow()
 
@@ -61,7 +63,9 @@ class NetworkHelper(
         @OptIn(DelicateCoroutinesApi::class)
         userAgent
             .drop(1)
-            .launchIn(GlobalScope)
+            .onEach {
+//                GetCatalogueSource.unregisterAllCatalogueSources() // need to reset the headers
+            }.launchIn(GlobalScope)
     }
 
     private val baseClientBuilder: OkHttpClient.Builder
@@ -121,7 +125,7 @@ class NetworkHelper(
             return builder
         }
 
-    //    val client by lazy { baseClientBuilder.cache(Cache(cacheDir, cacheSize)).build() }
+//    val client by lazy { baseClientBuilder.cache(Cache(cacheDir, cacheSize)).build() }
     val client by lazy { baseClientBuilder.build() }
 
     val cloudflareClient by lazy { client }

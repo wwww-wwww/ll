@@ -5,7 +5,7 @@ defmodule LLWeb.IndexLive do
 
   @limit 20
 
-  def title(), do: "Index"
+  def title(_socket), do: "Index"
 
   def render(assigns) do
     LLWeb.PageView.render("index.html", assigns)

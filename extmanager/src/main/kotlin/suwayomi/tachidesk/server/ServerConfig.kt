@@ -27,7 +27,6 @@ class ServerConfig(
 ) {
     val downloadAsCbz = false
 
-
     val flareSolverrEnabled: MutableStateFlow<Boolean> = MutableStateFlow(true)
 
     val flareSolverrUrl: MutableStateFlow<String> = MutableStateFlow("http://localhost:8191")

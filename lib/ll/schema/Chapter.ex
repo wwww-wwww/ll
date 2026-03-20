@@ -2,17 +2,17 @@ defmodule LL.Chapter do
   use Ecto.Schema
 
   schema "chapters" do
-    field :number, :integer
-    field :title, :string
-    field :date, :date
+    belongs_to :source, LL.Source
+    belongs_to :series, LL.Series
+    field :url, :string
 
-    field :cover, :string
+    field :title, :string
+    field :number, :integer
+    field :date, :date
+    field :scanlator, :string
+
     field :files, {:array, :string}
 
-    belongs_to :source, LL.Source
-    field :source_remote_id, :string
-
-    belongs_to :series, LL.Series, type: :string
     many_to_many :tags, LL.Tag, join_through: LL.ChaptersTags, on_replace: :delete
 
     timestamps()

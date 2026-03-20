@@ -2,14 +2,21 @@ defmodule LL.Series do
   use Ecto.Schema
 
   schema "series" do
-    field :title, :string
-    field :description, :string
-    field :type, :string
-
-    field :cover, :string
-
     belongs_to :source, LL.Source
-    field :source_remote_id, :string
+    field :url, :string
+
+    field :title, :string
+    field :artist, :string
+    field :author, :string
+    field :description, :string
+    field :genre, :string
+    field :status, :integer
+
+    field :thumbnail_url, :string
+    field :thumbnail_path, :string
+
+    field :in_library, :boolean, default: false
+    field :categories, {:array, :string}
 
     has_many :chapters, LL.Chapter
     many_to_many :tags, LL.Tag, join_through: LL.SeriesTags, on_replace: :delete

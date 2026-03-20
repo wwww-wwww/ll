@@ -11,6 +11,19 @@ defmodule LLWeb.PageView do
     4 => "Category"
   }
 
+  def library_card(assigns) do
+    ~H"""
+    <.link navigate={~p"/series/#{@series.id}"}>
+        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}/>
+        <% else %>
+            <img/>
+        <% end %>
+        <span><%= @series.title %></span>
+    </.link>
+    """
+  end
+
   def key_string(key) do
     case key do
       {a, b} ->

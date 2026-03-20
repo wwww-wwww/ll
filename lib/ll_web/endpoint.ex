@@ -20,12 +20,9 @@ defmodule LLWeb.Endpoint do
     at: "/",
     from: :ll,
     gzip: false,
-    only: ~w(assets fonts images jxl favicon.ico robots.txt)
+    only: ~w(assets fonts images favicon.ico robots.txt)
 
-  plug Plug.Static, at: "/covers", from: "/tank/llm/covers"
-  plug Plug.Static, at: "/files", from: "/tank/llm/files"
-  plug Plug.Static, at: "/apk", from: "apk"
-  plug Plug.Static, at: "/tmp", from: "tmp"
+  plug Plug.Static, at: "/thumbnail", from: "thumbnails"
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

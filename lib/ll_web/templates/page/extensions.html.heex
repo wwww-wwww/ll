@@ -18,10 +18,10 @@
 <table>
   <%= for ext <- @remote |> Enum.filter(fn ext -> not Enum.any?(@local, &ext["pkg"] == &1.pkg) end) do %>
     <tr>
+      <td><button phx-click="install" phx-value-pkg={ext["pkg"]}>Install</button></td>
       <td><%= ext["name"] %></td>
       <td><%= ext["version"] %></td>
       <td><%= ext["pkg"] %></td>
-      <td><button phx-click="install" phx-value-pkg={ext["pkg"]}>Install</button></td>
     </tr>
   <% end %>
 </table>
