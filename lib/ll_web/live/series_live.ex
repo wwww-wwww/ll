@@ -22,6 +22,9 @@ defmodule LLWeb.SeriesLive do
       |> Repo.preload(source: :extension)
       |> Repo.preload(:tags)
 
+    source = series.source
+    tags = series.tags
+
     chapters =
       from(c in Chapter, where: c.series_id == ^series.id)
       |> Repo.all()
@@ -29,6 +32,8 @@ defmodule LLWeb.SeriesLive do
     socket =
       socket
       |> assign(series: series)
+      |> assign(source: source)
+      |> assign(tags: tags)
       |> assign(chapters: chapters)
 
     {:ok, socket}

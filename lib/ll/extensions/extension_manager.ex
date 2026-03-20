@@ -69,10 +69,11 @@ defmodule LL.ExtensionManager do
                   sources =
                     Enum.map(sources, fn source ->
                       Ecto.Changeset.change(%Source{}, %{
+                        extension_id: extension.id,
                         source_id: source["id"],
                         name: source["name"],
                         lang: source["lang"],
-                        extension_id: extension.id
+                        base_url: source["base_url"]
                       })
                       |> Repo.insert()
                       |> elem(1)

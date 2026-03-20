@@ -50,6 +50,7 @@ fun main() {
                             put("id", it.id)
                             put("name", it.name)
                             put("lang", it.lang)
+                            put("base_url", (it as HttpSource).baseUrl)
                         }
                     }
 
@@ -308,23 +309,4 @@ private fun extractAssetsFromApk(
     tempJarFile.renameTo(jarFile)
 
     assetsFolder.deleteRecursively()
-}
-
-suspend fun fetchChapterList(source: CatalogueSource, manga: SManga): List<SChapter> {
-    val chapters = source.getChapterList(manga).distinctBy { it.url }
-
-    // Recognize number for new chapters.
-    chapters.forEach { chapter ->
-        (source as? HttpSource)?.prepareNewChapter(chapter, manga)
-        val chapterNumber = ChapterRecognition.parseChapterNumber(
-            manga.title,
-            chapter.name,
-            chapter.chapter_number.toDouble()
-        )
-        chapter.chapter_number = chapterNumber.toFloat()
-        chapter.name = chapter.name.sanitize(manga.title)
-        chapter.scanlator = chapter.scanlator?.ifBlank { null }?.trim()
-    }
-
-    return chapters
 }
