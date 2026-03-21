@@ -5,12 +5,12 @@ defmodule LLWeb.SeriesComponent do
     ~H"""
     <div class="SeriesComponent">
       <.link navigate={~p"/series/#{@state.id}"}>
-          <%= if @state.thumbnail_path != nil and File.exists?(@state.thumbnail_path) do %>
-              <img src={~p"/thumbnail/#{Path.basename(@state.thumbnail_path)}"}/>
-          <% else %>
-              <img/>
-          <% end %>
-          <span><%= @state.title %></span>
+        <%= if @state.thumbnail_path != nil and File.exists?(@state.thumbnail_path) do %>
+          <img src={~p"/thumbnail/#{Path.basename(@state.thumbnail_path)}"}/>
+        <% else %>
+          <img/>
+        <% end %>
+        <span><%= @state.title %></span>
       </.link>
     </div>
     """

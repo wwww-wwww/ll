@@ -3,19 +3,19 @@ defmodule LLWeb.ChapterComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="ChapterComponent" id={"ChapterComponent_#{@state.id}"}>
-        <%= if @state.files != nil do %>
-          <% downloaded = Enum.filter(@state.files, &File.exists?/1) %>
-          <%= if length(downloaded) != length(@state.files) do %>
-            <span>{length(downloaded)}/{length(@state.files)}</span>
-            <button phx-click="download_chapter" value={@state.id}>Download</button>
-          <% end %>
-        <% else %>
-            <button phx-click="download_chapter" value={@state.id}>Download</button>
+    <div class="ChapterComponent">
+      <%= if @state.files != nil do %>
+        <% downloaded = Enum.filter(@state.files, &File.exists?/1) %>
+        <%= if length(downloaded) != length(@state.files) do %>
+          <span>{length(downloaded)}/{length(@state.files)}</span>
+          <button phx-click="download_chapter" value={@state.id}>Download</button>
         <% end %>
-        <span>{@state.title}</span>
-        <span>{@state.date}</span>
-        <span>{@state.scanlator}</span>
+      <% else %>
+          <button phx-click="download_chapter" value={@state.id}>Download</button>
+      <% end %>
+      <span>{@state.title}</span>
+      <span>{@state.date}</span>
+      <span>{@state.scanlator}</span>
     </div>
     """
   end

@@ -37,6 +37,13 @@ defmodule LLWeb.SeriesLive do
       |> assign(chapters: chapters)
       |> assign(page_title: series.title)
 
+    if series.details_updated == nil do
+      LL.ExtensionManager.series_details(series)
+    end
+    if series.chapters_updated == nil do
+      LL.ExtensionManager.series_chapters(series)
+    end
+
     {:ok, socket}
   end
 
@@ -47,12 +54,12 @@ defmodule LLWeb.SeriesLive do
     do: {:noreply, assign(socket, chapters: chapters)}
 
   def handle_event("refresh", _, socket) do
-    LL.ExtensionManager.series_details(socket.assigns.series, socket.assigns.source)
+    LL.ExtensionManager.series_details(socket.assigns.series)
     {:noreply, socket}
   end
 
   def handle_event("refresh_chapters", _, socket) do
-    LL.ExtensionManager.series_chapters(socket.assigns.series, socket.assigns.source)
+    LL.ExtensionManager.series_chapters(socket.assigns.series)
     {:noreply, socket}
   end
 
@@ -100,7 +107,6 @@ defmodule LLWeb.SeriesLive do
     Repo.get(Chapter, chapter_id)
     |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
 
-    # LL.ExtensionManager.series_chapters(socket.assigns.series)
     {:noreply, socket}
   end
 end

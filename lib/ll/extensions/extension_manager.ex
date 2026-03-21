@@ -69,14 +69,14 @@ defmodule LL.ExtensionManager do
             Downloader.post path, @manager_api <> "process_extension", :local do
               {:ok, sources} ->
                 Repo.transact(fn ->
-                  {:ok, extension} =
+                  extension =
                     Ecto.Changeset.change(%Extension{}, %{
                       name: ext_name,
                       pkg: pkg,
                       version: ext_version,
                       path: path
                     })
-                    |> Repo.insert()
+                    |> Repo.insert!()
 
                   sources =
                     Enum.map(sources, fn source ->
@@ -93,10 +93,15 @@ defmodule LL.ExtensionManager do
 
                   {:ok, sources}
                 end)
+                |> case do
+                  {:ok, _} ->
+                    LL.SourceManager.update_sources()
 
-                LL.SourceManager.update_sources()
+                    update_local()
 
-                update_local()
+                  err ->
+                    Logger.error(err)
+                end
 
               err ->
                 Logger.error(err)
@@ -180,9 +185,11 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def series_details(series, source) do
+  def series_details(series) do
+    source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
+
     %{
-      "extension" => series.source.extension.path,
+      "extension" => source.extension.path,
       "source" => source.source_id,
       "url" => series.url
     }
@@ -197,7 +204,8 @@ defmodule LL.ExtensionManager do
             description: j["description"],
             genre: j["genre"],
             status: j["status"],
-            thumbnail_url: j["thumbnail_url"]
+            thumbnail_url: j["thumbnail_url"],
+            details_updated: DateTime.utc_now() |> DateTime.truncate(:second)
           })
           |> Repo.update()
 
@@ -210,7 +218,9 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def series_chapters(series, source) do
+  def series_chapters(series) do
+    source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
+
     %{
       "extension" => source.extension.path,
       "source" => source.source_id,
@@ -219,40 +229,52 @@ defmodule LL.ExtensionManager do
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "series_chapters", :local do
       {:ok, j} ->
-        {:ok, chapters} =
-          Repo.transact(fn ->
-            chapters =
-              Enum.map(j["results"], fn chapter_j ->
-                case Repo.get_by(Chapter,
-                       series_id: series.id,
-                       source_id: source.id,
-                       url: chapter_j["url"]
-                     ) do
-                  nil ->
-                    %Chapter{
-                      series_id: series.id,
-                      source_id: source.id,
-                      url: chapter_j["url"]
-                    }
+        Repo.transact(fn ->
+          chapters =
+            Enum.map(j["results"], fn chapter_j ->
+              case Repo.get_by(Chapter,
+                     series_id: series.id,
+                     source_id: source.id,
+                     url: chapter_j["url"]
+                   ) do
+                nil ->
+                  %Chapter{
+                    series_id: series.id,
+                    source_id: source.id,
+                    url: chapter_j["url"]
+                  }
 
-                  chapter ->
-                    chapter
-                end
-                |> Ecto.Changeset.change(%{
-                  number: chapter_j["number"],
-                  scanlator: chapter_j["scanlator"],
-                  title: chapter_j["title"],
-                  date:
-                    DateTime.from_unix!(chapter_j["date"], :millisecond)
-                    |> DateTime.truncate(:second)
-                })
-                |> Repo.insert_or_update!()
-              end)
+                chapter ->
+                  chapter
+              end
+              |> Ecto.Changeset.change(%{
+                number: chapter_j["number"],
+                scanlator: chapter_j["scanlator"],
+                title: chapter_j["title"],
+                date:
+                  DateTime.from_unix!(chapter_j["date"], :millisecond)
+                  |> DateTime.truncate(:second)
+              })
+              |> Repo.insert_or_update!()
+            end)
 
-            {:ok, chapters}
-          end)
+          series =
+            Repo.reload(series)
+            |> Ecto.Changeset.change(%{
+              chapters_updated: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+            |> Repo.update!()
 
-        Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
+          {:ok, {chapters, series}}
+        end)
+        |> case do
+          {:ok, {chapters, series}} ->
+            Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
+            Endpoint.broadcast("series:#{series.id}", "update", series)
+
+          err ->
+            Logger.error(err)
+        end
 
       err ->
         Logger.error(err)
@@ -268,8 +290,6 @@ defmodule LL.ExtensionManager do
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "chapter_pages", :local do
       {:ok, j} ->
-        files = Enum.map(j["results"], &Jason.encode!(&1))
-
         Repo.transact(fn ->
           Repo.get(Chapter, chapter.id)
           |> Ecto.Changeset.change(%{files: List.duplicate("", length(j["results"]))})
@@ -295,31 +315,35 @@ defmodule LL.ExtensionManager do
     number = index |> to_string |> String.pad_leading(to_pad, "0")
     filename = "#{number}.#{ext}"
 
-    {:ok, chapter} =
-      Repo.transact(fn ->
-        series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
+    Repo.transact(fn ->
+      series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
 
-        path = download_path(series) |> Path.join(filename)
+      path = download_path(series) |> Path.join(filename)
 
-        File.mkdir_p(Path.dirname(path))
+      File.mkdir_p(Path.dirname(path))
 
-        {:ok, file} = File.open(path, [:write])
-        IO.binwrite(file, body)
-        File.close(file)
+      {:ok, file} = File.open(path, [:write])
+      IO.binwrite(file, body)
+      File.close(file)
 
-        Logger.info("saved to #{path}")
+      Logger.info("saved to #{path}")
 
-        chapter = Repo.reload(chapter)
+      chapter = Repo.reload(chapter)
 
-        files = List.replace_at(chapter.files, index, path)
+      files = List.replace_at(chapter.files, index, path)
 
-        Ecto.Changeset.change(chapter, %{
-          files: files
-        })
-        |> Repo.update()
-      end)
+      Ecto.Changeset.change(chapter, %{
+        files: files
+      })
+      |> Repo.update()
+    end)
+    |> case do
+      {:ok, chapter} ->
+        Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
 
-    Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
+      err ->
+        Logger.error(err)
+    end
   end
 
   def get_ext(headers) do
