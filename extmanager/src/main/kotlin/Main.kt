@@ -209,6 +209,55 @@ fun main() {
                 call.respond(Json.encodeToString(resp))
             }
 
+            post("/get_pages") {
+                val resp = future {
+                    val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                    val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                    val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+                    val url = el["url"]?.jsonPrimitive?.content ?: ""
+
+                    if (extension == "" || source_id == 0L) {
+                        return@future buildJsonObject {}
+                    }
+
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+
+                    val source = extensions[extension]?.get(source_id)
+                    if (source == null || source.id != source_id) {
+                        return@future buildJsonObject {}
+                    }
+
+                    val schapter = SChapter.create().apply {
+                        this.url = url
+                    }
+
+                    try {
+                        val req = source.getPageList(schapter)
+                        return@future buildJsonObject {
+                            put("results", buildJsonArray {
+                                req.forEach {
+                                    add(buildJsonObject {
+                                        put("index", it.index)
+                                        put("url", it.url)
+                                        put("image_url", it.imageUrl)
+                                    })
+                                }
+                            })
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        return@future buildJsonObject {}
+                    }
+                }.await()
+
+                call.respond(Json.encodeToString(resp))
+            }
+
             post("/filters") {
                 val el = Json.parseToJsonElement(call.receiveText()).jsonObject
 

@@ -56,6 +56,10 @@ defmodule LLWeb do
     quote do
       use Phoenix.LiveComponent
 
+      def id(e), do: "#{__MODULE__}-#{e.id}"
+
+      def send_update(state), do: send_update(__MODULE__, id: id(state), state: state)
+
       unquote(view_helpers())
     end
   end
@@ -105,6 +109,8 @@ defmodule LLWeb do
         router: LLWeb.Router,
         endpoint: LLWeb.Endpoint,
         statics: ~w(images)
+
+      alias LLWeb.Endpoint
     end
   end
 

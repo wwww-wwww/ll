@@ -17,6 +17,7 @@ defmodule LLWeb.Router do
     pipe_through :browser
 
     live "/", LibraryLive
+    live "/downloads", DownloadsLive
     live "/search", SearchLive
     live "/tags", TagsLive
     live "/extensions", ExtensionsLive

@@ -14,7 +14,9 @@ defmodule LLWeb.ExtensionsLive do
   end
 
   def mount(_, _session, socket) do
-    if connected?(socket), do: LLWeb.Endpoint.subscribe(@topic)
+    if connected?(socket) do
+      Endpoint.subscribe("extensions")
+    end
 
     manager = ExtensionManager.get()
 
@@ -26,19 +28,11 @@ defmodule LLWeb.ExtensionsLive do
     {:ok, socket}
   end
 
-  def update_remote(arr) do
-    LLWeb.Endpoint.broadcast(@topic, "update_assigns", {:remote, arr})
-  end
+  def handle_info(%{event: "local", payload: arr}, socket),
+    do: {:noreply, assign(socket, local: arr)}
 
-  def update_local(arr) do
-    LLWeb.Endpoint.broadcast(@topic, "update_assigns", {:local, arr})
-  end
-
-  def handle_info(%{event: "update_assigns", payload: {key, val}}, socket) do
-    socket = assign(socket, key, val)
-
-    {:noreply, socket}
-  end
+  def handle_info(%{event: "remote", payload: arr}, socket),
+    do: {:noreply, assign(socket, remote: arr)}
 
   def handle_event("update_remote", _params, socket) do
     ExtensionManager.update_remote()

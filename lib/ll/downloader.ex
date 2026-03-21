@@ -61,7 +61,7 @@ defmodule LL.Downloader do
         WorkerManager.finish(state.queue, job)
 
         Status.put(state.id, "Waiting 1 second")
-        :ok = :timer.sleep(1000)
+        :ok = :timer.sleep(100)
 
         GenServer.cast(self(), :loop)
 

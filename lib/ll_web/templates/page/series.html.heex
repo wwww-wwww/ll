@@ -2,7 +2,7 @@
     <div class="head">
         <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
         <div class="cover-image">
-            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}/>
+            <img src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")}/>
         </div>
         <% end %>
         <div class="info">
@@ -26,11 +26,16 @@
     <div class="description">{@series.description}</div>
 </div>
 <div class="right">
-    <%= for c <- @chapters do %>
-    <div>
-        <span>{c.title}</span>
-        <span>{c.date}</span>
-        <span>{c.scanlator}</span>
-    </div>
+    <% sorted = Enum.sort_by(@chapters,
+        fn c ->
+          {c.number,
+           Regex.scan(~r/\d+\.?\d*/, c.title)
+           |> List.flatten()
+           |> Enum.map(&(Float.parse(&1) |> elem(0)))}
+        end,
+        :desc
+      ) %>
+    <%= for c <- sorted do %>
+        <.live_component id={"ChaperComponent_#{c.id}"} module={LLWeb.ChapterComponent} chapter={c}/>
     <% end %>
 </div>

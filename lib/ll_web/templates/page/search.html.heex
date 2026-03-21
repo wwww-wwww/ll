@@ -23,11 +23,7 @@
 <h4>{@sources |> Enum.filter(& &1.source_id ==source_id) |> Enum.at(0) |> Map.get(:name)}</h4>
 <div class="library">
     <%= for series <- results do %>
-        <.live_component
-          id={"series_#{series.id}"}
-          module={LLWeb.LibraryCard}
-          series={series}
-          on_card_update={fn series -> send(self(), {:series, series}) end} />
+        <.live_component2 module={LLWeb.SeriesComponent} state={series} />
     <% end %>
 </div>
 <% end %>

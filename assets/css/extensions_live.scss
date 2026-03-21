@@ -1,0 +1,16 @@
+.ExtensionsLive {
+    .details {
+        >div {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+    }
+
+    tr {
+        img {
+            width: 3em;
+            height: 3em;
+        }
+    }
+}

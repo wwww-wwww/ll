@@ -15,7 +15,7 @@ defmodule LLWeb.StatusLive do
   end
 
   def mount(_, _session, socket) do
-    if connected?(socket), do: LLWeb.Endpoint.subscribe(@topic)
+    if connected?(socket), do: Endpoint.subscribe(@topic)
 
     socket =
       socket
@@ -48,6 +48,6 @@ defmodule LLWeb.StatusLive do
   end
 
   def update() do
-    LLWeb.Endpoint.broadcast(@topic, "status:update", %{status: status()})
+    Endpoint.broadcast(@topic, "status:update", %{status: status()})
   end
 end

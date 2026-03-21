@@ -1,6 +1,10 @@
+<head>
+  <title>{@socket.view.title(@socket)}</title>
+</head>
 <header>
   <nav>
     <.nav socket={@socket} view={LLWeb.LibraryLive} />
+    <.nav socket={@socket} view={LLWeb.DownloadsLive} />
     <.nav socket={@socket} view={LLWeb.SearchLive} />
     <.nav socket={@socket} view={LLWeb.TagsLive} />
     <.nav socket={@socket} view={LLWeb.ExtensionsLive} />

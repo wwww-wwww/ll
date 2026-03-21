@@ -1,9 +1,10 @@
 defmodule LLWeb.LibraryLive do
   use LLWeb, :live_view
+  use LLWeb.SeriesComponent
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{DB, Series, Repo}
+  alias LL.{Series, Repo}
 
   @limit 20
 
@@ -15,7 +16,7 @@ defmodule LLWeb.LibraryLive do
 
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      LLWeb.Endpoint.subscribe("library")
+      Endpoint.subscribe("library")
     end
 
     library =
@@ -37,7 +38,8 @@ defmodule LLWeb.LibraryLive do
         where: s.in_library == true
       )
       |> Repo.all()
-    LLWeb.Endpoint.broadcast("library", "update", library)
+
+    Endpoint.broadcast("library", "update", library)
   end
 
   def handle_info(%{event: "update", payload: library}, socket) do

@@ -1,9 +1,9 @@
 defmodule LLWeb.SeriesLive do
   use LLWeb, :live_view
+  use LLWeb.ChapterComponent
 
   import Ecto.Query, only: [from: 2]
-  require LL.Downloader
-  alias LL.{Downloader, Repo, Series, Chapter}
+  alias LL.{Repo, Series, Chapter}
 
   def title(_socket), do: "Series"
 
@@ -13,14 +13,15 @@ defmodule LLWeb.SeriesLive do
 
   def mount(%{"series_id" => series_id}, _session, socket) do
     if connected?(socket) do
-      LLWeb.Endpoint.subscribe("series:#{series_id}")
-      LLWeb.Endpoint.subscribe("chapters:#{series_id}")
+      Endpoint.subscribe("series:#{series_id}")
+      Endpoint.subscribe("chapters:#{series_id}")
     end
 
     series =
       Repo.get(Series, series_id)
       |> Repo.preload(source: :extension)
       |> Repo.preload(:tags)
+      |> Map.put(:description, "")
 
     source = series.source
     tags = series.tags
@@ -46,12 +47,12 @@ defmodule LLWeb.SeriesLive do
     do: {:noreply, assign(socket, chapters: chapters)}
 
   def handle_event("refresh", _, socket) do
-    LL.ExtensionManager.series_details(socket.assigns.series)
+    LL.ExtensionManager.series_details(socket.assigns.series, socket.assigns.source)
     {:noreply, socket}
   end
 
   def handle_event("refresh_chapters", _, socket) do
-    LL.ExtensionManager.series_chapters(socket.assigns.series)
+    LL.ExtensionManager.series_chapters(socket.assigns.series, socket.assigns.source)
     {:noreply, socket}
   end
 
@@ -68,7 +69,7 @@ defmodule LLWeb.SeriesLive do
       |> Repo.preload(source: :extension)
       |> Repo.preload(:tags)
 
-    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+    Endpoint.broadcast("series:#{series.id}", "update", series)
 
     LLWeb.LibraryLive.update()
 
@@ -88,10 +89,18 @@ defmodule LLWeb.SeriesLive do
       |> Repo.preload(source: :extension)
       |> Repo.preload(:tags)
 
-    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+    Endpoint.broadcast("series:#{series.id}", "update", series)
 
     LLWeb.LibraryLive.update()
 
+    {:noreply, socket}
+  end
+
+  def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
+    Repo.get(Chapter, chapter_id)
+    |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
+
+    # LL.ExtensionManager.series_chapters(socket.assigns.series)
     {:noreply, socket}
   end
 end
