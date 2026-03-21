@@ -1,12 +1,13 @@
 defmodule LL.ExtensionManager do
   use Agent
 
+  require Logger
   require LL.Downloader
   alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Tag}
   alias LLWeb.Endpoint
 
   @extensions_path "extensions"
-  @manager_api "http://localhost:8000"
+  @manager_api "http://localhost:8000/"
 
   defstruct remote: [],
             local: []
@@ -22,9 +23,8 @@ defmodule LL.ExtensionManager do
   def extension_repo(), do: "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
 
   def download_path(series) do
-    source = Repo.preload(series, :source) |> Map.get(:source)
     name = String.replace(series.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "")
-    name = "#{name}-#{source.lang}-#{source.name}-#{series.id}"
+    name = "#{name}-#{series.source.lang}-#{series.source.name}-#{series.id}"
     Path.expand("downloads") |> Path.join(name)
   end
 
@@ -38,11 +38,11 @@ defmodule LL.ExtensionManager do
             Endpoint.broadcast("extensions", "remote", arr)
 
           err ->
-            IO.inspect(err)
+            Logger.error(err)
         end
 
       err ->
-        IO.inspect(err)
+        Logger.error(err)
     end
   end
 
@@ -66,7 +66,7 @@ defmodule LL.ExtensionManager do
             IO.binwrite(file, body)
             File.close(file)
 
-            Downloader.post path, @manager_api <> "/process_extension", :local do
+            Downloader.post path, @manager_api <> "process_extension", :local do
               {:ok, sources} ->
                 Repo.transact(fn ->
                   {:ok, extension} =
@@ -99,15 +99,15 @@ defmodule LL.ExtensionManager do
                 update_local()
 
               err ->
-                IO.inspect(err)
+                Logger.error(err)
             end
 
           err ->
-            IO.inspect(err)
+            Logger.error(err)
         end
 
       _ ->
-        IO.inspect("nothing")
+        Logger.error("#{pkg} not found in remote extensions")
     end
   end
 
@@ -115,7 +115,7 @@ defmodule LL.ExtensionManager do
     if series.thumbnail_url != nil do
       Downloader.get series.thumbnail_url do
         {:ok, body, _headers} ->
-          ext = Path.extname(series.thumbnail_url)
+          ext = series.thumbnail_url |> URI.parse() |> Map.get(:path) |> Path.extname()
           path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
           {:ok, file} = File.open(path, [:write])
           IO.binwrite(file, body)
@@ -128,7 +128,7 @@ defmodule LL.ExtensionManager do
           Endpoint.broadcast("series:#{series.id}", "update", series)
 
         err ->
-          IO.inspect(err)
+          Logger.error(err)
       end
     end
   end
@@ -141,7 +141,7 @@ defmodule LL.ExtensionManager do
       page: page
     }
     |> Jason.encode!()
-    |> Downloader.post @manager_api <> "/search", :local do
+    |> Downloader.post @manager_api <> "search", :local do
       {:ok, %{"results" => results}} ->
         results =
           Enum.map(results, fn m ->
@@ -176,7 +176,7 @@ defmodule LL.ExtensionManager do
         cb.(results)
 
       err ->
-        IO.inspect(err)
+        Logger.error(err)
     end
   end
 
@@ -187,7 +187,7 @@ defmodule LL.ExtensionManager do
       "url" => series.url
     }
     |> Jason.encode!()
-    |> Downloader.post @manager_api <> "/get_details", :local do
+    |> Downloader.post @manager_api <> "series_details", :local do
       {:ok, j} ->
         {:ok, series} =
           Ecto.Changeset.change(series, %{
@@ -206,7 +206,7 @@ defmodule LL.ExtensionManager do
       # TODO: if thumbnail url is different, redownload
 
       err ->
-        IO.inspect(err)
+        Logger.error(err)
     end
   end
 
@@ -217,7 +217,7 @@ defmodule LL.ExtensionManager do
       "url" => series.url
     }
     |> Jason.encode!()
-    |> Downloader.post @manager_api <> "/get_chapters", :local do
+    |> Downloader.post @manager_api <> "series_chapters", :local do
       {:ok, j} ->
         {:ok, chapters} =
           Repo.transact(fn ->
@@ -255,7 +255,7 @@ defmodule LL.ExtensionManager do
         Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
 
       err ->
-        IO.inspect(err)
+        Logger.error(err)
     end
   end
 
@@ -266,62 +266,90 @@ defmodule LL.ExtensionManager do
       "url" => chapter.url
     }
     |> Jason.encode!()
-    |> Downloader.post @manager_api <> "/get_pages", :local do
+    |> Downloader.post @manager_api <> "chapter_pages", :local do
       {:ok, j} ->
-        files = Enum.map(j["results"], & &1["image_url"])
+        files = Enum.map(j["results"], &Jason.encode!(&1))
 
         Repo.transact(fn ->
           Repo.get(Chapter, chapter.id)
-          |> Ecto.Changeset.change(%{files: files})
+          |> Ecto.Changeset.change(%{files: List.duplicate("", length(j["results"]))})
           |> Repo.update()
         end)
         |> case do
           {:ok, chapter} ->
-            chapter.files
+            j["results"]
             |> Enum.with_index()
-            |> Enum.each(&download_page(chapter, elem(&1, 0), elem(&1, 1)))
+            |> Enum.take(1)
+            |> Enum.each(&download_page(chapter, source, elem(&1, 0), elem(&1, 1)))
 
           err ->
-            IO.inspect(err)
+            Logger.error(err)
         end
 
       err ->
-        IO.inspect(err)
+        Logger.error(err)
     end
   end
 
-  def download_page(chapter, url, index) do
+  def save_page(body, ext, chapter, index) do
     to_pad = chapter.files |> length |> to_string |> String.length()
-    ext = url |> URI.parse() |> Map.get(:path) |> Path.extname()
     number = index |> to_string |> String.pad_leading(to_pad, "0")
+    filename = "#{number}.#{ext}"
 
-    Downloader.get url do
-      {:ok, body, _headers} ->
-        Repo.transact(fn ->
-          series = chapter |> Repo.preload(:series) |> Map.get(:series)
+    Repo.transact(fn ->
+      series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
 
-          path =
-            download_path(series)
-            |> Path.join("#{number}#{ext}")
+      path = download_path(series) |> Path.join(filename)
 
-          File.mkdir_p(Path.dirname(path))
+      File.mkdir_p(Path.dirname(path))
 
-          {:ok, file} = File.open(path, [:write])
-          IO.binwrite(file, body)
-          File.close(file)
+      {:ok, file} = File.open(path, [:write])
+      IO.binwrite(file, body)
+      File.close(file)
 
-          chapter = Repo.reload(chapter)
+      Logger.info("saved to #{path}")
 
-          files = Enum.map(chapter.files, &if(&1 == url, do: path, else: &1))
+      chapter = Repo.reload(chapter)
 
-          Ecto.Changeset.change(chapter, %{
-            files: files
-          })
-          |> Repo.update()
-        end)
+      files = List.replace_at(chapter.files, index, path)
 
-      err ->
-        IO.inspect(err)
+      Ecto.Changeset.change(chapter, %{
+        files: files
+      })
+      |> Repo.update()
+    end)
+  end
+
+  def get_ext(headers) do
+    headers
+    |> Enum.filter(&(elem(&1, 0) == "Content-Type"))
+    |> Enum.at(0)
+    |> elem(1)
+    |> MIME.extensions()
+    |> Enum.at(0)
+  end
+
+  def download_page(chapter, source, page, index) do
+    %{"image_url" => url} = page
+
+    if URI.parse(url).scheme == nil do
+      Map.merge(page, %{
+        "extension" => source.extension.path,
+        "source" => source.source_id
+      })
+      |> Jason.encode!()
+      |> Downloader.post @manager_api <> "image", :local do
+        {:ok, body, headers} ->
+          save_page(body, get_ext(headers), chapter, index)
+      end
+    else
+      Downloader.get url do
+        {:ok, body, headers} ->
+          save_page(body, get_ext(headers), chapter, index)
+
+        err ->
+          Logger.error(err)
+      end
     end
   end
 end

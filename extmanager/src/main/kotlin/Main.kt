@@ -3,6 +3,7 @@ package moe.grass
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
+import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
@@ -13,9 +14,11 @@ import io.ktor.server.netty.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.http.ContentType
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
 import kotlinx.serialization.json.*
+import okhttp3.Response
 import suwayomi.tachidesk.manga.impl.util.PackageTools
 import suwayomi.tachidesk.manga.impl.util.PackageTools.getPackageInfo
 import suwayomi.tachidesk.manga.impl.util.PackageTools.loadExtensionSources
@@ -54,7 +57,7 @@ fun main() {
                         }
                     }
 
-                call.respond(Json.encodeToString(sources))
+                call.respondText(Json.encodeToString(sources), ContentType.Application.Json)
             }
 
             post("/search") {
@@ -108,10 +111,10 @@ fun main() {
                     return@future buildJsonObject {}
                 }.await()
 
-                call.respond(Json.encodeToString(resp))
+                call.respondText(Json.encodeToString(resp), ContentType.Application.Json)
             }
 
-            post("/get_details") {
+            post("/series_details") {
                 val resp = future {
                     val el = Json.parseToJsonElement(call.receiveText()).jsonObject
 
@@ -155,10 +158,10 @@ fun main() {
                     }
                 }.await()
 
-                call.respond(Json.encodeToString(resp))
+                call.respondText(Json.encodeToString(resp), ContentType.Application.Json)
             }
 
-            post("/get_chapters") {
+            post("/series_chapters") {
                 val resp = future {
                     val el = Json.parseToJsonElement(call.receiveText()).jsonObject
 
@@ -206,10 +209,10 @@ fun main() {
                     }
                 }.await()
 
-                call.respond(Json.encodeToString(resp))
+                call.respondText(Json.encodeToString(resp), ContentType.Application.Json)
             }
 
-            post("/get_pages") {
+            post("/chapter_pages") {
                 val resp = future {
                     val el = Json.parseToJsonElement(call.receiveText()).jsonObject
 
@@ -227,7 +230,7 @@ fun main() {
                         extensions[extension] = sources
                     }
 
-                    val source = extensions[extension]?.get(source_id)
+                    val source = extensions[extension]?.get(source_id) as HttpSource
                     if (source == null || source.id != source_id) {
                         return@future buildJsonObject {}
                     }
@@ -244,7 +247,7 @@ fun main() {
                                     add(buildJsonObject {
                                         put("index", it.index)
                                         put("url", it.url)
-                                        put("image_url", it.imageUrl)
+                                        put("image_url", it.imageUrl ?: source.getImageUrl(it))
                                     })
                                 }
                             })
@@ -255,7 +258,48 @@ fun main() {
                     }
                 }.await()
 
-                call.respond(Json.encodeToString(resp))
+                call.respondText(Json.encodeToString(resp), ContentType.Application.Json)
+            }
+
+            post("/image") {
+                val resp: Response? = future {
+                    val el = Json.parseToJsonElement(call.receiveText()).jsonObject
+
+                    val extension = el["extension"]?.jsonPrimitive?.content ?: ""
+                    val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+                    val index = el["index"]?.jsonPrimitive?.int ?: 0
+                    val url = el["url"]?.jsonPrimitive?.content ?: ""
+                    val image_url = el["image_url"]?.jsonPrimitive?.content
+
+                    if (extension == "" || source_id == 0L) {
+                        return@future null
+                    }
+
+                    if (!extensions.containsKey(extension)) {
+                        val sources: Map<Long, CatalogueSource> =
+                            get_sources(Path(extension)).map { it.id to it }.toMap()
+                        extensions[extension] = sources
+                    }
+
+                    val source = extensions[extension]?.get(source_id) as HttpSource
+                    if (source == null || source.id != source_id) {
+                        return@future null
+                    }
+
+                    val page = Page(index, url, image_url)
+
+                    try {
+                        return@future source.getImage(page)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        return@future null
+                    }
+                }.await()
+
+                if (resp != null)
+                    call.respondBytes(resp.body.bytes(), ContentType.parse(resp.body.contentType().toString()))
+                else
+                    call.respondText("{}", ContentType.Application.Json)
             }
 
             post("/filters") {

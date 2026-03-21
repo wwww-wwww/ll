@@ -7,7 +7,7 @@ defmodule LLWeb.ExtensionsLive do
 
   @topic to_string(__MODULE__)
 
-  def title(_socket), do: "Extensions"
+  def title(), do: "Extensions"
 
   def render(assigns) do
     LLWeb.PageView.render("extensions.html", assigns)

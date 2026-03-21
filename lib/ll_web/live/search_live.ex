@@ -6,7 +6,7 @@ defmodule LLWeb.SearchLive do
 
   @topic to_string(__MODULE__)
 
-  def title(_socket), do: "Search"
+  def title(), do: "Search"
 
   def render(assigns) do
     LLWeb.PageView.render("search.html", assigns)

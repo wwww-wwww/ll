@@ -1,5 +1,5 @@
 <head>
-  <title>{@socket.view.title(@socket)}</title>
+  <title>{assigns[:page_title] || @socket.view.title()}</title>
 </head>
 <header>
   <nav>

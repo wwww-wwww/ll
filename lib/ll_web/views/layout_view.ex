@@ -10,7 +10,7 @@ defmodule LLWeb.LayoutView do
     <.link
       navigate={Routes.live_path(@socket, @view)}
       class={if @socket.view == @view, do: "active"}
-    ><span>{@view.title(nil)}</span></.link>
+    ><span>{@view.title()}</span></.link>
     """
   end
 end

@@ -45,6 +45,7 @@ class CloudflareInterceptor(
 
         // Check if Cloudflare anti-bot is on
         if (!(originalResponse.code in ERROR_CODES && originalResponse.header("Server") in SERVER_CHECK)) {
+            logger.debug { "Cloudflare anti-bot is not on" }
             return originalResponse
         }
 

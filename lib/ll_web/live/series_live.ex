@@ -5,7 +5,7 @@ defmodule LLWeb.SeriesLive do
   import Ecto.Query, only: [from: 2]
   alias LL.{Repo, Series, Chapter}
 
-  def title(_socket), do: "Series"
+  def title(), do: "Series"
 
   def render(assigns) do
     LLWeb.PageView.render("series.html", assigns)
@@ -21,7 +21,6 @@ defmodule LLWeb.SeriesLive do
       Repo.get(Series, series_id)
       |> Repo.preload(source: :extension)
       |> Repo.preload(:tags)
-      |> Map.put(:description, "")
 
     source = series.source
     tags = series.tags
@@ -36,6 +35,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(source: source)
       |> assign(tags: tags)
       |> assign(chapters: chapters)
+      |> assign(page_title: series.title)
 
     {:ok, socket}
   end

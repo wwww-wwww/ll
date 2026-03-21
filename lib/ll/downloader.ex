@@ -98,9 +98,15 @@ defmodule LL.Downloader do
         unquote(body),
         fn resp ->
           case resp do
-            {:ok, body, _headers} ->
-              case Jason.decode(body) do
-                unquote(clauses)
+            {:ok, body, headers} ->
+              if Enum.any?(headers, &(&1 == {"Content-Type", "application/json"})) do
+                case Jason.decode(body) do
+                  unquote(clauses)
+                end
+              else
+                case resp do
+                  unquote(clauses)
+                end
               end
 
             err ->

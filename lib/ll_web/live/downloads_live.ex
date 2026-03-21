@@ -1,7 +1,7 @@
 defmodule LLWeb.DownloadsLive do
   use LLWeb, :live_view
 
-  def title(_socket), do: "Downloads"
+  def title(), do: "Downloads"
 
   def render(assigns) do
     LLWeb.PageView.render("downloads.html", assigns)

@@ -8,7 +8,7 @@ defmodule LLWeb.LibraryLive do
 
   @limit 20
 
-  def title(_socket), do: "Library"
+  def title(), do: "Library"
 
   def render(assigns) do
     LLWeb.PageView.render("library.html", assigns)
