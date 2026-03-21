@@ -17,11 +17,10 @@ defmodule LLWeb.SeriesComponent do
   end
 
   def update(assigns, socket) do
-    if connected?(socket) do
-      Endpoint.subscribe("series:#{assigns.state.id}")
-    end
-
-    socket = assign(socket, assigns)
+    socket =
+      socket
+      |> subscribe_once("series:#{assigns.state.id}")
+      |> assign(assigns)
 
     {:ok, socket}
   end

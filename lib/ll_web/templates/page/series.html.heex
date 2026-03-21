@@ -36,6 +36,6 @@
         :desc
       ) %>
     <%= for c <- sorted do %>
-        <.live_component id={"ChaperComponent_#{c.id}"} module={LLWeb.ChapterComponent} chapter={c}/>
+        <.live_component2 module={LLWeb.ChapterComponent} state={c}/>
     <% end %>
 </div>

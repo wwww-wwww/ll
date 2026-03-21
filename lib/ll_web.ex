@@ -60,6 +60,19 @@ defmodule LLWeb do
 
       def send_update(state), do: send_update(__MODULE__, id: id(state), state: state)
 
+      def subscribe_once(socket, topic) do
+        if connected?(socket) do
+          if socket.assigns |> Map.get("subscribe:#{topic}") || false do
+            socket
+          else
+            LLWeb.Endpoint.subscribe(topic)
+            assign(socket, "subscribe:#{topic}" |> String.to_atom(), true)
+          end
+        else
+          socket
+        end
+      end
+
       unquote(view_helpers())
     end
   end

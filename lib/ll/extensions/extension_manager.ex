@@ -279,7 +279,6 @@ defmodule LL.ExtensionManager do
           {:ok, chapter} ->
             j["results"]
             |> Enum.with_index()
-            |> Enum.take(1)
             |> Enum.each(&download_page(chapter, source, elem(&1, 0), elem(&1, 1)))
 
           err ->
@@ -296,28 +295,31 @@ defmodule LL.ExtensionManager do
     number = index |> to_string |> String.pad_leading(to_pad, "0")
     filename = "#{number}.#{ext}"
 
-    Repo.transact(fn ->
-      series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
+    {:ok, chapter} =
+      Repo.transact(fn ->
+        series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
 
-      path = download_path(series) |> Path.join(filename)
+        path = download_path(series) |> Path.join(filename)
 
-      File.mkdir_p(Path.dirname(path))
+        File.mkdir_p(Path.dirname(path))
 
-      {:ok, file} = File.open(path, [:write])
-      IO.binwrite(file, body)
-      File.close(file)
+        {:ok, file} = File.open(path, [:write])
+        IO.binwrite(file, body)
+        File.close(file)
 
-      Logger.info("saved to #{path}")
+        Logger.info("saved to #{path}")
 
-      chapter = Repo.reload(chapter)
+        chapter = Repo.reload(chapter)
 
-      files = List.replace_at(chapter.files, index, path)
+        files = List.replace_at(chapter.files, index, path)
 
-      Ecto.Changeset.change(chapter, %{
-        files: files
-      })
-      |> Repo.update()
-    end)
+        Ecto.Changeset.change(chapter, %{
+          files: files
+        })
+        |> Repo.update()
+      end)
+
+    Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
   end
 
   def get_ext(headers) do
@@ -338,7 +340,7 @@ defmodule LL.ExtensionManager do
         "source" => source.source_id
       })
       |> Jason.encode!()
-      |> Downloader.post @manager_api <> "image", :local do
+      |> Downloader.post @manager_api <> "image" do
         {:ok, body, headers} ->
           save_page(body, get_ext(headers), chapter, index)
       end

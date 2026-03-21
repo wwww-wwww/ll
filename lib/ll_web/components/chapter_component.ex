@@ -3,25 +3,28 @@ defmodule LLWeb.ChapterComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="ChapterComponent" id={"ChapterComponent_#{@chapter.id}"}>
-        <%= if @chapter.files != nil and @chapter.files |> Enum.all?(&File.exists?(&1)) do %>
-            <span></span>
+    <div class="ChapterComponent" id={"ChapterComponent_#{@state.id}"}>
+        <%= if @state.files != nil do %>
+          <% downloaded = Enum.filter(@state.files, &File.exists?/1) %>
+          <%= if length(downloaded) != length(@state.files) do %>
+            <span>{length(downloaded)}/{length(@state.files)}</span>
+            <button phx-click="download_chapter" value={@state.id}>Download</button>
+          <% end %>
         <% else %>
-            <button phx-click="download_chapter" value={@chapter.id}>Download</button>
+            <button phx-click="download_chapter" value={@state.id}>Download</button>
         <% end %>
-        <span>{@chapter.title}</span>
-        <span>{@chapter.date}</span>
-        <span>{@chapter.scanlator}</span>
+        <span>{@state.title}</span>
+        <span>{@state.date}</span>
+        <span>{@state.scanlator}</span>
     </div>
     """
   end
 
   def update(assigns, socket) do
-    if connected?(socket) do
-      Endpoint.subscribe("chapter:#{assigns.chapter.id}")
-    end
-
-    socket = assign(socket, assigns)
+    socket =
+      socket
+      |> subscribe_once("chapter:#{assigns.state.id}")
+      |> assign(assigns)
 
     {:ok, socket}
   end
