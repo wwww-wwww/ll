@@ -22,10 +22,25 @@ defmodule LL.ExtensionManager do
 
   def extension_repo(), do: "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
 
-  def download_path(series) do
-    name = String.replace(series.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "")
+  def download_path(%Series{} = series) do
+    name = String.replace(series.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "") |> String.trim()
     name = "#{name}-#{series.source.lang}-#{series.source.name}-#{series.id}"
     Path.expand("downloads") |> Path.join(name)
+  end
+
+  def download_path(%Chapter{} = chapter) do
+    series = Repo.get(Series, chapter.series_id) |> Repo.preload(:source)
+
+    title = String.replace(chapter.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "") |> String.trim()
+
+    name =
+      if chapter.number > 0 do
+        "#{chapter.number}-#{title}"
+      else
+        title
+      end
+
+    Path.join(download_path(series), name)
   end
 
   def update_remote() do
@@ -316,9 +331,7 @@ defmodule LL.ExtensionManager do
     filename = "#{number}.#{ext}"
 
     Repo.transact(fn ->
-      series = chapter |> Repo.preload(series: :source) |> Map.get(:series)
-
-      path = download_path(series) |> Path.join(filename)
+      path = download_path(chapter) |> Path.join(filename)
 
       File.mkdir_p(Path.dirname(path))
 

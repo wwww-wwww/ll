@@ -11,8 +11,9 @@ defmodule LLWeb.ChapterComponent do
           <button phx-click="download_chapter" value={@state.id}>Download</button>
         <% end %>
       <% else %>
-          <button phx-click="download_chapter" value={@state.id}>Download</button>
+        <button phx-click="download_chapter" value={@state.id}>Download</button>
       <% end %>
+      <span>{if @state.number > 0, do: @state.number, else: ""}</span>
       <span>{@state.title}</span>
       <span>{@state.date}</span>
       <span>{@state.scanlator}</span>
