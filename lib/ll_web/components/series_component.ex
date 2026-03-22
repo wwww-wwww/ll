@@ -30,7 +30,7 @@ defmodule LLWeb.SeriesComponent do
   def update(assigns, socket) do
     socket =
       socket
-      |> subscribe_once("series:#{assigns.series.id}")
+      |> subscribe_once("series_thumb:#{assigns.series.id}")
       |> assign(assigns)
 
     {:ok, socket}
