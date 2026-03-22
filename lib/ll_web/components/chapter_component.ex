@@ -44,6 +44,13 @@ defmodule LLWeb.ChapterComponent do
 
   defmacro __using__(_opts) do
     quote do
+      def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
+        LL.Repo.get(LL.Chapter, chapter_id)
+        |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
+
+        {:noreply, socket}
+      end
+
       def handle_info(%{topic: "chapter:" <> _, event: "update", payload: chapter}, socket) do
         LLWeb.ChapterComponent.update_assigns(chapter.id, chapter: chapter)
         {:noreply, socket}

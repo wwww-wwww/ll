@@ -1,8 +1,10 @@
 defmodule LLWeb.SearchLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
+  use LLWeb.SeriesPageComponent
+  use LLWeb.ChapterComponent
 
-  alias LL.{ExtensionManager}
+  alias LL.{ExtensionManager, Repo, Series}
 
   @topic to_string(__MODULE__)
 
@@ -86,6 +88,24 @@ defmodule LLWeb.SearchLive do
         })
       end)
     end)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("select_series", %{"id" => id}, socket) do
+    series = Repo.get(Series, id) |> Repo.preload([:source, :chapters])
+
+    socket =
+      socket
+      |> assign(series: series)
+      |> assign(source: series.source)
+      |> assign(chapters: series.chapters)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("close_series", _, socket) do
+    socket = assign(socket, series: nil)
 
     {:noreply, socket}
   end

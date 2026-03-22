@@ -1,31 +1,47 @@
-<h1>Search</h1>
+<div class="left">
+  <h1>Search</h1>
 
-<.form for={@search_form} phx-submit="search">
-  <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
-  {submit("Search")}
+  <.form for={@search_form} phx-submit="search">
+    <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
+    {submit("Search")}
 
-  <h3>Sources</h3>
-  <div>
-    <%= for source <- @sources do %>
-      <% field = @search_form["enable_#{source.id}"] %>
-      <div>
-        <span>
-          <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
-        </span>
-        <span>{source.name}</span>
-        <span>{source.lang}</span>
-        <span>{source.extension.pkg}</span>
-        <span>{source.source_id}</span>
-      </div>
-    <% end %>
-  </div>
-</.form>
+    <h3>Sources</h3>
+    <div>
+      <%= for source <- @sources do %>
+        <% field = @search_form["enable_#{source.id}"] %>
+        <div>
+          <span>
+            <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
+          </span>
+          <span>{source.name}</span>
+          <span>{source.lang}</span>
+        </div>
+      <% end %>
+    </div>
+  </.form>
 
-<%= for {source_id, results} <- @search.results do %>
-  <h4>{@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}</h4>
-  <div class="library">
-    <%= for series <- results do %>
-      <.live_component2 module={LLWeb.SeriesComponent} state={series} />
-    <% end %>
-  </div>
+  <%= for {source_id, results} <- @search.results do %>
+    <h4>
+      {@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}
+    </h4>
+    <div class="library">
+      <%= for series <- results do %>
+        <.live_component2
+          module={LLWeb.SeriesComponent}
+          id={series.id}
+          series={series}
+        />
+      <% end %>
+    </div>
+  <% end %>
+</div>
+
+<%= if assigns[:series] do %>
+  <.live_component2
+    module={LLWeb.SeriesPageComponent}
+    id={@series.id}
+    series={@series}
+    source={@source}
+    chapters={@chapters}
+  />
 <% end %>

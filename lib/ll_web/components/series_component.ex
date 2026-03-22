@@ -4,14 +4,25 @@ defmodule LLWeb.SeriesComponent do
   def render(assigns) do
     ~H"""
     <div class="SeriesComponent">
-      <.link navigate={~p"/library/#{@series.id}"}>
-        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-          <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
-        <% else %>
-          <img />
-        <% end %>
-        <span>{@series.title}</span>
-      </.link>
+      <%= if assigns[:click] do %>
+        <.link navigate={assigns[:click]}>
+          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
+          <% else %>
+            <img />
+          <% end %>
+          <span>{@series.title}</span>
+        </.link>
+      <% else %>
+        <button phx-click="select_series" phx-value-id={@series.id}>
+          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
+          <% else %>
+            <img />
+          <% end %>
+          <span>{@series.title}</span>
+        </button>
+      <% end %>
     </div>
     """
   end
@@ -27,7 +38,7 @@ defmodule LLWeb.SeriesComponent do
 
   defmacro __using__(opts) do
     quote do
-      def handle_info(%{topic: "series:" <> _, event: "update", payload: series}, socket) do
+      def handle_info(%{topic: "series_thumb:" <> _, event: "update", payload: series}, socket) do
         LLWeb.SeriesComponent.update_assigns(series.id, series: series)
         {:noreply, socket}
       end

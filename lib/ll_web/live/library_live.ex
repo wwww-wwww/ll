@@ -34,8 +34,6 @@ defmodule LLWeb.LibraryLive do
               socket
 
             series ->
-              series = Map.put(series, :description, "")
-
               chapters =
                 from(c in Chapter, where: c.series_id == ^series.id)
                 |> Repo.all()
@@ -49,9 +47,7 @@ defmodule LLWeb.LibraryLive do
       end
 
     library =
-      from(s in Series,
-        where: s.in_library == true
-      )
+      from(s in Series, where: s.in_library == true)
       |> Repo.all()
       |> Enum.map(&Map.put(&1, :description, ""))
 
@@ -72,15 +68,8 @@ defmodule LLWeb.LibraryLive do
     Endpoint.broadcast("library", "update", library)
   end
 
-  def handle_info(%{event: "update", payload: library}, socket) do
+  def handle_info(%{topic: "library", event: "update", payload: library}, socket) do
     socket = assign(socket, library: library)
-    {:noreply, socket}
-  end
-
-  def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
-    Repo.get(Chapter, chapter_id)
-    |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
-
     {:noreply, socket}
   end
 end

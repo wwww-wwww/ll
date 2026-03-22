@@ -146,6 +146,7 @@ defmodule LL.ExtensionManager do
             |> Repo.update()
 
           Endpoint.broadcast("series:#{series.id}", "update", series)
+          Endpoint.broadcast("series_thumb:#{series.id}", "update", series)
 
         err ->
           Logger.error(err)
