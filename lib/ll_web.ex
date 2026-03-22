@@ -58,7 +58,7 @@ defmodule LLWeb do
 
       def id(n), do: "#{__MODULE__}-#{n}"
 
-      def update_assigns(n, opts), do: send_update(__MODULE__, [{:id, n} | opts])
+      def update_assigns(n, opts), do: send_update(__MODULE__, [{:id, id(n)} | opts])
 
       def subscribe_once(socket, topic) do
         key = String.to_atom("subscribe:#{topic}")

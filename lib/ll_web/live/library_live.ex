@@ -1,6 +1,8 @@
 defmodule LLWeb.LibraryLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
+  use LLWeb.SeriesPageComponent
+  use LLWeb.ChapterComponent
 
   import Ecto.Query, only: [from: 2]
 
@@ -26,12 +28,14 @@ defmodule LLWeb.LibraryLive do
 
         id ->
           Repo.get(Series, id)
-          |> Repo.preload(:source)
+          |> Repo.preload(source: :extension)
           |> case do
             nil ->
               socket
 
             series ->
+              series = Map.put(series, :description, "")
+
               chapters =
                 from(c in Chapter, where: c.series_id == ^series.id)
                 |> Repo.all()
@@ -49,6 +53,7 @@ defmodule LLWeb.LibraryLive do
         where: s.in_library == true
       )
       |> Repo.all()
+      |> Enum.map(&Map.put(&1, :description, ""))
 
     socket =
       socket
@@ -69,6 +74,13 @@ defmodule LLWeb.LibraryLive do
 
   def handle_info(%{event: "update", payload: library}, socket) do
     socket = assign(socket, library: library)
+    {:noreply, socket}
+  end
+
+  def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
+    Repo.get(Chapter, chapter_id)
+    |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
+
     {:noreply, socket}
   end
 end
