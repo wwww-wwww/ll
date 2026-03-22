@@ -9,7 +9,7 @@ defmodule LL do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Downloader, Chapter, Series}
+  alias LL.{Repo, Downloader, Chapter, Series, Extension}
 
   def files_root(), do: Application.get_env(:ll, :files_root)
 
@@ -17,35 +17,59 @@ defmodule LL do
     # downloader = Downloader.get()
 
     # if length(downloader.working) == 0 and :queue.len(downloader.queue) == 0 do
-      #sync_assoc()
-      #update_covers()
-      #sync_pages()
+    # sync_assoc()
+    # update_covers()
+    # sync_pages()
     #   sync()
     # end
   end
 
-  def test2() do
-    Repo.get(Chapter, "meteoroid_ch01")
-    |> case do
-      nil -> nil
-      s -> Repo.delete(s)
-    end
+  def migrate() do
+    pfrom = "/home/w/llm"
+    to = "/black/yuriyomi"
 
-    Repo.get(Chapter, "meteoroid_ch02")
-    |> case do
-      nil -> nil
-      s -> Repo.delete(s)
-    end
+    Repo.transact(fn ->
+      Repo.all(Chapter)
+      |> Enum.each(fn e ->
+        files =
+          case e.files do
+            nil -> nil
+            files -> files |> Enum.map(&String.replace(&1, pfrom, to))
+          end
 
-    Repo.get(Series, "meteoroid_ch02")
-    |> case do
-      nil -> nil
-      s -> Repo.delete(s)
-    end
+        Ecto.Changeset.change(e, %{
+          files: files
+        })
+        |> Repo.update()
+      end)
+
+      Repo.all(Extension)
+      |> Enum.each(fn e ->
+        Ecto.Changeset.change(e, %{
+          path: e.path |> String.replace(pfrom, to)
+        })
+        |> Repo.update()
+      end)
+
+      Repo.all(Series)
+      |> Enum.each(fn e ->
+        thumbnail_path =
+          case e.thumbnail_path do
+            nil -> nil
+            thumbnail_path -> thumbnail_path |> String.replace(pfrom, to)
+          end
+
+        Ecto.Changeset.change(e, %{
+          thumbnail_path: thumbnail_path
+        })
+        |> Repo.update()
+      end)
+
+      {:ok, nil}
+    end)
   end
 
   def sync() do
-
   end
 
   def sync_pages() do
@@ -79,6 +103,7 @@ defmodule LL do
   def update_covers() do
     Repo.all(Series)
     |> Kernel.++(Repo.all(Chapter))
+
     # |> Enum.each(&LL.Sources.Dynasty.download_cover/1)
   end
 

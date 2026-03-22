@@ -20,7 +20,6 @@ defmodule LLWeb.SeriesLive do
     series =
       Repo.get(Series, series_id)
       |> Repo.preload(source: :extension)
-      |> Repo.preload(:tags)
 
     source = series.source
     tags = series.tags
@@ -33,13 +32,13 @@ defmodule LLWeb.SeriesLive do
       socket
       |> assign(series: series)
       |> assign(source: source)
-      |> assign(tags: tags)
       |> assign(chapters: chapters)
       |> assign(page_title: series.title)
 
     if series.details_updated == nil do
       LL.ExtensionManager.series_details(series)
     end
+
     if series.chapters_updated == nil do
       LL.ExtensionManager.series_chapters(series)
     end

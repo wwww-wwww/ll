@@ -1,18 +1,17 @@
 <head>
   <title>{assigns[:page_title] || @socket.view.title()}</title>
 </head>
+
 <header>
   <nav>
     <.nav socket={@socket} view={LLWeb.LibraryLive} />
     <.nav socket={@socket} view={LLWeb.DownloadsLive} />
     <.nav socket={@socket} view={LLWeb.SearchLive} />
     <.nav socket={@socket} view={LLWeb.TagsLive} />
-    <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
-    <span></span>
+    <.nav socket={@socket} view={LLWeb.ExtensionsLive} /> <span></span>
     <.nav socket={@socket} view={LLWeb.StatusLive} />
     <.nav socket={@socket} view={LLWeb.RoutesLive} />
   </nav>
 </header>
-<main class="container">
-  <%= @inner_content %>
-</main>
+
+<main class="container">{@inner_content}</main>

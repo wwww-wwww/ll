@@ -7,7 +7,9 @@
 <table>
   <%= for ext <- @local do %>
     <tr>
-      <td><img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.pkg}.png"}/></td>
+      <td>
+        <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.pkg}.png"} />
+      </td>
       <td>{ext.sources |> Enum.at(0) |> Map.get(:name)}</td>
       <td>{ext.version}</td>
       <td>{ext.pkg}</td>
@@ -20,12 +22,14 @@
   <%= for ext <- @remote |> Enum.filter(fn ext -> not Enum.any?(@local, &ext["pkg"] == &1.pkg) end) do %>
     <tr>
       <td><button phx-click="install" phx-value-pkg={ext["pkg"]}>Install</button></td>
-      <td><img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext["pkg"]}.png"}/></td>
+      <td>
+        <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext["pkg"]}.png"} />
+      </td>
       <td class="details">
-      <div>
-        <span>{ext["sources"] |> Enum.at(0) |> Map.get("name")}</span>
-        <span>{ext["lang"]} - {ext["version"]}</span>
-      </div>
+        <div>
+          <span>{ext["sources"] |> Enum.at(0) |> Map.get("name")}</span>
+          <span>{ext["lang"]} - {ext["version"]}</span>
+        </div>
       </td>
       <td>{ext["pkg"]}</td>
     </tr>

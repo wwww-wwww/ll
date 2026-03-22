@@ -11,31 +11,6 @@ defmodule LLWeb.PageView do
     4 => "Category"
   }
 
-  def live_component2(assigns) when is_map(assigns) do
-    state = assigns[:state]
-
-    {module, assigns} =
-      assigns
-      |> Map.delete(:__changed__)
-      |> Map.pop(:module)
-
-    if module == nil or not is_atom(module) do
-      raise ArgumentError,
-            ".live_component expects module={...} to be given and to be an atom, " <>
-              "got: #{inspect(module)}"
-    end
-
-    id = module.id(state)
-
-    case module.__live__() do
-      %{kind: :component} ->
-        %Phoenix.LiveView.Component{id: id, assigns: assigns, component: module}
-
-      %{kind: kind} ->
-        raise ArgumentError, "expected #{inspect(module)} to be a component, but it is a #{kind}"
-    end
-  end
-
   def key_string(key) do
     case key do
       {a, b} ->

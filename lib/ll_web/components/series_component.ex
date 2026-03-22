@@ -4,13 +4,13 @@ defmodule LLWeb.SeriesComponent do
   def render(assigns) do
     ~H"""
     <div class="SeriesComponent">
-      <.link navigate={~p"/series/#{@state.id}"}>
-        <%= if @state.thumbnail_path != nil and File.exists?(@state.thumbnail_path) do %>
-          <img src={~p"/thumbnail/#{Path.basename(@state.thumbnail_path)}"}/>
+      <.link navigate={~p"/library/#{@series.id}"}>
+        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+          <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
         <% else %>
-          <img/>
+          <img />
         <% end %>
-        <span><%= @state.title %></span>
+        <span>{@series.title}</span>
       </.link>
     </div>
     """
@@ -19,7 +19,7 @@ defmodule LLWeb.SeriesComponent do
   def update(assigns, socket) do
     socket =
       socket
-      |> subscribe_once("series:#{assigns.state.id}")
+      |> subscribe_once("series:#{assigns.series.id}")
       |> assign(assigns)
 
     {:ok, socket}
@@ -27,8 +27,8 @@ defmodule LLWeb.SeriesComponent do
 
   defmacro __using__(opts) do
     quote do
-      def handle_info(%{topic: "series:" <> _, event: "update", payload: state}, socket) do
-        LLWeb.SeriesComponent.send_update(state)
+      def handle_info(%{topic: "series:" <> _, event: "update", payload: series}, socket) do
+        LLWeb.SeriesComponent.update_assigns(series.id, series: series)
         {:noreply, socket}
       end
     end

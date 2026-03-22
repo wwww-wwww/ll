@@ -4,7 +4,7 @@ defmodule LLWeb.LibraryLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Series, Repo}
+  alias LL.{Repo, Series, Chapter}
 
   @limit 20
 
@@ -14,10 +14,35 @@ defmodule LLWeb.LibraryLive do
     LLWeb.PageView.render("library.html", assigns)
   end
 
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     if connected?(socket) do
       Endpoint.subscribe("library")
     end
+
+    socket =
+      case Map.get(params, "id") do
+        nil ->
+          socket
+
+        id ->
+          Repo.get(Series, id)
+          |> Repo.preload(:source)
+          |> case do
+            nil ->
+              socket
+
+            series ->
+              chapters =
+                from(c in Chapter, where: c.series_id == ^series.id)
+                |> Repo.all()
+
+              socket
+              |> assign(series: series)
+              |> assign(source: series.source)
+              |> assign(chapters: chapters)
+              |> assign(page_title: series.title)
+          end
+      end
 
     library =
       from(s in Series,

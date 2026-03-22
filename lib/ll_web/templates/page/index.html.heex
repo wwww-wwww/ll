@@ -7,37 +7,35 @@
 
 <div>
   <input phx-hook="search" id="search" type="text" name="q" value={@query} />
-
   <!-- live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) -->
   <!-- live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) -->
-  <span><%= max(0, (@page - 1) * @limit + 1) %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
+  <span>{max(0, (@page - 1) * @limit + 1)} - {min(@total, @page * @limit)}/{@total}</span>
 </div>
 
 <table id="table">
   <%= for s <- @results do %>
-  <tr>
-    <td class="cover">
-      <img src={"/" <> s.e.cover} />
-    </td>
-    <td class="title">
-      <!-- live_redirect(s.e.title, to: Routes.reader_path(@socket, s.type, s.e.id)) -->
-    </td>
-    <td>
-      <div class="tags">
-      <%= for tag <- sort_tags(s.e.tags) do %>
-        <!-- live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) -->
-      <% end %>
-      </div>
-    </td>
-    <td class="date">
-      <%= Date.to_string(s.date) %>
-    </td>
-  </tr>
+    <tr>
+      <td class="cover"><img src={"/" <> s.e.cover} /></td>
+
+      <td class="title">
+        <!-- live_redirect(s.e.title, to: Routes.reader_path(@socket, s.type, s.e.id)) -->
+      </td>
+
+      <td>
+        <div class="tags">
+          <%= for tag <- sort_tags(s.e.tags) do %>
+            <!-- live_patch(tag_text(tag), to: Routes.live_path(@socket, LLWeb.IndexLive, q: "\"#{tag.id}\"", page: 1)) -->
+          <% end %>
+        </div>
+      </td>
+
+      <td class="date">{Date.to_string(s.date)}</td>
+    </tr>
   <% end %>
 </table>
 
 <div>
   <!-- live_patch("Prev", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, @page - 1))) -->
   <!-- live_patch("Next", to: Routes.live_path(@socket, LLWeb.IndexLive, q: @query, page: max(1, min(@pages, @page + 1)))) -->
-  <span><%= (@page - 1) * @limit + 1 %> - <%= min(@total, @page * @limit) %>/<%= @total %></span>
+  <span>{(@page - 1) * @limit + 1} - {min(@total, @page * @limit)}/{@total}</span>
 </div>

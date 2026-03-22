@@ -56,9 +56,9 @@ defmodule LLWeb do
     quote do
       use Phoenix.LiveComponent
 
-      def id(e), do: "#{__MODULE__}-#{e.id}"
+      def id(n), do: "#{__MODULE__}-#{n}"
 
-      def send_update(state), do: send_update(__MODULE__, id: id(state), state: state)
+      def update_assigns(n, opts), do: send_update(__MODULE__, [{:id, n} | opts])
 
       def subscribe_once(socket, topic) do
         key = String.to_atom("subscribe:#{topic}")
@@ -126,6 +126,8 @@ defmodule LLWeb do
         statics: ~w(images)
 
       alias LLWeb.Endpoint
+
+      use LLWeb.CoreComponents
     end
   end
 

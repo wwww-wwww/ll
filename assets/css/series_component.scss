@@ -1,0 +1,36 @@
+.SeriesComponent {
+    display: block;
+    position: relative;
+    width: 12.64em;
+    height: 18em;
+    overflow: hidden;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+
+    >a {
+        display: block;
+        width: 100%;
+        height: 100%;
+
+        &:hover {
+            z-index: 1;
+        }
+
+        >img {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+        }
+
+        >span {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.75);
+            color: black;
+            padding: 0.25em 0.5em;
+            box-sizing: border-box;
+            width: 100%;
+            backdrop-filter: blur(5px);
+        }
+    }
+}

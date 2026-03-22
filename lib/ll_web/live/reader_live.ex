@@ -108,6 +108,7 @@ defmodule LLWeb.ReaderLive do
       nil -> [socket.assigns.chapter]
       series -> series.chapters
     end
+
     # |> Enum.each(&LL.Sources.source_module(&1.source).update(&1))
 
     {:noreply, socket}

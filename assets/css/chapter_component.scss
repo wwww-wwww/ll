@@ -1,0 +1,28 @@
+.ChapterComponent {
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    display: flex;
+    gap: 0.5em;
+
+    // flex-direction: column;
+    >div {
+        display: flex;
+        flex-direction: column;
+
+        >div {
+            display: flex;
+            gap: 0.5em;
+        }
+    }
+
+    .number:empty {
+        display: none;
+    }
+
+    .title {
+    }
+
+    .date,
+    .scanlator {
+        font-size: 0.9em;
+    }
+}

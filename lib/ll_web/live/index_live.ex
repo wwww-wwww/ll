@@ -105,15 +105,15 @@ defmodule LLWeb.IndexLive do
     {terms_include, terms_exclude} = DB.search(query)
 
     results = []
-      # DB.all()
-      # |> Enum.filter(fn s ->
-      #   Enum.all?(terms_include, fn term ->
-      #     Enum.any?(s.search, &String.contains?(&1, term))
-      #   end) and
-      #     Enum.all?(terms_exclude, fn term ->
-      #       Enum.all?(s.search, &(not String.contains?(&1, term)))
-      #     end)
-      # end)
+    # DB.all()
+    # |> Enum.filter(fn s ->
+    #   Enum.all?(terms_include, fn term ->
+    #     Enum.any?(s.search, &String.contains?(&1, term))
+    #   end) and
+    #     Enum.all?(terms_exclude, fn term ->
+    #       Enum.all?(s.search, &(not String.contains?(&1, term)))
+    #     end)
+    # end)
 
     count = length(results)
 

@@ -54,7 +54,8 @@ defmodule LL.MixProject do
       {:uuid, "~> 1.1"},
       {:dart_sass, "~> 0.7", runtime: Mix.env() == :dev},
       {:size, "~> 0.1.0"},
-      {:unzip, "~> 0.11"}
+      {:unzip, "~> 0.11"},
+      {:timex, "~> 3.7"}
     ]
   end
 

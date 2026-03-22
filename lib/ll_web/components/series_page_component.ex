@@ -1,0 +1,80 @@
+defmodule LLWeb.SeriesPageComponent do
+  use LLWeb, :live_component
+
+  def render(assigns) do
+    ~H"""
+    <div class="SeriesPageComponent">
+      <div class="head">
+        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+          <div class="cover-image">
+            <img src={
+              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
+            } />
+          </div>
+        <% end %>
+        <div class="info">
+          <h1>{@series.title}</h1>
+          <span>Author: <span class="author">{@series.author}</span></span>
+          <span>Artist: <span class="artist">{@series.artist}</span></span>
+          <span>Status: <span class="status">{@series.status}</span></span>
+          <span>Source: <span class="source">{@source.name} ({@source.lang})</span></span>
+          <span>
+            Last details refresh:
+            <span class="updated">{relative_time(@series.details_updated)}</span>
+          </span>
+          <span>
+            Last chapter refresh:
+            <span class="updated">{relative_time(@series.chapters_updated)}</span>
+          </span>
+        </div>
+      </div>
+      <div class="actions">
+        <button phx-click="refresh">Refresh</button>
+        <button phx-click="refresh_chapters">Refresh chapters</button>
+        <%= if @series.in_library do %>
+          <button phx-click="library_remove">Remove from library</button>
+        <% else %>
+          <button phx-click="library_add">Add to library</button>
+        <% end %>
+      </div>
+      <div class="tags">[tags]</div>
+      <div class="description">{@series.description}</div>
+      <div class="chapterlist">
+        <% sorted =
+          Enum.sort_by(
+            @chapters,
+            fn c ->
+              {c.number,
+               Regex.scan(~r/\d+\.?\d*/, c.title)
+               |> List.flatten()
+               |> Enum.map(&(Float.parse(&1) |> elem(0)))}
+            end,
+            :desc
+          ) %>
+        <%= for c <- sorted do %>
+          <.live_component2 module={LLWeb.ChapterComponent} id={c.id} chapter={c} />
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  def update(assigns, socket) do
+    socket =
+      socket
+      |> subscribe_once("series:#{assigns.series.id}")
+      |> subscribe_once("chapters:#{assigns.series.id}")
+      |> assign(assigns)
+
+    {:ok, socket}
+  end
+
+  defmacro __using__(opts) do
+    quote do
+      def handle_info(%{topic: "series:" <> _, event: "update", payload: series}, socket) do
+        LLWeb.SeriesPageComponent.update_assigns(series.id, series: series)
+        {:noreply, socket}
+      end
+    end
+  end
+end
