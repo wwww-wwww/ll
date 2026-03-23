@@ -2,19 +2,21 @@
   <h1>Search</h1>
 
   <.form for={@search_form} phx-submit="search">
-    <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
-    {submit("Search")}
-
-    <h3>Sources</h3>
     <div>
+      <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
+      {submit("Search")}
+    </div>
+
+    <div class="sources">
       <%= for source <- @sources do %>
         <% field = @search_form["enable_#{source.id}"] %>
         <div>
-          <span>
-            <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
-          </span>
-          <span>{source.name}</span>
-          <span>{source.lang}</span>
+          <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
+          <label for={field.id}>
+            <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"} />
+            <span>{source.name}</span>
+            <span>{source.lang}</span>
+          </label>
         </div>
       <% end %>
     </div>
@@ -26,9 +28,9 @@
     </h4>
     <div class="library">
       <%= for series <- results do %>
-        <.live_component2
+        <.live_component
           module={LLWeb.SeriesComponent}
-          id={series.id}
+          id={LLWeb.SeriesComponent.id(series.id)}
           series={series}
         />
       <% end %>
@@ -37,9 +39,9 @@
 </div>
 
 <%= if assigns[:series] do %>
-  <.live_component2
+  <.live_component
     module={LLWeb.SeriesPageComponent}
-    id={@series.id}
+    id={LLWeb.SeriesPageComponent.id(@series.id)}
     series={@series}
     source={@source}
     chapters={@chapters}

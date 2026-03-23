@@ -3,8 +3,8 @@ defmodule LLWeb.SeriesPageComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="SeriesPageComponent">
-      <div class="navigation">
+    <div class="SeriesPageComponent" id={"#{__MODULE__}#{assigns[:id]}"}>
+      <div class="header">
         <%= if assigns[:close] do %>
           <.link navigate={assigns[:close]} class="button" draggable="false">Close</.link>
         <% else %>
@@ -60,7 +60,11 @@ defmodule LLWeb.SeriesPageComponent do
               :desc
             ) %>
           <%= for c <- sorted do %>
-            <.live_component2 module={LLWeb.ChapterComponent} id={c.id} chapter={c} />
+            <.live_component
+              module={LLWeb.ChapterComponent}
+              id={LLWeb.ChapterComponent.id(c.id)}
+              chapter={c}
+            />
           <% end %>
         </div>
       </div>

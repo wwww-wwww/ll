@@ -10,6 +10,36 @@
         flex: 1;
         padding: 0.5em;
         overflow-y: auto;
+
+        form {
+            display: flex;
+            flex-direction: column;
+            align-items: start;
+            gap: 0.5em;
+        }
+    }
+
+    .sources {
+        display: flex;
+        flex-direction: column;
+
+        >div {
+            display: flex;
+            align-items: center;
+
+            >label {
+                display: flex;
+                align-items: center;
+                gap: 0.5em;
+                flex: 1;
+                padding-right: 0 1em;
+
+                >img {
+                    width: 3em;
+                    height: 3em;
+                }
+            }
+        }
     }
 
     .library {

@@ -30,6 +30,73 @@ const hooks = {
         this.pushEvent("search", { "q": this.el.value })
       })
     }
+  },
+  window: {
+    dragging: false,
+    x: 0,
+    y: 0,
+    move(x, y) {
+      const rect = this.el.getBoundingClientRect()
+      const outer_rect = this.el.parentElement.getBoundingClientRect()
+
+      let width = outer_rect.width
+      let height = outer_rect.height
+      const max_x = Math.floor(width - rect.width)
+      const max_y = Math.floor(height - rect.height)
+      x = Math.min(Math.max(x, 0), max_x)
+      y = Math.min(Math.max(y, 0), max_y)
+
+      this.el.style.left = `${x}px`
+      this.el.style.top = `${y}px`
+    },
+    mounted() {
+      {
+        const rect = this.el.getBoundingClientRect()
+        const outer_rect = this.el.parentElement.getBoundingClientRect()
+        this.move(outer_rect.width / 2 - rect.width / 2, outer_rect.height / 2 - rect.height / 2)
+      }
+
+      this.dragstart = e => {
+        if (!e.target.classList.contains("header")) return
+
+        const rect = this.el.getBoundingClientRect()
+
+        this.dragging = true
+        this.x = e.clientX - rect.left
+        this.y = e.clientY - rect.top
+      }
+
+      this.dragmove = e => {
+        if (!this.dragging) return
+
+        const rect = this.el.getBoundingClientRect()
+
+        let x = this.el.offsetLeft + e.clientX - rect.left - this.x
+        let y = this.el.offsetTop + e.clientY - rect.top - this.y
+        this.move(x, y)
+      }
+
+      this.dragend = e => {
+        if (!this.dragging) return
+
+        this.dragging = false
+
+        const rect = this.el.getBoundingClientRect()
+
+        let x = this.el.offsetLeft + e.clientX - rect.left - this.x
+        let y = this.el.offsetTop + e.clientY - rect.top - this.y
+        this.move(x, y)
+      }
+
+      this.el.addEventListener("mousedown", this.dragstart)
+      document.addEventListener("mousemove", this.dragmove)
+      document.addEventListener("mouseup", this.dragend)
+    },
+    destroyed() {
+      console.log("unmount")
+      document.removeEventListener("mousemove", this.dragmove)
+      document.removeEventListener("mouseup", this.dragend)
+    }
   }
 }
 

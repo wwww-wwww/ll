@@ -1,8 +1,8 @@
 <div class="library">
   <%= for series <- @library do %>
-    <.live_component2
+    <.live_component
       module={LLWeb.SeriesComponent}
-      id={series.id}
+      id={LLWeb.SeriesComponent.id(series.id)}
       series={series}
       click={~p"/library/#{series.id}"}
     />
@@ -10,9 +10,9 @@
 </div>
 
 <%= if assigns[:series] do %>
-  <.live_component2
+  <.live_component
     module={LLWeb.SeriesPageComponent}
-    id={@series.id}
+    id={LLWeb.SeriesPageComponent.id(@series.id)}
     series={@series}
     source={@source}
     chapters={@chapters}

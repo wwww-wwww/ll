@@ -1,3 +1,5 @@
+@import "window";
+
 @import "chapter_component";
 @import "series_component";
 @import "series_page_component";
@@ -21,15 +23,27 @@ body {
   >div {
     display: flex;
     flex: 1;
+
+    @media only screen and (max-width: calc(700px)) {
+      flex-direction: column;
+    }
   }
 }
 
 header {
   width: 6em;
 
+  @media only screen and (max-width: calc(700px)) {
+    width: unset;
+  }
+
   >nav {
     display: flex;
     flex-direction: column;
+
+    @media only screen and (max-width: calc(700px)) {
+      flex-direction: row;
+    }
 
     >a {
       padding: 0.5em 0.5em;
@@ -51,13 +65,14 @@ header {
     }
   }
 
-  border-right: 1px solid black;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 }
 
 main {
   flex: 1;
   padding: 0.5em;
   overflow-y: auto;
+  position: relative;
 }
 
 button,
@@ -73,6 +88,7 @@ button,
   cursor: default;
   text-decoration: none;
   user-select: none;
+  display: inline-block;
 
   &:hover {
     background: rgba(0, 0, 0, 0.15);
@@ -81,6 +97,10 @@ button,
   &:active {
     background: rgba(0, 0, 0, 0.25);
   }
+}
+
+.link {
+  cursor: pointer;
 }
 
 .ReaderLive {

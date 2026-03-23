@@ -14,7 +14,7 @@ defmodule LLWeb.SeriesComponent do
           <span>{@series.title}</span>
         </.link>
       <% else %>
-        <button phx-click="select_series" phx-value-id={@series.id}>
+        <button phx-click="select_series" phx-value-id={@series.id} class="link">
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
             <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
           <% else %>
