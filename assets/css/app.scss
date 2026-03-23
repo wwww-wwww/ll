@@ -46,6 +46,9 @@ header {
       flex-direction: row;
     }
 
+    white-space: nowrap;
+    overflow: hidden;
+
     a {
       padding: 0.5em 0.5em;
       text-decoration: none;

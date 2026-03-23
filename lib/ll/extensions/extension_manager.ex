@@ -54,10 +54,12 @@ defmodule LL.ExtensionManager do
 
           err ->
             Logger.error(err)
+            LL.Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -116,14 +118,17 @@ defmodule LL.ExtensionManager do
 
                   err ->
                     Logger.error(err)
+                    LL.Message.create("Error", inspect(err))
                 end
 
               err ->
                 Logger.error(err)
+                LL.Message.create("Error", inspect(err))
             end
 
           err ->
             Logger.error(err)
+            LL.Message.create("Error", inspect(err))
         end
 
       _ ->
@@ -150,6 +155,7 @@ defmodule LL.ExtensionManager do
 
         err ->
           Logger.error(err)
+          LL.Message.create("Error", inspect(err))
       end
     end
   end
@@ -166,38 +172,42 @@ defmodule LL.ExtensionManager do
       {:ok, %{"results" => results}} ->
         results =
           Enum.map(results, fn m ->
-            case Repo.get_by(Series, url: m["url"]) do
-              nil ->
-                {:ok, series} =
-                  Ecto.Changeset.change(%Series{}, %{
-                    source_id: source.id,
-                    url: m["url"],
-                    title: m["title"],
-                    artist: m["artist"],
-                    author: m["author"],
-                    description: m["description"],
-                    genre: m["genre"],
-                    status: m["status"],
-                    thumbnail_url: m["thumbnail_url"]
-                  })
-                  |> Repo.insert()
+            series =
+              case Repo.get_by(Series, url: m["url"]) do
+                nil ->
+                  {:ok, series} =
+                    Ecto.Changeset.change(%Series{}, %{
+                      source_id: source.id,
+                      url: m["url"],
+                      title: m["title"],
+                      artist: m["artist"],
+                      author: m["author"],
+                      description: m["description"],
+                      genre: m["genre"],
+                      status: m["status"],
+                      thumbnail_url: m["thumbnail_url"]
+                    })
+                    |> Repo.insert()
 
-                if series.thumbnail_url != nil and
-                     not String.contains?(series.thumbnail_url, "keiyoushi-chapter-cover") do
-                  download_thumbnail(series)
-                end
+                  series
 
-                series
+                series ->
+                  series
+              end
 
-              series ->
-                series
+            if series.thumbnail_url != nil and
+                 not String.contains?(series.thumbnail_url, "keiyoushi-chapter-cover") do
+              download_thumbnail(series)
             end
+
+            series
           end)
 
         cb.(results)
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -231,6 +241,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -290,10 +301,12 @@ defmodule LL.ExtensionManager do
 
           err ->
             Logger.error(err)
+            LL.Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -319,10 +332,12 @@ defmodule LL.ExtensionManager do
 
           err ->
             Logger.error(err)
+            LL.Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -357,6 +372,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 
@@ -389,6 +405,7 @@ defmodule LL.ExtensionManager do
 
         err ->
           Logger.error(err)
+          LL.Message.create("Error", inspect(err))
       end
     end
   end

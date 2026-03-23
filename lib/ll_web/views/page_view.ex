@@ -1,7 +1,8 @@
 defmodule LLWeb.PageView do
   use LLWeb, :view
+  use Phoenix.Component
 
-  alias LL.{Category, Repo}
+  alias LL.{Category, Repo, Series}
 
   @tag_types %{
     0 => "",
@@ -10,6 +11,31 @@ defmodule LLWeb.PageView do
     3 => "Group",
     4 => "Category"
   }
+
+  def replace_links(assigns, body) do
+    Regex.scan(~r/{(.+)?}/, body)
+    |> Enum.reduce(body, fn [match, group], acc ->
+      replace =
+        group
+        |> String.split(",")
+        |> case do
+          [":library", id] ->
+            series = Repo.get(Series, id)
+
+            ~H"""
+            <.link navigate={~p"/library/#{id}"}>{series.title}</.link>
+            """
+            |> Phoenix.HTML.Safe.to_iodata()
+            |> IO.iodata_to_binary()
+
+          _ ->
+            group
+        end
+
+      String.replace(acc, match, replace)
+    end)
+    |> raw
+  end
 
   def key_string(key) do
     case key do

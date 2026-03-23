@@ -3,8 +3,13 @@
 <div class="messages">
   <%= for e <- @messages |> Enum.sort_by(& &1.updated_at, :desc) do %>
     <div>
-      <div>{e.title}</div>
-      <div>{e.body}</div>
+      <div>
+        <button phx-click="delete" phx-value-id={e.id}>Delete</button>
+        <span>{replace_links(assigns, e.title)}</span>
+      </div>
+      <%= if e.body != "" do %>
+        <div>{replace_links(assigns, e.body)}</div>
+      <% end %>
     </div>
   <% end %>
 </div>

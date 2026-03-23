@@ -77,6 +77,8 @@ defmodule LLWeb.SeriesLive do
 
     LLWeb.LibraryLive.update()
 
+    LL.Message.create("Added {:library,#{series.id}} to library", "")
+
     {:noreply, socket}
   end
 

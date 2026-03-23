@@ -23,8 +23,20 @@ defmodule LLWeb.UpdatesLive do
     {:ok, socket}
   end
 
+  def handle_event("delete", %{"id" => id}, socket) do
+    Repo.get(Message, id) |> Message.delete()
+    {:noreply, socket}
+  end
+
   def handle_info(%{topic: "messages", event: "create", payload: message}, socket) do
     socket = assign(socket, messages: socket.assigns.messages ++ [message])
+    {:noreply, socket}
+  end
+
+  def handle_info(%{topic: "messages", event: "delete", payload: message}, socket) do
+    socket =
+      assign(socket, messages: socket.assigns.messages |> Enum.reject(&(&1.id == message.id)))
+
     {:noreply, socket}
   end
 end
