@@ -73,6 +73,10 @@ defmodule LL.Downloader do
     WorkerManager.get(queue)
   end
 
+  def add(queue, url, type, body, cb, guard \\ nil) do
+    WorkerManager.add(queue, {url, type, body, cb, guard})
+  end
+
   defmacro get(url, queue \\ :downloader, do: clauses) do
     quote do
       LL.Downloader.add(
@@ -117,9 +121,5 @@ defmodule LL.Downloader do
         end
       )
     end
-  end
-
-  def add(queue, url, type, body, cb, guard \\ nil) do
-    WorkerManager.add(queue, {url, type, body, cb, guard})
   end
 end

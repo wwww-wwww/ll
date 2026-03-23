@@ -13,7 +13,10 @@
         <div>
           <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
           <label for={field.id}>
-            <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"} />
+            <img
+              loading="lazy"
+              src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"}
+            />
             <span>{source.name}</span>
             <span>{source.lang}</span>
           </label>
@@ -42,8 +45,6 @@
   <.live_component
     module={LLWeb.SeriesPageComponent}
     id={LLWeb.SeriesPageComponent.id(@series.id)}
-    series={@series}
-    source={@source}
-    chapters={@chapters}
+    series_id={@series.id}
   />
 <% end %>

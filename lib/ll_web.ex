@@ -127,7 +127,7 @@ defmodule LLWeb do
 
       alias LLWeb.Endpoint
 
-      use LLWeb.CoreComponents
+      import LLWeb.CoreComponents
     end
   end
 

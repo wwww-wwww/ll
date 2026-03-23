@@ -1,0 +1,10 @@
+<h1>Updates</h1>
+
+<div class="messages">
+  <%= for e <- @messages |> Enum.sort_by(& &1.updated_at, :desc) do %>
+    <div>
+      <div>{e.title}</div>
+      <div>{e.body}</div>
+    </div>
+  <% end %>
+</div>

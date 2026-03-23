@@ -11,6 +11,10 @@ defmodule LLWeb.SeriesLive do
     LLWeb.PageView.render("series.html", assigns)
   end
 
+  def mount(:not_mounted_at_router, %{"id" => id} = session, socket) do
+    mount(%{"series_id" => id}, session, socket)
+  end
+
   def mount(%{"series_id" => series_id}, _session, socket) do
     if connected?(socket) do
       Endpoint.subscribe("series:#{series_id}")
@@ -44,5 +48,63 @@ defmodule LLWeb.SeriesLive do
     end
 
     {:ok, socket}
+  end
+
+  def handle_event("refresh", _, socket) do
+    LL.ExtensionManager.series_details(socket.assigns.series)
+    {:noreply, socket}
+  end
+
+  def handle_event("refresh_chapters", _, socket) do
+    LL.ExtensionManager.series_chapters(socket.assigns.series)
+    {:noreply, socket}
+  end
+
+  def handle_event("library_add", _, socket) do
+    {:ok, series} =
+      Repo.transact(fn ->
+        Repo.get(Series, socket.assigns.series.id)
+        |> Ecto.Changeset.change(%{in_library: true})
+        |> Repo.update()
+      end)
+
+    series =
+      series
+      |> Repo.preload(source: :extension)
+      |> Repo.preload(:tags)
+
+    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+
+    LLWeb.LibraryLive.update()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("library_remove", _, socket) do
+    {:ok, series} =
+      Repo.transact(fn ->
+        Repo.get(Series, socket.assigns.series.id)
+        |> Ecto.Changeset.change(%{in_library: false})
+        |> Repo.update()
+      end)
+
+    series =
+      series
+      |> Repo.preload(source: :extension)
+      |> Repo.preload(:tags)
+
+    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+
+    LLWeb.LibraryLive.update()
+
+    {:noreply, socket}
+  end
+
+  def handle_info(%{topic: "series:" <> id, event: "update", payload: series}, socket) do
+    {:noreply, assign(socket, series: series)}
+  end
+
+  def handle_info(%{topic: "chapters:" <> id, event: "update", payload: chapters}, socket) do
+    {:noreply, assign(socket, chapters: chapters)}
   end
 end

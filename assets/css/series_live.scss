@@ -1,3 +1,37 @@
 .SeriesLive {
-  
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    padding: 0.5em;
+    flex: 1;
+
+    .cover-image {
+        display: block;
+        position: relative;
+        height: 18em;
+        overflow: hidden;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+
+        >img {
+            object-fit: cover;
+            width: 100%;
+            height: 100%;
+        }
+    }
+
+    .info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 14em;
+    }
+
+    .chapterlist {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5em;
+        flex: 1;
+        min-width: 400px;
+    }
 }

@@ -1,7 +1,6 @@
 defmodule LLWeb.SearchLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
-  use LLWeb.SeriesPageComponent
   use LLWeb.ChapterComponent
 
   alias LL.{ExtensionManager, Repo, Series}

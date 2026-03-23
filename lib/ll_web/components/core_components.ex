@@ -1,15 +1,25 @@
 defmodule LLWeb.CoreComponents do
-  defmacro __using__(_opts) do
-    quote do
-      def relative_time(nil), do: nil
+  use Phoenix.Component
+  alias LLWeb.Router.Helpers, as: Routes
 
-      def relative_time(time) do
-        if Timex.diff(DateTime.utc_now(), time, :duration) > Timex.Duration.from_seconds(86400) do
-          Timex.format!(time, "{YYYY}-{0M}-{D}")
-        else
-          Timex.format!(time, "{relative}", :relative)
-        end
-      end
+  def nav(assigns) do
+    ~H"""
+    <.link
+      navigate={Routes.live_path(@socket, @view)}
+      class={if @socket.private.root_view == @view, do: "active"}
+    >
+      <span>{@view.title()}</span>
+    </.link>
+    """
+  end
+
+  def relative_time(nil), do: nil
+
+  def relative_time(time) do
+    if Timex.diff(DateTime.utc_now(), time, :duration) > Timex.Duration.from_seconds(86400) do
+      Timex.format!(time, "{YYYY}-{0M}-{D}")
+    else
+      Timex.format!(time, "{relative}", :relative)
     end
   end
 end

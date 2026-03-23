@@ -1,7 +1,6 @@
 defmodule LLWeb.LibraryLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
-  use LLWeb.SeriesPageComponent
   use LLWeb.ChapterComponent
 
   import Ecto.Query, only: [from: 2]

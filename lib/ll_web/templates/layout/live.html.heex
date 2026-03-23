@@ -5,7 +5,7 @@
 <header>
   <nav>
     <.nav socket={@socket} view={LLWeb.LibraryLive} />
-    <.nav socket={@socket} view={LLWeb.DownloadsLive} />
+    {live_render(@socket, LLWeb.UpdatesNavLive, id: LLWeb.UpdatesNavLive)}
     <.nav socket={@socket} view={LLWeb.SearchLive} />
     <.nav socket={@socket} view={LLWeb.TagsLive} />
     <.nav socket={@socket} view={LLWeb.ExtensionsLive} /> <span></span>
