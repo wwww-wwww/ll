@@ -114,14 +114,28 @@ defmodule LLWeb.SourceLive do
         if id_acc do
           ~H"""
           <span>
-            <input name={@search_form[filter_id].name} type="checkbox" id={@search_form[filter_id].id} />
+            <input
+              name={@search_form[filter_id].name}
+              id={@search_form[filter_id].id}
+              value={@search_form[filter_id].value}
+              type="number"
+              min="0"
+              max="2"
+            />
             <label for={@search_form[filter_id].id}>{name}</label>
           </span>
           """
         else
           ~H"""
           <div>
-            <input name={@search_form[filter_id].id} type="checkbox" id={@search_form[filter_id].id} />
+            <input
+              name={@search_form[filter_id].id}
+              id={@search_form[filter_id].id}
+              value={@search_form[filter_id].value}
+              type="number"
+              min="0"
+              max="2"
+            />
             <label for={@search_form[filter_id].id}>{name}</label>
           </div>
           """
@@ -135,6 +149,19 @@ defmodule LLWeb.SourceLive do
       %{type: "separator"} ->
         ~H"""
         <div class="separator"></div>
+        """
+
+      %{type: "text"} ->
+        ~H"""
+        <div>
+          <label for={@search_form[filter_id].id}>{name}</label>
+          <input
+            name={@search_form[filter_id].name}
+            type="text"
+            id={@search_form[filter_id].id}
+            value={@search_form[filter_id].value}
+          />
+        </div>
         """
 
       _ ->
