@@ -14,7 +14,6 @@ defmodule LL.Application do
       LLWeb.Endpoint,
       LL.ExtensionManager,
       LL.SourceManager,
-      # LL.DB,
       LL.Status,
       # Supervisor.child_spec({LL.WorkerManager, name: LL.CriticalQueue},
       #  id: LL.CriticalQueue
