@@ -5,8 +5,6 @@ defmodule LLWeb.SearchLive do
 
   alias LL.{ExtensionManager, Repo, Series}
 
-  @topic to_string(__MODULE__)
-
   def title(), do: "Search"
 
   def render(assigns) do
@@ -14,11 +12,6 @@ defmodule LLWeb.SearchLive do
   end
 
   def mount(_, _session, socket) do
-    if connected?(socket) do
-      Endpoint.subscribe(@topic)
-      Endpoint.subscribe(@topic <> socket.id)
-    end
-
     sources = LL.SourceManager.get().sources
 
     form =
@@ -30,11 +23,10 @@ defmodule LLWeb.SearchLive do
 
     socket =
       socket
-      |> assign(topic: @topic <> socket.id)
+      |> assign(topic: topic)
       |> assign(search: %{id: 0, query: "", page: 1, results: %{}})
       |> assign(search_form: form)
       |> assign(sources: sources)
-      |> assign(results: %{})
 
     {:ok, socket}
   end
@@ -50,15 +42,11 @@ defmodule LLWeb.SearchLive do
   end
 
   def handle_info(
-        %{
-          event: "search_result",
-          payload: %{id: search_id, source_id: source_id, results: results}
-        },
+        {:search_result, %{id: search_id, source_id: source_id, results: results}},
         socket
       )
       when socket.assigns.search.id == search_id do
-    new_results =
-      Map.put(socket.assigns.search.results, source_id, results)
+    new_results = Map.put(socket.assigns.search.results, source_id, results)
 
     socket = assign(socket, search: %{socket.assigns.search | results: new_results})
     {:noreply, socket}
@@ -76,15 +64,16 @@ defmodule LLWeb.SearchLive do
 
     socket = socket |> assign(search: search)
 
+    pid = self()
+
     socket.assigns.sources
     |> Enum.filter(&Map.get(params, "enable_#{&1.id}"))
     |> Enum.each(fn source ->
       ExtensionManager.search(source, search, fn results ->
-        Endpoint.broadcast(socket.assigns.topic, "search_result", %{
-          id: search_id,
-          source_id: source.source_id,
-          results: results
-        })
+        send(
+          pid,
+          {:search_result, %{id: search_id, source_id: source.source_id, results: results}}
+        )
       end)
     end)
 
