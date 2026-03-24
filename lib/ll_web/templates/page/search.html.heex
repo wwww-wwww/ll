@@ -41,10 +41,10 @@
   <% end %>
 </div>
 
-<%= if assigns[:series] do %>
+<%= if assigns[:series_id] do %>
   <.live_component
     module={LLWeb.SeriesPageComponent}
-    id={LLWeb.SeriesPageComponent.id(@series.id)}
-    series_id={@series.id}
+    id={LLWeb.SeriesPageComponent.id(@series_id)}
+    series_id={@series_id}
   />
 <% end %>

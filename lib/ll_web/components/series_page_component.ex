@@ -3,7 +3,7 @@ defmodule LLWeb.SeriesPageComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="SeriesPageComponent" id={"#{__MODULE__}#{assigns[:id]}"}>
+    <div class="SeriesPageComponent">
       <div class="header">
         <%= if assigns[:close] do %>
           <.link navigate={assigns[:close]} class="button" draggable="false">Close</.link>
@@ -11,9 +11,9 @@ defmodule LLWeb.SeriesPageComponent do
           <button phx-click="close_series">Close</button>
         <% end %>
       </div>
-      <div class="body">
+      <div class="body" phx-value-sid={@series_id}>
         {live_render(@socket, LLWeb.SeriesLive,
-          id: LLWeb.SeriesLive,
+          id: "#{LLWeb.SeriesLive}:#{@series_id}",
           session: %{"id" => @series_id}
         )}
       </div>

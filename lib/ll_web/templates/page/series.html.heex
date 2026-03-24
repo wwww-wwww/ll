@@ -1,4 +1,4 @@
-<div class="head">
+<div class="head" phx-value-sid={@series.id}>
   <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
     <div class="cover-image">
       <img src={
@@ -32,18 +32,7 @@
 <div class="tags">[tags]</div>
 <div class="description">{@series.description}</div>
 <div class="chapterlist">
-  <% sorted =
-    Enum.sort_by(
-      @chapters,
-      fn c ->
-        {c.number,
-         Regex.scan(~r/\d+\.?\d*/, c.title)
-         |> List.flatten()
-         |> Enum.map(&(Float.parse(&1) |> elem(0)))}
-      end,
-      :desc
-    ) %>
-  <%= for c <- sorted do %>
+  <%= for c <- @chapters do %>
     <.live_component
       module={LLWeb.ChapterComponent}
       id={LLWeb.ChapterComponent.id(c.id)}

@@ -1,0 +1,33 @@
+<input type="checkbox" id="series_details_toggle" />
+<div class="series_details">
+  <div class="inner">
+    <div class="details">
+      <h1>{@series.title}</h1>
+    </div>
+
+    <div class="chapterlist">
+      <%= for c <- @chapters do %>
+        <.live_component
+          module={LLWeb.ChapterComponent}
+          id={LLWeb.ChapterComponent.id(c.id)}
+          chapter={c}
+          selected={c.id == @chapter.id}
+        />
+      <% end %>
+    </div>
+  </div>
+
+  <div class="series_details_toggle">
+    <label for="series_details_toggle"></label>
+  </div>
+</div>
+
+<div class="body">
+  <div id="page_container">
+    <%= for {_, i} <- Enum.with_index(@chapter.files) do %>
+      <div>
+        <img src={~p"/page/#{@chapter.id}/#{i + 1}"} loading="lazy" />
+      </div>
+    <% end %>
+  </div>
+</div>

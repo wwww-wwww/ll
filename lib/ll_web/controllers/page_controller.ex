@@ -1,6 +1,8 @@
 defmodule LLWeb.PageController do
   use LLWeb, :controller
 
+  alias LL.{Repo, Chapter}
+
   def mime(path) do
     cond do
       String.ends_with?(path, ".jxl") -> "image/jxl"
@@ -9,15 +11,17 @@ defmodule LLWeb.PageController do
     end
   end
 
-  def file(conn, %{"path" => path}) do
-    path = "/tank/llm/files/#{path}"
-
-    if File.exists?(path) do
+  def page(conn, %{"chapter" => id, "index" => index}) do
+    with %Chapter{} = chapter <- Repo.get(Chapter, id),
+         {index, _} <- Integer.parse(index),
+         path <- chapter.files |> Enum.at(index - 1),
+         true <- File.exists?(path) do
       conn
       |> put_resp_content_type(mime(path))
       |> send_file(200, path)
     else
-      conn |> put_status(404) |> text("File not found")
+      _ ->
+        conn |> put_status(404) |> text("File not found")
     end
   end
 end

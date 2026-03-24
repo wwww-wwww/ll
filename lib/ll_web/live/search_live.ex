@@ -92,20 +92,10 @@ defmodule LLWeb.SearchLive do
   end
 
   def handle_event("select_series", %{"id" => id}, socket) do
-    series = Repo.get(Series, id) |> Repo.preload([:source, :chapters])
-
-    socket =
-      socket
-      |> assign(series: series)
-      |> assign(source: series.source)
-      |> assign(chapters: series.chapters)
-
-    {:noreply, socket}
+    {:noreply, assign(socket, series_id: id)}
   end
 
   def handle_event("close_series", _, socket) do
-    socket = assign(socket, series: nil)
-
-    {:noreply, socket}
+    {:noreply, assign(socket, series_id: nil)}
   end
 end

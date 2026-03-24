@@ -25,9 +25,9 @@ defmodule LLWeb.Router do
 
     live "/series/:series_id", SeriesLive
 
-    live "/series/:series_id/:n", ReaderLive, :series
+    live "/series/:series_id/:chapter_id", ReaderLive
 
-    get "/f/files/:path", PageController, :file
+    get "/page/:chapter/:index", PageController, :page
 
     live "/routes", RoutesLive
     live "/status", StatusLive

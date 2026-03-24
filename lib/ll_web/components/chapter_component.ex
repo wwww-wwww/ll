@@ -3,9 +3,9 @@ defmodule LLWeb.ChapterComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="ChapterComponent">
+    <div class={["ChapterComponent", assigns[:selected] && "selected"]}>
+      <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, &File.exists?/1) %>
       <%= if @chapter.files != nil do %>
-        <% downloaded = Enum.filter(@chapter.files, &File.exists?/1) %>
         <%= if length(downloaded) != length(@chapter.files) do %>
           <div>
             <span>{length(downloaded)}/{length(@chapter.files)}</span>
@@ -20,15 +20,31 @@ defmodule LLWeb.ChapterComponent do
         </div>
       <% end %>
 
-      <div>
+      <%= if downloaded do %>
+      <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
         <div>
-          <span class="title">{@chapter.title}</span>
+          <div>
+            <span class="title">{@chapter.title}</span>
+          </div>
+          <div>
+            <span class="date">{relative_time(@chapter.date)}</span>
+            <span class="scanlator">{@chapter.scanlator}</span>
+          </div>
         </div>
+      </.link>
+      <% else %>
+      <div navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
         <div>
-          <span class="date">{relative_time(@chapter.date)}</span>
-          <span class="scanlator">{@chapter.scanlator}</span>
+          <div>
+            <span class="title">{@chapter.title}</span>
+          </div>
+          <div>
+            <span class="date">{relative_time(@chapter.date)}</span>
+            <span class="scanlator">{@chapter.scanlator}</span>
+          </div>
         </div>
       </div>
+      <% end %>
     </div>
     """
   end
@@ -45,8 +61,8 @@ defmodule LLWeb.ChapterComponent do
   defmacro __using__(_opts) do
     quote do
       def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
-        LL.Repo.get(LL.Chapter, chapter_id)
-        |> LL.ExtensionManager.chapter_pages(socket.assigns.source)
+        chapter = LL.Repo.get(LL.Chapter, chapter_id) |> LL.Repo.preload(source: :extension)
+        LL.ExtensionManager.chapter_pages(chapter, chapter.source)
 
         {:noreply, socket}
       end

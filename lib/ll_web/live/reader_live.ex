@@ -1,5 +1,6 @@
 defmodule LLWeb.ReaderLive do
   use LLWeb, :live_view
+  use LLWeb.ChapterComponent
 
   alias LL.{Repo, Chapter, Series}
 
@@ -20,97 +21,21 @@ defmodule LLWeb.ReaderLive do
         {:ok, socket}
 
       chapter ->
+        chapters = Chapter.list(chapter.series)
+
+        series = chapter.series |> Map.put(:description, "")
+
+        chapter = Map.put(chapter, :series, nil)
+
         socket =
           socket
           |> assign(page_title: chapter.title)
-          |> assign(type: :chapter)
-          |> assign(title: chapter.title)
-          |> assign(tags: chapter.tags)
-          |> assign(chapter: chapter)
-          |> assign(date: chapter.date)
-
-        {:ok, socket}
-    end
-  end
-
-  def mount(%{"series_id" => series_id}, _session, socket) do
-    Repo.get(Series, series_id)
-    |> Repo.preload([{:chapters, :tags}, :tags])
-    |> case do
-      nil ->
-        socket =
-          socket
-          |> redirect(to: "/")
-          |> put_flash(:error, "Series not found")
-
-        {:ok, socket}
-
-      series ->
-        date =
-          case series.chapters do
-            [] -> series.inserted_at
-            chapters -> chapters |> Enum.max_by(& &1.date, Date) |> Map.get(:date)
-          end
-
-        chapters = Enum.sort_by(series.chapters, &(&1.number || 0))
-
-        common_tags = chapters |> Enum.map(& &1.tags) |> List.flatten()
-
-        common_tags =
-          Enum.reduce(chapters |> Enum.drop(1), common_tags, fn _, acc ->
-            acc -- Enum.uniq(common_tags)
-          end)
-
-        socket =
-          socket
-          |> assign(page_title: series.title)
-          |> assign(type: :series)
           |> assign(series: series)
+          |> assign(tags: chapter.tags)
           |> assign(chapters: chapters)
-          |> assign(title: series.title)
-          |> assign(tags: common_tags)
-          |> assign(date: date)
+          |> assign(chapter: chapter)
 
         {:ok, socket}
     end
-  end
-
-  def handle_params(%{"series_id" => _, "n" => n}, _session, socket) do
-    series = socket.assigns[:series]
-
-    {n, _} = Integer.parse(n)
-
-    chapter =
-      series.chapters
-      |> Enum.filter(&(&1.number == n))
-      |> Enum.at(0)
-
-    socket =
-      socket
-      |> assign(page_title: "#{series.title} - #{n}. #{chapter.title}")
-      |> assign(chapter: chapter)
-
-    {:noreply, socket}
-  end
-
-  def handle_params(_params, _session, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("update", _, socket) do
-    # LL.Sources.source_module(socket.assigns.series.source).update(socket.assigns.series)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("update_chapters", _, socket) do
-    case Map.get(socket.assigns, :series) do
-      nil -> [socket.assigns.chapter]
-      series -> series.chapters
-    end
-
-    # |> Enum.each(&LL.Sources.source_module(&1.source).update(&1))
-
-    {:noreply, socket}
   end
 end

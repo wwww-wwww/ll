@@ -11,8 +11,8 @@ defmodule LLWeb.SeriesLive do
     LLWeb.PageView.render("series.html", assigns)
   end
 
-  def mount(:not_mounted_at_router, %{"id" => id} = session, socket) do
-    mount(%{"series_id" => id}, session, socket)
+  def mount(:not_mounted_at_router, %{"id" => id}, socket) do
+    mount(%{"series_id" => id}, nil, socket)
   end
 
   def mount(%{"series_id" => series_id}, _session, socket) do
@@ -28,9 +28,7 @@ defmodule LLWeb.SeriesLive do
     source = series.source
     tags = series.tags
 
-    chapters =
-      from(c in Chapter, where: c.series_id == ^series.id)
-      |> Repo.all()
+    chapters = Chapter.list(series)
 
     socket =
       socket

@@ -26,22 +26,12 @@ defmodule LLWeb.LibraryLive do
           socket
 
         id ->
-          Repo.get(Series, id)
-          |> Repo.preload(source: :extension)
-          |> case do
+          case Repo.get(Series, id) do
             nil ->
               socket
 
             series ->
-              chapters =
-                from(c in Chapter, where: c.series_id == ^series.id)
-                |> Repo.all()
-
-              socket
-              |> assign(series: series)
-              |> assign(source: series.source)
-              |> assign(chapters: chapters)
-              |> assign(page_title: series.title)
+              assign(socket, series_id: series.id)
           end
       end
 
