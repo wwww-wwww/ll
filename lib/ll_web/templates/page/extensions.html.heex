@@ -19,19 +19,19 @@
 
 <h3>Remote</h3>
 <table>
-  <%= for ext <- @remote |> Enum.filter(fn ext -> not Enum.any?(@local, &ext["pkg"] == &1.pkg) end) do %>
+  <%= for ext <- @remote |> Enum.filter(fn ext -> not Enum.any?(@local, &ext.pkg == &1.pkg) end) do %>
     <tr>
-      <td><button phx-click="install" phx-value-pkg={ext["pkg"]}>Install</button></td>
+      <td><button phx-click="install" phx-value-pkg={ext.pkg}>Install</button></td>
       <td>
-        <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext["pkg"]}.png"} />
+        <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.pkg}.png"} />
       </td>
       <td class="details">
         <div>
-          <span>{ext["sources"] |> Enum.at(0) |> Map.get("name")}</span>
-          <span>{ext["lang"]} - {ext["version"]}</span>
+          <span>{ext.sources |> Enum.at(0) |> Map.get(:name)}</span>
+          <span>{ext.lang} - {ext.version}</span>
         </div>
       </td>
-      <td>{ext["pkg"]}</td>
+      <td>{ext.pkg}</td>
     </tr>
   <% end %>
 </table>

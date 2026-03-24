@@ -10,4 +10,19 @@ defmodule LL.Source do
 
     timestamps()
   end
+
+  def start_bucket() do
+    :ets.new(:sources_filters, [:named_table, :public])
+  end
+
+  def update_filters(source, filters) do
+    :ets.insert(:sources_filters, {source.id, filters})
+  end
+
+  def get_filters(source) do
+    case :ets.lookup(:sources_filters, source.id) do
+      [{_, filters}] -> filters
+      _ -> []
+    end
+  end
 end

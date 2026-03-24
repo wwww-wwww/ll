@@ -46,7 +46,7 @@ defmodule LL.ExtensionManager do
   def update_remote() do
     Downloader.get extension_repo() <> "index.json" do
       {:ok, body, _headers} ->
-        case Jason.decode(body) do
+        case Jason.decode(body, keys: :atoms) do
           {:ok, arr} ->
             Agent.update(__MODULE__, &Map.put(&1, :remote, arr))
 
@@ -73,9 +73,9 @@ defmodule LL.ExtensionManager do
 
   def install(pkg) do
     get().remote
-    |> Enum.filter(&(&1["pkg"] == pkg))
+    |> Enum.filter(&(&1.pkg == pkg))
     |> case do
-      [%{"apk" => apk, "name" => ext_name, "version" => ext_version}] ->
+      [%{apk: apk, name: ext_name, version: ext_version}] ->
         Downloader.get extension_repo() <> "apk/" <> apk do
           {:ok, body, _headers} ->
             path = Path.expand(@extensions_path <> "/" <> apk)
@@ -99,10 +99,10 @@ defmodule LL.ExtensionManager do
                     Enum.map(sources, fn source ->
                       Ecto.Changeset.change(%Source{}, %{
                         extension_id: extension.id,
-                        source_id: source["id"],
-                        name: source["name"],
-                        lang: source["lang"],
-                        base_url: source["base_url"]
+                        source_id: source.id,
+                        name: source.name,
+                        lang: source.lang,
+                        base_url: source.base_url
                       })
                       |> Repo.insert()
                       |> elem(1)
@@ -169,23 +169,23 @@ defmodule LL.ExtensionManager do
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "search", :local do
-      {:ok, %{"results" => results}} ->
+      {:ok, %{results: results}} ->
         results =
           Enum.map(results, fn m ->
             series =
-              case Repo.get_by(Series, url: m["url"]) do
+              case Repo.get_by(Series, url: m.url) do
                 nil ->
                   {:ok, series} =
                     Ecto.Changeset.change(%Series{}, %{
                       source_id: source.id,
-                      url: m["url"],
-                      title: m["title"],
-                      artist: m["artist"],
-                      author: m["author"],
-                      description: m["description"],
-                      genre: m["genre"],
-                      status: m["status"],
-                      thumbnail_url: m["thumbnail_url"]
+                      url: m.url,
+                      title: m.title,
+                      artist: m.artist,
+                      author: m.author,
+                      description: m.description,
+                      genre: m.genre,
+                      status: m.status,
+                      thumbnail_url: m.thumbnail_url
                     })
                     |> Repo.insert()
 
@@ -224,13 +224,13 @@ defmodule LL.ExtensionManager do
       {:ok, j} ->
         {:ok, series} =
           Ecto.Changeset.change(series, %{
-            title: j["title"],
-            artist: j["artist"],
-            author: j["author"],
-            description: j["description"],
-            genre: j["genre"],
-            status: j["status"],
-            thumbnail_url: j["thumbnail_url"],
+            title: j.title,
+            artist: j.artist,
+            author: j.author,
+            description: j.description,
+            genre: j.genre,
+            status: j.status,
+            thumbnail_url: j.thumbnail_url,
             details_updated: DateTime.utc_now() |> DateTime.truncate(:second)
           })
           |> Repo.update()
@@ -258,28 +258,28 @@ defmodule LL.ExtensionManager do
       {:ok, j} ->
         Repo.transact(fn ->
           chapters =
-            Enum.map(j["results"], fn chapter_j ->
+            Enum.map(j.results, fn chapter_j ->
               case Repo.get_by(Chapter,
                      series_id: series.id,
                      source_id: source.id,
-                     url: chapter_j["url"]
+                     url: chapter_j.url
                    ) do
                 nil ->
                   %Chapter{
                     series_id: series.id,
                     source_id: source.id,
-                    url: chapter_j["url"]
+                    url: chapter_j.url
                   }
 
                 chapter ->
                   chapter
               end
               |> Ecto.Changeset.change(%{
-                number: chapter_j["number"],
-                scanlator: chapter_j["scanlator"],
-                title: chapter_j["title"],
+                number: chapter_j.number,
+                scanlator: chapter_j.scanlator,
+                title: chapter_j.title,
                 date:
-                  DateTime.from_unix!(chapter_j["date"], :millisecond)
+                  DateTime.from_unix!(chapter_j.date, :millisecond)
                   |> DateTime.truncate(:second)
               })
               |> Repo.insert_or_update!()
@@ -321,12 +321,12 @@ defmodule LL.ExtensionManager do
       {:ok, j} ->
         Repo.transact(fn ->
           Repo.get(Chapter, chapter.id)
-          |> Ecto.Changeset.change(%{files: List.duplicate("", length(j["results"]))})
+          |> Ecto.Changeset.change(%{files: List.duplicate("", length(j.results))})
           |> Repo.update()
         end)
         |> case do
           {:ok, chapter} ->
-            j["results"]
+            j.results
             |> Enum.with_index()
             |> Enum.each(&download_page(chapter, source, elem(&1, 0), elem(&1, 1)))
 
@@ -407,6 +407,23 @@ defmodule LL.ExtensionManager do
           Logger.error(err)
           LL.Message.create("Error", inspect(err))
       end
+    end
+  end
+
+  def filters(source, cb) do
+    %{
+      "extension" => source.extension.path,
+      "source" => source.source_id
+    }
+    |> Jason.encode!()
+    |> Downloader.post @manager_api <> "filters" do
+      {:ok, resp} ->
+        cb.(resp)
+        LL.Source.update_filters(source, resp)
+
+      err ->
+        Logger.error(err)
+        LL.Message.create("Error", inspect(err))
     end
   end
 end

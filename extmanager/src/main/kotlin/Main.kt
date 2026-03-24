@@ -3,18 +3,17 @@ package moe.grass
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.SourceFactory
+import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
-import eu.kanade.tachiyomi.util.chapter.ChapterRecognition
-import eu.kanade.tachiyomi.util.chapter.ChapterSanitizer.sanitize
+import io.ktor.http.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import io.ktor.http.ContentType
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
 import kotlinx.serialization.json.*
@@ -317,13 +316,72 @@ fun main() {
 
                     extensions[extension]?.let {
                         it[source_id]?.let { source ->
-                            call.respond(Json.encodeToString(source.getFilterList()))
+                            val j = build_filterlist(source.getFilterList())
+                            call.respondText(Json.encodeToString(j), ContentType.Application.Json)
+                            return@post
                         }
                     }
                 }
+                call.respondText("{}", ContentType.Application.Json)
             }
         }
     }.start(wait = true)
+}
+
+private fun build_filterlist(filterlist: List<Filter<*>>): JsonArray {
+    return buildJsonArray {
+        filterlist.forEach {
+            add(buildJsonObject {
+                put("name", it.name)
+
+                when (it) {
+                    is Filter.Header -> put("type", "header")
+                    is Filter.Separator -> put("type", "separator")
+                    is Filter.Select<*> -> {
+                        put("type", "select")
+                        put("values", buildJsonArray {
+                            it.values.forEach { v -> add(v.toString()) }
+                        })
+                        put("state", it.state)
+                    }
+
+                    is Filter.Text -> {
+                        put("type", "text")
+                        put("state", it.state)
+                    }
+
+                    is Filter.CheckBox -> {
+                        put("type", "check")
+                        put("state", it.state)
+                    }
+
+                    is Filter.TriState -> {
+                        put("type", "triState")
+                        put("state", it.state)
+                    }
+
+                    is Filter.Group<*> -> {
+                        put("type", "group")
+                        put("group", build_filterlist(it.state as List<Filter<*>>))
+                    }
+
+                    is Filter.Sort -> {
+                        put("type", "sort")
+                        put("values", buildJsonArray {
+                            it.values.forEach { v -> add(v) }
+                        })
+                        it.state?.let { state ->
+                            put("state", buildJsonObject {
+                                put("index", state.index)
+                                put("ascending", state.ascending)
+                            })
+                        }
+                    }
+                }
+            })
+        }
+
+    }
 }
 
 private fun get_sources(path: Path): List<CatalogueSource> {

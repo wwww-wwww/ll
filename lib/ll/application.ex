@@ -61,6 +61,8 @@ defmodule LL.Application do
 
     children = children ++ downloaders ++ downloaders2
 
+    LL.Source.start_bucket()
+
     opts = [strategy: :one_for_one, name: LL.Supervisor]
     Supervisor.start_link(children, opts)
   end

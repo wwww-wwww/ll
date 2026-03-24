@@ -63,7 +63,16 @@ defmodule LLWeb.SearchLive do
       results: %{}
     }
 
-    socket = socket |> assign(search: search)
+    new_form =
+      socket.assigns.search_form.source
+      |> Enum.map(&{elem(&1, 0), Map.get(params, elem(&1, 0)) || false})
+      |> Map.new()
+      |> to_form()
+
+    socket =
+      socket
+      |> assign(search: search)
+      |> assign(search_form: new_form)
 
     pid = self()
 

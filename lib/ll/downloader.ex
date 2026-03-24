@@ -104,7 +104,7 @@ defmodule LL.Downloader do
           case resp do
             {:ok, body, headers} ->
               if Enum.any?(headers, &(&1 == {"Content-Type", "application/json"})) do
-                case Jason.decode(body) do
+                case Jason.decode(body, keys: :atoms) do
                   unquote(clauses)
                 end
               else

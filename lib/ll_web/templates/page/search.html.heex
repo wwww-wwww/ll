@@ -3,7 +3,12 @@
 
   <.form for={@search_form} phx-submit="search">
     <div>
-      <input type="text" id={@search_form[:query].id} name={@search_form[:query].name} />
+      <input
+        type="text"
+        id={@search_form[:query].id}
+        name={@search_form[:query].name}
+        value={@search_form[:query].value}
+      />
       {submit("Search")}
     </div>
 
