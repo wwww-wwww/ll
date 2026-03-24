@@ -20,6 +20,7 @@ defmodule LLWeb.Router do
     live "/library/:id", LibraryLive
     live "/updates", UpdatesLive
     live "/search", SearchLive
+    live "/search/:source", SourceLive
     live "/tags", TagsLive
     live "/extensions", ExtensionsLive
 

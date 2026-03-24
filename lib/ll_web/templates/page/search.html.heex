@@ -12,31 +12,33 @@
         <% field = @search_form["enable_#{source.id}"] %>
         <div>
           <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
-          <label for={field.id}>
+          <.link navigate={~p"/search/#{source.id}"}>
             <img
               loading="lazy"
               src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"}
             />
             <span>{source.name}</span>
             <span>{source.lang}</span>
-          </label>
+          </.link>
         </div>
       <% end %>
     </div>
   </.form>
 
   <%= for {source_id, results} <- @search.results do %>
-    <h4>
-      {@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}
-    </h4>
-    <div class="library">
-      <%= for series <- results do %>
-        <.live_component
-          module={LLWeb.SeriesComponent}
-          id={LLWeb.SeriesComponent.id(series.id)}
-          series={series}
-        />
-      <% end %>
+    <div>
+      <h4>
+        {@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}
+      </h4>
+      <div class="library">
+        <%= for series <- results do %>
+          <.live_component
+            module={LLWeb.SeriesComponent}
+            id={LLWeb.SeriesComponent.id(series.id)}
+            series={series}
+          />
+        <% end %>
+      </div>
     </div>
   <% end %>
 </div>

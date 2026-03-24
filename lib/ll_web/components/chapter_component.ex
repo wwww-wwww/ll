@@ -21,29 +21,29 @@ defmodule LLWeb.ChapterComponent do
       <% end %>
 
       <%= if downloaded do %>
-      <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
-        <div>
+        <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
           <div>
-            <span class="title">{@chapter.title}</span>
+            <div>
+              <span class="title">{@chapter.title}</span>
+            </div>
+            <div>
+              <span class="date">{relative_time(@chapter.date)}</span>
+              <span class="scanlator">{@chapter.scanlator}</span>
+            </div>
           </div>
-          <div>
-            <span class="date">{relative_time(@chapter.date)}</span>
-            <span class="scanlator">{@chapter.scanlator}</span>
-          </div>
-        </div>
-      </.link>
+        </.link>
       <% else %>
-      <div navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
-        <div>
+        <div navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
           <div>
-            <span class="title">{@chapter.title}</span>
-          </div>
-          <div>
-            <span class="date">{relative_time(@chapter.date)}</span>
-            <span class="scanlator">{@chapter.scanlator}</span>
+            <div>
+              <span class="title">{@chapter.title}</span>
+            </div>
+            <div>
+              <span class="date">{relative_time(@chapter.date)}</span>
+              <span class="scanlator">{@chapter.scanlator}</span>
+            </div>
           </div>
         </div>
-      </div>
       <% end %>
     </div>
     """

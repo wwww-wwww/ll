@@ -1,7 +1,6 @@
 defmodule LLWeb.SearchLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
-  use LLWeb.ChapterComponent
 
   alias LL.{ExtensionManager, Repo, Series}
 
@@ -47,6 +46,10 @@ defmodule LLWeb.SearchLive do
       when socket.assigns.search.id == search_id do
     new_results = Map.put(socket.assigns.search.results, source_id, results)
     socket = assign(socket, search: %{socket.assigns.search | results: new_results})
+    {:noreply, socket}
+  end
+
+  def handle_info({:search_result, _}, socket) do
     {:noreply, socket}
   end
 
