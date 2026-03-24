@@ -17,7 +17,7 @@ defmodule LLWeb.CoreComponents do
 
   def relative_time(time) do
     if Timex.diff(DateTime.utc_now(), time, :duration) > Timex.Duration.from_seconds(86400) do
-      Timex.format!(time, "{YYYY}-{0M}-{D}")
+      Timex.format!(time, "{YYYY}-{0M}-{0D}")
     else
       Timex.format!(time, "{relative}", :relative)
     end
