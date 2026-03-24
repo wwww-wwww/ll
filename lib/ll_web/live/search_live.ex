@@ -23,7 +23,6 @@ defmodule LLWeb.SearchLive do
 
     socket =
       socket
-      |> assign(topic: topic)
       |> assign(search: %{id: 0, query: "", page: 1, results: %{}})
       |> assign(search_form: form)
       |> assign(sources: sources)
@@ -47,7 +46,6 @@ defmodule LLWeb.SearchLive do
       )
       when socket.assigns.search.id == search_id do
     new_results = Map.put(socket.assigns.search.results, source_id, results)
-
     socket = assign(socket, search: %{socket.assigns.search | results: new_results})
     {:noreply, socket}
   end
