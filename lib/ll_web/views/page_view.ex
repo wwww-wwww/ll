@@ -12,7 +12,7 @@ defmodule LLWeb.PageView do
     4 => "Category"
   }
 
-  def replace_links(assigns, body) do
+  def replace_links(body) do
     Regex.scan(~r/{(.+)?}/, body)
     |> Enum.reduce(body, fn [match, group], acc ->
       replace =
@@ -22,8 +22,10 @@ defmodule LLWeb.PageView do
           [":library", id] ->
             series = Repo.get(Series, id)
 
+            assigns = %{series: series}
+
             ~H"""
-            <.link navigate={~p"/library/#{id}"}>{series.title}</.link>
+            <.link navigate={~p"/library/#{@series.id}"}>{@series.title}</.link>
             """
             |> Phoenix.HTML.Safe.to_iodata()
             |> IO.iodata_to_binary()

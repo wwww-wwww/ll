@@ -1,9 +1,9 @@
 .SeriesComponent {
     display: block;
     position: relative;
-    width: 12.67em;
-    min-width: 12.67em;
-    height: 18em;
+    width: min(12.67em, calc(50% - 0.25em));
+    min-width: min(12.67em, calc(50% - 0.25em));
+    aspect-ratio: 12.67 / 18;
     overflow: hidden;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
     border-radius: 4px;
@@ -43,5 +43,6 @@
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 3;
+        line-clamp: 3;
     }
 }

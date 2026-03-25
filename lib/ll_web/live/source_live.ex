@@ -36,6 +36,8 @@ defmodule LLWeb.SourceLive do
             module={LLWeb.SeriesComponent}
             id={LLWeb.SeriesComponent.id(series.id)}
             series={series}
+            href={~p"/series/#{series.id}"}
+            select={true}
           />
         <% end %>
       </div>
