@@ -6,9 +6,11 @@ defmodule LLWeb.SeriesPageComponent do
     <div class="SeriesPageComponent">
       <div class="header">
         <%= if assigns[:close] do %>
-          <.link navigate={assigns[:close]} class="button" draggable="false">Close</.link>
+          <.link navigate={assigns[:close]} class="button material-symbols-rounded" draggable="false">
+            close
+          </.link>
         <% else %>
-          <button phx-click="close_series">Close</button>
+          <button phx-click="close_series" class="material-symbols-rounded">close</button>
         <% end %>
       </div>
       <div class="body" phx-value-sid={@series_id}>

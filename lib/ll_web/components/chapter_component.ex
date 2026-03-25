@@ -9,12 +9,16 @@ defmodule LLWeb.ChapterComponent do
         <%= if length(downloaded) != length(@chapter.files) do %>
           <div class="extra">
             <span>{length(downloaded)}/{length(@chapter.files)}</span>
-            <button phx-click="download_chapter" value={@chapter.id}>Download</button>
+            <button phx-click="download_chapter" value={@chapter.id} class="material-symbols-rounded">
+              download
+            </button>
           </div>
         <% end %>
       <% else %>
         <div class="extra">
-          <button phx-click="download_chapter" value={@chapter.id}>Download</button>
+          <button phx-click="download_chapter" value={@chapter.id} class="material-symbols-rounded">
+            download
+          </button>
         </div>
       <% end %>
       <div class="body">
@@ -42,8 +46,12 @@ defmodule LLWeb.ChapterComponent do
       </div>
 
       <div class="extra">
-        <.link class="button" target="_blank" href={Path.join(@source.base_url, @chapter.url)}>
-          Read
+        <.link
+          class="button material-symbols-rounded"
+          target="_blank"
+          href={Path.join(@source.base_url, @chapter.url)}
+        >
+          globe
         </.link>
       </div>
     </div>

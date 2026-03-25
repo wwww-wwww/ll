@@ -29,8 +29,6 @@ defmodule LL.ExtensionManager do
   end
 
   def download_path(%Chapter{} = chapter) do
-    series = Repo.get(Series, chapter.series_id) |> Repo.preload(:source)
-
     title = String.replace(chapter.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "") |> String.trim()
 
     name =
@@ -40,7 +38,12 @@ defmodule LL.ExtensionManager do
         title
       end
 
-    Path.join(download_path(series), name)
+    name = "#{name}-#{chapter.scanlator}-#{chapter.id}"
+
+    Repo.get(Series, chapter.series_id)
+    |> Repo.preload(:source)
+    |> download_path()
+    |> Path.join(name)
   end
 
   def update_remote() do
@@ -216,9 +219,9 @@ defmodule LL.ExtensionManager do
     source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
 
     %{
-      "extension" => source.extension.path,
-      "source" => source.source_id,
-      "url" => series.url
+      extension: source.extension.path,
+      source: source.source_id,
+      url: series.url
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "series_details", :local do
@@ -253,9 +256,9 @@ defmodule LL.ExtensionManager do
     source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
 
     %{
-      "extension" => source.extension.path,
-      "source" => source.source_id,
-      "url" => series.url
+      extension: source.extension.path,
+      source: source.source_id,
+      url: series.url
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "series_chapters", :local do
@@ -316,9 +319,9 @@ defmodule LL.ExtensionManager do
 
   def chapter_pages(chapter, source) do
     %{
-      "extension" => source.extension.path,
-      "source" => source.source_id,
-      "url" => chapter.url
+      extension: source.extension.path,
+      source: source.source_id,
+      url: chapter.url
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "chapter_pages", :local do
@@ -390,12 +393,12 @@ defmodule LL.ExtensionManager do
   end
 
   def download_page(chapter, source, page, index) do
-    %{"image_url" => url} = page
+    %{image_url: url} = page
 
     if URI.parse(url).scheme == nil do
       Map.merge(page, %{
-        "extension" => source.extension.path,
-        "source" => source.source_id
+        extension: source.extension.path,
+        source: source.source_id
       })
       |> Jason.encode!()
       |> Downloader.post @manager_api <> "image" do
@@ -416,8 +419,8 @@ defmodule LL.ExtensionManager do
 
   def filters(source, cb) do
     %{
-      "extension" => source.extension.path,
-      "source" => source.source_id
+      extension: source.extension.path,
+      source: source.source_id
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "filters" do

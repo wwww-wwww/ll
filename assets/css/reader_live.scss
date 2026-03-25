@@ -38,14 +38,19 @@
             z-index: 1;
 
             label {
-                padding: 0.5em;
+                padding: 0.25em;
                 cursor: pointer;
+
+                &::after {
+                    font-family: 'Material Symbols Rounded';
+                }
             }
         }
     }
 
     #series_details_toggle {
         display: none;
+
 
         &:checked {
             &+.series_details {
@@ -54,7 +59,7 @@
                 }
 
                 .series_details_toggle label::after {
-                    content: ">";
+                    content: "chevron_right";
                 }
             }
         }
@@ -62,7 +67,7 @@
         &:not(:checked) {
             &+.series_details {
                 .series_details_toggle label::after {
-                    content: "<";
+                    content: "chevron_left";
                 }
             }
         }

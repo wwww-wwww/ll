@@ -92,6 +92,19 @@
         gap: 0.5em;
     }
 
+    .SeriesPageComponent {
+        .inner {
+            max-width: 100%;
+        }
+    }
+
+    .left:has(+ .SeriesPageComponent) {
+        .SeriesComponent {
+            width: 12.67em;
+            min-width: 12.67em;
+        }
+    }
+
     @media only screen and (max-width: calc(1000px + 19.67em)) {
         .left:has(+ .SeriesPageComponent) {
             display: none

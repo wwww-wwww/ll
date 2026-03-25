@@ -4,17 +4,22 @@
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    position: relative;
 
     >.header {
+        position: absolute;
+        top: 0;
+        right: 0;
+        z-index: 1;
         padding: 0.25em 0.5em;
-        box-shadow: 0 0px 5px 0px rgba(0, 0, 0, 0.5);
+        // box-shadow: 0 0px 5px 0px rgba(0, 0, 0, 0.5);
     }
 
     .body {
         overflow-y: auto;
         flex: 1;
+        display: flex;
     }
 
     .head {
