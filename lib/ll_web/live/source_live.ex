@@ -40,6 +40,9 @@ defmodule LLWeb.SourceLive do
             select={true}
           />
         <% end %>
+        <%= if length(@results) > 0 do %>
+          <button phx-click="next_page">More</button>
+        <% end %>
       </div>
     </div>
 
@@ -267,7 +270,7 @@ defmodule LLWeb.SourceLive do
 
   def handle_info({:search_result, search_id, results}, socket)
       when socket.assigns.search_id == search_id do
-    {:noreply, assign(socket, results: results)}
+    {:noreply, assign(socket, results: socket.assigns.results ++ results)}
   end
 
   def handle_info({:search_result, _}, socket) do
@@ -280,8 +283,42 @@ defmodule LLWeb.SourceLive do
 
   def key(id), do: Phoenix.HTML.javascript_escape(inspect(id))
 
+  defp to_filters(options) do
+    Enum.map(options, fn {key, val} ->
+      value =
+        case val do
+          "on" -> true
+          "off" -> false
+          v -> v
+        end
+
+      [key, value]
+    end)
+  end
+
+  def handle_event("next_page", _params, socket) do
+    page = socket.assigns.page + 1
+
+    source = socket.assigns.source
+    query = socket.assigns.query
+    filters = to_filters(socket.assigns.options)
+
+    socket =
+      socket
+      |> assign(page: page)
+      |> assign(search_id: Ecto.UUID.generate())
+
+    pid = self()
+
+    ExtensionManager.search(source, query, filters, page, fn results ->
+      send(pid, {:search_result, socket.assigns.search_id, results})
+    end)
+
+    {:noreply, socket}
+  end
+
   def handle_event("search", %{"query" => query} = params, socket) do
-    search_id = Ecto.UUID.generate()
+    source = socket.assigns.source
 
     options =
       socket.assigns.options
@@ -294,32 +331,23 @@ defmodule LLWeb.SourceLive do
       |> Map.merge(%{"query" => query})
       |> to_form()
 
-    filters =
-      options
-      |> Enum.map(fn {key, val} ->
-        value =
-          case val do
-            "on" -> true
-            "off" -> false
-            v -> v
-          end
-
-        [key, value]
-      end)
+    filters = to_filters(options)
 
     page = 1
 
     socket =
       socket
-      |> assign(search_id: search_id)
+      |> assign(options: options)
+      |> assign(search_id: Ecto.UUID.generate())
       |> assign(query: query)
       |> assign(page: page)
       |> assign(search_form: new_form)
+      |> assign(results: [])
 
     pid = self()
 
-    ExtensionManager.search(socket.assigns.source, query, filters, page, fn results ->
-      send(pid, {:search_result, search_id, results})
+    ExtensionManager.search(source, query, filters, page, fn results ->
+      send(pid, {:search_result, socket.assigns.search_id, results})
     end)
 
     {:noreply, socket}
