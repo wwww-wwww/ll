@@ -39,7 +39,7 @@
     <button phx-click="refresh">Refresh</button>
     <button phx-click="refresh_chapters">Refresh chapters</button>
   </div>
-  <div class="tags">[tags]</div>
+  <div class="tags">{@series.genre}</div>
   <div class="description">{@series.description}</div>
   <div class="chapterlist">
     <%= for c <- @chapters do %>
