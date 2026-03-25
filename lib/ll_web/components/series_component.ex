@@ -4,24 +4,29 @@ defmodule LLWeb.SeriesComponent do
   def render(assigns) do
     ~H"""
     <div class="SeriesComponent">
-      <%= if assigns[:click] do %>
-        <.link navigate={assigns[:click]}>
+      <%= if assigns[:select] do %>
+        <.link
+          id={"#{LLWeb.SeriesComponnent}:#{@series.id}"}
+          href={@href}
+          phx-value-id={@series.id}
+          phx-hook={assigns[:select] && "select_series"}
+        >
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
             <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
           <% else %>
             <img />
           <% end %>
-          <span>{@series.title}</span>
+          <span class="title">{@series.title}</span>
         </.link>
       <% else %>
-        <button phx-click="select_series" phx-value-id={@series.id} class="link">
+        <.link id={"#{LLWeb.SeriesComponnent}:#{@series.id}"} navigate={@navigate}>
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
             <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
           <% else %>
             <img />
           <% end %>
-          <span>{@series.title}</span>
-        </button>
+          <span class="title">{@series.title}</span>
+        </.link>
       <% end %>
     </div>
     """

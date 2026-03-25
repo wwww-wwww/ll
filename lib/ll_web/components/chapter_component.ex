@@ -7,44 +7,45 @@ defmodule LLWeb.ChapterComponent do
       <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, &File.exists?/1) %>
       <%= if @chapter.files != nil do %>
         <%= if length(downloaded) != length(@chapter.files) do %>
-          <div>
+          <div class="extra">
             <span>{length(downloaded)}/{length(@chapter.files)}</span>
-          </div>
-          <div>
             <button phx-click="download_chapter" value={@chapter.id}>Download</button>
           </div>
         <% end %>
       <% else %>
-        <div>
+        <div class="extra">
           <button phx-click="download_chapter" value={@chapter.id}>Download</button>
         </div>
       <% end %>
+      <div class="body">
+        <%= if downloaded do %>
+          <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
+            <div>
+              <span class="title">{@chapter.title}</span>
+            </div>
+            <div>
+              <span class="date">{relative_time(@chapter.date)}</span>
+              <span class="scanlator">{@chapter.scanlator}</span>
+            </div>
+          </.link>
+        <% else %>
+          <div>
+            <div>
+              <span class="title">{@chapter.title}</span>
+            </div>
+            <div>
+              <span class="date">{relative_time(@chapter.date)}</span>
+              <span class="scanlator">{@chapter.scanlator}</span>
+            </div>
+          </div>
+        <% end %>
+      </div>
 
-      <%= if downloaded do %>
-        <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
-          <div>
-            <div>
-              <span class="title">{@chapter.title}</span>
-            </div>
-            <div>
-              <span class="date">{relative_time(@chapter.date)}</span>
-              <span class="scanlator">{@chapter.scanlator}</span>
-            </div>
-          </div>
+      <div class="extra">
+        <.link class="button" target="_blank" href={Path.join(@source.base_url, @chapter.url)}>
+          Read
         </.link>
-      <% else %>
-        <div navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
-          <div>
-            <div>
-              <span class="title">{@chapter.title}</span>
-            </div>
-            <div>
-              <span class="date">{relative_time(@chapter.date)}</span>
-              <span class="scanlator">{@chapter.scanlator}</span>
-            </div>
-          </div>
-        </div>
-      <% end %>
+      </div>
     </div>
     """
   end

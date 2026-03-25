@@ -2,7 +2,10 @@
 <div class="series_details">
   <div class="inner">
     <div class="details">
-      <h1>{@series.title}</h1>
+      <h1><.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link></h1>
+      <.link target="_blank" href={Path.join(@source.base_url, @chapter.url)}>
+        Read at source
+      </.link>
     </div>
 
     <div class="chapterlist">
@@ -11,6 +14,7 @@
           module={LLWeb.ChapterComponent}
           id={LLWeb.ChapterComponent.id(c.id)}
           chapter={c}
+          source={@source}
           selected={c.id == @chapter.id}
         />
       <% end %>

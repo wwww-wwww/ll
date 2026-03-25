@@ -110,6 +110,15 @@ const hooks = {
           })
         })
     }
+  },
+  select_series: {
+    mounted() {
+      this.el.addEventListener("click", e => {
+        console.log(e)
+        e.preventDefault()
+        this.pushEvent("select_series", { id: this.el.getAttribute("phx-value-id") })
+      })
+    }
   }
 }
 

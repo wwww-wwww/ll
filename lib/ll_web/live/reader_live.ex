@@ -10,7 +10,7 @@ defmodule LLWeb.ReaderLive do
 
   def mount(%{"chapter_id" => chapter_id}, _session, socket) do
     Repo.get(Chapter, chapter_id)
-    |> Repo.preload([:tags, :series])
+    |> Repo.preload([:tags, :series, :source])
     |> case do
       nil ->
         socket =
@@ -34,6 +34,7 @@ defmodule LLWeb.ReaderLive do
           |> assign(tags: chapter.tags)
           |> assign(chapters: chapters)
           |> assign(chapter: chapter)
+          |> assign(source: chapter.source)
 
         {:ok, socket}
     end
