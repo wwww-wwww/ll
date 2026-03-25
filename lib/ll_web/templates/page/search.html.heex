@@ -1,6 +1,8 @@
 <div class="left">
   <h1>Search</h1>
 
+  <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
+
   <.form for={@search_form} phx-submit="search">
     <div>
       <input

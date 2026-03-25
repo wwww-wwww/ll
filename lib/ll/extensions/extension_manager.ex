@@ -224,17 +224,20 @@ defmodule LL.ExtensionManager do
     |> Downloader.post @manager_api <> "series_details", :local do
       {:ok, j} ->
         {:ok, series} =
-          Ecto.Changeset.change(series, %{
-            title: j.title,
-            artist: j.artist,
-            author: j.author,
-            description: j.description,
-            genre: j.genre,
-            status: j.status,
-            thumbnail_url: j.thumbnail_url,
-            details_updated: DateTime.utc_now() |> DateTime.truncate(:second)
-          })
-          |> Repo.update()
+          Repo.transact(fn ->
+            Repo.reload(series)
+            |> Ecto.Changeset.change(%{
+              title: j.title,
+              artist: j.artist,
+              author: j.author,
+              description: j.description,
+              genre: j.genre,
+              status: j.status,
+              thumbnail_url: j.thumbnail_url,
+              details_updated: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
+            |> Repo.update()
+          end)
 
         Endpoint.broadcast("series:#{series.id}", "update", series)
 

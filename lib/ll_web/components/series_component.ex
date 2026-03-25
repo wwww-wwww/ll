@@ -12,7 +12,9 @@ defmodule LLWeb.SeriesComponent do
           phx-hook={assigns[:select] && "select_series"}
         >
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")} />
+            <img src={
+              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
+            } />
           <% else %>
             <img />
           <% end %>
@@ -21,7 +23,9 @@ defmodule LLWeb.SeriesComponent do
       <% else %>
         <.link id={"#{LLWeb.SeriesComponnent}:#{@series.id}"} navigate={@navigate}>
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")} />
+            <img src={
+              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
+            } />
           <% else %>
             <img />
           <% end %>
