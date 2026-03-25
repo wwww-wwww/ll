@@ -54,4 +54,22 @@ defmodule LL do
       {:ok, nil}
     end)
   end
+
+  def prune() do
+    from(s in Series, where: s.in_library != true)
+    |> Repo.all()
+    |> Enum.each(&Repo.delete(&1))
+  end
+
+  def cleanup() do
+    series =
+      from(s in Series, where: s.in_library == true)
+      |> Repo.all()
+      |> Enum.map(&Path.expand(&1.thumbnail_path))
+
+    File.ls!("thumbnails")
+    |> Enum.map(&Path.expand(Path.join("thumbnails", &1)))
+    |> Enum.reject(&(&1 in series))
+    |> Enum.each(&File.rm(&1))
+  end
 end
