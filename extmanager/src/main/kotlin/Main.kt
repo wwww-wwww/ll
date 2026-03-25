@@ -17,6 +17,8 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
 import kotlinx.serialization.json.*
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.put
 import okhttp3.Response
 import suwayomi.tachidesk.manga.impl.util.PackageTools
 import suwayomi.tachidesk.manga.impl.util.PackageTools.getPackageInfo
@@ -67,6 +69,7 @@ fun main() {
                     val query = el["query"]?.jsonPrimitive?.content ?: ""
                     val extension = el["extension"]?.jsonPrimitive?.content ?: ""
                     val source_id = el["source"]?.jsonPrimitive?.long ?: 0L
+                    val filters = el["filters"]?.jsonArray ?: buildJsonArray {}
 
                     if (extension == "" || source_id == 0L) {
                         return@future buildJsonObject {}
@@ -85,7 +88,10 @@ fun main() {
 
                     println("search with " + source.name + " " + source.lang)
                     try {
-                        val req = source.getSearchManga(page, query, source.getFilterList())
+                        var filterlist = source.getFilterList()
+                        filterlist.forEach { process_filter(filters, it, emptyList()) }
+
+                        val req = source.getSearchManga(page, query, filterlist)
                         return@future buildJsonObject {
                             put("results", buildJsonArray {
                                 req.mangas.forEach {
@@ -326,6 +332,56 @@ fun main() {
             }
         }
     }.start(wait = true)
+}
+
+private fun get_value(json_filters: JsonArray, id: List<String>) : JsonElement? {
+    json_filters.forEach {
+        val field = it.jsonArray
+        val key = field.get(0).jsonArray.map { it.jsonPrimitive.content }
+        if (key == id) {
+            return field.get(1)
+        }
+    }
+
+    return null
+}
+
+private fun process_filter(json_filters: JsonArray, filter: Filter<*>, id_acc: List<String>) {
+    val id = id_acc + filter.name
+    when (filter) {
+        is Filter.Group<*> -> filter.state.forEach { process_filter(json_filters, it as Filter<*>, id) }
+
+        is Filter.Select<*> -> {
+            get_value(json_filters, id)?.jsonPrimitive?.int?.let { v ->
+                filter.state = v
+            }
+        }
+
+        is Filter.Text -> {
+            get_value(json_filters, id)?.jsonPrimitive?.content?.let { v ->
+                filter.state = v
+            }
+        }
+
+        is Filter.CheckBox -> {
+            get_value(json_filters, id)?.jsonPrimitive?.boolean?.let { v ->
+                filter.state = v
+            }
+        }
+
+        is Filter.TriState -> {
+            get_value(json_filters, id)?.jsonPrimitive?.int?.let { v ->
+                filter.state = v
+            }
+        }
+
+        is Filter.Sort -> {
+            val ascending = get_value(json_filters, id + "ascending")?.jsonPrimitive?.boolean ?: false
+            get_value(json_filters, id)?.jsonPrimitive?.int?.let { v ->
+                filter.state = Filter.Sort.Selection(v, ascending)
+            }
+        }
+    }
 }
 
 private fun build_filterlist(filterlist: List<Filter<*>>): JsonArray {

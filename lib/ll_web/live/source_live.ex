@@ -52,14 +52,14 @@ defmodule LLWeb.SourceLive do
   end
 
   def render_filter(form, filter, id_acc \\ nil) do
-    filter_id = "#{if id_acc, do: id_acc <> "_"}#{filter.name}"
+    filter_id = if id_acc, do: id_acc ++ [filter.name], else: [filter.name]
 
     assigns = %{
       form: form,
       filter: filter,
       filter_id: filter_id,
       name: filter.name,
-      field: form[filter_id]
+      field: form[key(filter_id)]
     }
 
     case filter.type do
@@ -93,19 +93,20 @@ defmodule LLWeb.SourceLive do
         <div>
           <span>{@name}</span>
           <select name={@field.name} id={@field.id}>
-            <%= for v <- @filter.values do %>
-              <option value={v} selected={v == @field.value}>{v}</option>
+            <%= for {v, i} <- Enum.with_index(@filter.values) do %>
+              <option value={i} selected={to_string(i) == to_string(@field.value)}>{v}</option>
             <% end %>
           </select>
           <span class="check">
+            <% ascending_id = key(@filter_id ++ ["ascending"]) %>
             <input
               class="ascending"
-              name={@form["#{@filter_id}_ascending"].name}
-              id={@form["#{@filter_id}_ascending"].id}
+              name={@form[ascending_id].name}
+              id={@form[ascending_id].id}
               type="checkbox"
-              checked={@form["#{@filter_id}_ascending"].value}
+              checked={@form[ascending_id].value}
             />
-            <label for={@form["#{@filter_id}_ascending"].id}>Ascending</label>
+            <label for={@form[ascending_id].id}>Ascending</label>
           </span>
         </div>
         """
@@ -115,8 +116,8 @@ defmodule LLWeb.SourceLive do
         <div>
           <span>{@name}</span>
           <select name={@field.name} id={@field.id}>
-            <%= for v <- @filter.values do %>
-              <option value={v} selected={v == @field.value}>{v}</option>
+            <%= for {v, i} <- Enum.with_index(@filter.values) do %>
+              <option value={i} selected={to_string(i) == to_string(@field.value)}>{v}</option>
             <% end %>
           </select>
         </div>
@@ -133,8 +134,10 @@ defmodule LLWeb.SourceLive do
               id={@field.id}
               value={@field.value}
               type="number"
+              min="0"
+              max="2"
             />
-            <label class="tristate" for={@field.id}>{@name}</label>
+            <label class="tristate" for={@field.id} state={@field.value}>{@name}</label>
           </span>
           """
         else
@@ -147,8 +150,10 @@ defmodule LLWeb.SourceLive do
               id={@field.id}
               value={@field.value}
               type="number"
+              min="0"
+              max="2"
             />
-            <label class="tristate" for={@field.id}>{@name}</label>
+            <label class="tristate" for={@field.id} state={@field.value}>{@name}</label>
           </div>
           """
         end
@@ -183,27 +188,30 @@ defmodule LLWeb.SourceLive do
     end
   end
 
-  def get_option(filter, id_acc \\ nil, groups \\ []) do
-    filter_id = "#{if id_acc, do: id_acc <> "_"}#{filter.name}"
+  def get_option(filter, id_acc \\ nil) do
+    filter_id = if id_acc, do: id_acc ++ [filter.name], else: [filter.name]
 
     case filter do
       %{type: "group", group: group} ->
-        Enum.map(group, &get_option(&1, filter_id, groups ++ [filter.name])) |> List.flatten()
+        Enum.map(group, &get_option(&1, filter_id)) |> List.flatten()
 
       %{type: "check", state: state} ->
-        [{filter_id, groups, state}]
+        [{filter_id, state}]
 
-      %{type: "sort", values: values, state: state} ->
+      %{type: "sort", state: state} ->
         [
-          {filter_id, groups, Enum.at(values, state.index)},
-          {filter_id <> "_ascending", groups, state.ascending}
+          {filter_id, state.index},
+          {filter_id ++ ["ascending"], state.ascending}
         ]
 
-      %{type: "select", values: values, state: state} ->
-        [{filter_id, groups, Enum.at(values, state)}]
+      %{type: "select", state: state} ->
+        [{filter_id, state}]
 
       %{type: "triState", state: state} ->
-        [{filter_id, groups, state}]
+        [{filter_id, state}]
+
+      %{type: "text", state: state} ->
+        [{filter_id, state}]
 
       _ ->
         []
@@ -236,7 +244,7 @@ defmodule LLWeb.SourceLive do
 
     form =
       options
-      |> Enum.map(&{elem(&1, 0), elem(&1, 2)})
+      |> Enum.map(&{key(elem(&1, 0)), elem(&1, 1)})
       |> Map.new()
       |> Map.merge(%{"query" => ""})
       |> to_form()
@@ -268,27 +276,33 @@ defmodule LLWeb.SourceLive do
     {:noreply, assign(socket, filters: filters)}
   end
 
+  def key(id), do: Phoenix.HTML.javascript_escape(inspect(id))
+
   def handle_event("search", %{"query" => query} = params, socket) do
     search_id = Ecto.UUID.generate()
 
+    options =
+      socket.assigns.options
+      |> Enum.map(&{elem(&1, 0), Map.get(params, key(elem(&1, 0)), elem(&1, 1))})
+
     new_form =
-      socket.assigns.search_form.source
-      |> Enum.map(&{elem(&1, 0), Map.get(params, elem(&1, 0)) || false})
+      options
+      |> Enum.map(&{key(elem(&1, 0)), elem(&1, 1)})
       |> Map.new()
+      |> Map.merge(%{"query" => query})
       |> to_form()
 
     filters =
-      socket.assigns.options
-      |> Enum.map(fn {key, tree, default} ->
+      options
+      |> Enum.map(fn {key, val} ->
         value =
-          case Map.get(params, key) do
-            nil -> default
+          case val do
             "on" -> true
             "off" -> false
-            val -> val
+            v -> v
           end
 
-        {key, tree, value}
+        [key, value]
       end)
 
     page = 1
