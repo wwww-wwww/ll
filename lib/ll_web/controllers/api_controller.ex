@@ -1,10 +1,27 @@
 defmodule LLWeb.ApiController do
   use LLWeb, :controller
 
+  import Ecto.Query, only: [from: 2]
   alias LL.{Repo, Chapter, Series}
 
   def all(conn, _params) do
-    conn |> json(%{})
+    list =
+      from(s in Series, where: s.in_library == true)
+      |> Repo.all()
+      |> Enum.map(fn series ->
+        %{
+          url: Routes.live_path(conn, LLWeb.SeriesLive, series.id),
+          title: series.title,
+          artist: series.artist,
+          author: series.author,
+          genre: series.genre,
+          status: series.status,
+          thumbnail_url:
+            Routes.static_path(conn, "/thumbnail/#{Path.basename(series.thumbnail_path)}")
+        }
+      end)
+
+    json(conn, list)
   end
 
   def map_tags(tags) do
@@ -20,43 +37,47 @@ defmodule LLWeb.ApiController do
 
   def series(conn, %{"series_id" => series_id}) do
     Repo.get(Series, series_id)
-    |> Repo.preload([{:chapters, :tags}, :tags])
+    |> Repo.preload(:chapters)
     |> case do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
 
       series ->
-        date =
-          case series.chapters do
-            [] -> series.inserted_at
-            chapters -> chapters |> Enum.max_by(& &1.date, Date) |> Map.get(:date)
-          end
-
         chapters =
           Enum.map(
             series.chapters,
             fn chapter ->
               %{
-                id: chapter.id,
+                url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
                 title: chapter.title,
-                date: chapter.date,
-                number: chapter.number || 0,
-                tags: map_tags(chapter.tags)
+                number: chapter.number,
+                date: chapter.date |> DateTime.to_unix(),
+                scanlator: chapter.scanlator
               }
             end
           )
-          |> Enum.sort_by(& &1.number, :desc)
+          |> Enum.sort_by(
+            fn c ->
+              {c.number,
+               Regex.scan(~r/\d+\.?\d*/, c.title)
+               |> List.flatten()
+               |> Enum.map(&(Float.parse(&1) |> elem(0)))}
+            end,
+            :desc
+          )
 
         conn
         |> json(%{
           success: 1,
-          type: "series",
-          id: series.id,
+          url: Routes.live_path(conn, LLWeb.SeriesLive, series.id),
           title: series.title,
+          artist: series.artist,
+          author: series.author,
           description: series.description,
-          cover: series.cover,
-          date: date,
-          tags: map_tags(series.tags),
+          genre: series.genre,
+          status: series.status,
+          thumbnail_url:
+            Routes.static_path(conn, "/thumbnail/#{Path.basename(series.thumbnail_path)}"),
           chapters: chapters
         })
     end
@@ -70,18 +91,21 @@ defmodule LLWeb.ApiController do
         conn |> json(%{success: 0, reason: "chapter not found"})
 
       chapter ->
+        files =
+          Enum.with_index(chapter.files)
+          |> Enum.map(fn {_, i} ->
+            Routes.page_path(conn, :page, chapter.id, i + 1)
+          end)
+
         conn
         |> json(%{
           success: 1,
-          type: "chapter",
-          id: chapter.id,
+          url: Routes.live_path(conn, LLWeb.ReaderLive, chapter.series_id, chapter.id),
           title: chapter.title,
           number: chapter.number,
-          cover: chapter.cover,
-          date: chapter.date,
-          tags: map_tags(chapter.tags),
-          series_id: chapter.series_id,
-          files: chapter.files
+          date: chapter.date |> DateTime.to_unix(),
+          scanlator: chapter.scanlator,
+          files: files
         })
     end
   end

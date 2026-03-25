@@ -40,7 +40,7 @@ defmodule LLWeb.Router do
 
     get "/all.json", ApiController, :all
     get "/series/:series_id", ApiController, :series
-    get "/chapter/:chapter_id", ApiController, :chapter
+    get "/series/:series_id/:chapter_id", ApiController, :chapter
   end
 
   # Enables LiveDashboard only for development
