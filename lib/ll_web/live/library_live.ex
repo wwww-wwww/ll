@@ -5,9 +5,7 @@ defmodule LLWeb.LibraryLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Series, Chapter}
-
-  @limit 20
+  alias LL.{Repo, Series}
 
   def title(), do: "Library"
 

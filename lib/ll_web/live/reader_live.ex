@@ -2,7 +2,7 @@ defmodule LLWeb.ReaderLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  alias LL.{Repo, Chapter, Series}
+  alias LL.{Repo, Chapter}
 
   def render(assigns) do
     LLWeb.PageView.render("reader.html", assigns)

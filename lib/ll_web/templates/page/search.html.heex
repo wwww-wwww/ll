@@ -30,7 +30,7 @@
     </div>
   </.form>
 
-  <%= for {source_id, results} <- @search.results do %>
+  <%= for {source_id, results} <- @results do %>
     <div>
       <h4>
         {@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}

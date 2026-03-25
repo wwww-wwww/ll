@@ -2,7 +2,6 @@ defmodule LLWeb.SeriesLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  import Ecto.Query, only: [from: 2]
   alias LL.{Repo, Series, Chapter}
 
   def title(), do: "Series"
@@ -32,10 +31,11 @@ defmodule LLWeb.SeriesLive do
 
     socket =
       socket
+      |> assign(page_title: series.title)
       |> assign(series: series)
       |> assign(source: source)
       |> assign(chapters: chapters)
-      |> assign(page_title: series.title)
+      |> assign(tags: tags)
 
     if series.details_updated == nil do
       LL.ExtensionManager.series_details(series)
@@ -100,11 +100,11 @@ defmodule LLWeb.SeriesLive do
     {:noreply, socket}
   end
 
-  def handle_info(%{topic: "series:" <> id, event: "update", payload: series}, socket) do
+  def handle_info(%{topic: "series:" <> _id, event: "update", payload: series}, socket) do
     {:noreply, assign(socket, series: series)}
   end
 
-  def handle_info(%{topic: "chapters:" <> id, event: "update", payload: chapters}, socket) do
+  def handle_info(%{topic: "chapters:" <> _id, event: "update", payload: chapters}, socket) do
     {:noreply, assign(socket, chapters: chapters)}
   end
 end

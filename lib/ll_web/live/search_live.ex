@@ -2,7 +2,7 @@ defmodule LLWeb.SearchLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
 
-  alias LL.{ExtensionManager, Repo, Series}
+  alias LL.{ExtensionManager}
 
   def title(), do: "Search"
 
@@ -11,6 +11,10 @@ defmodule LLWeb.SearchLive do
   end
 
   def mount(_, _session, socket) do
+    if connected?(socket) do
+      Endpoint.subscribe("sources")
+    end
+
     sources = LL.SourceManager.get().sources
 
     form =
@@ -22,31 +26,26 @@ defmodule LLWeb.SearchLive do
 
     socket =
       socket
-      |> assign(search: %{id: 0, query: "", page: 1, results: %{}})
+      |> assign(results: %{})
+      |> assign(search_id: 0)
+      |> assign(query: "")
+      |> assign(page: 0)
       |> assign(search_form: form)
       |> assign(sources: sources)
 
     {:ok, socket}
   end
 
-  def update_sources(arr) do
-    Endpoint.broadcast(@topic, "update_assigns", {:sources, arr})
-  end
-
-  def handle_info(%{event: "update_assigns", payload: {key, val}}, socket) do
-    socket = assign(socket, key, val)
-
-    {:noreply, socket}
+  def handle_info(%{topic: "sources", payload: sources}, socket) do
+    {:noreply, assign(socket, sources: sources)}
   end
 
   def handle_info(
-        {:search_result, %{id: search_id, source_id: source_id, results: results}},
+        {:search_result, search_id, source_id, results},
         socket
       )
-      when socket.assigns.search.id == search_id do
-    new_results = Map.put(socket.assigns.search.results, source_id, results)
-    socket = assign(socket, search: %{socket.assigns.search | results: new_results})
-    {:noreply, socket}
+      when socket.assigns.search_id == search_id do
+    {:noreply, assign(socket, results: Map.put(socket.assigns.results, source_id, results))}
   end
 
   def handle_info({:search_result, _}, socket) do
@@ -56,22 +55,21 @@ defmodule LLWeb.SearchLive do
   def handle_event("search", %{"query" => query} = params, socket) do
     search_id = Ecto.UUID.generate()
 
-    search = %{
-      id: search_id,
-      query: query,
-      page: 1,
-      results: %{}
-    }
-
     new_form =
       socket.assigns.search_form.source
       |> Enum.map(&{elem(&1, 0), Map.get(params, elem(&1, 0)) || false})
       |> Map.new()
       |> to_form()
 
+    filters = []
+    page = 1
+
     socket =
       socket
-      |> assign(search: search)
+      |> assign(search_id: search_id)
+      |> assign(query: query)
+      |> assign(page: page)
+      |> assign(results: %{})
       |> assign(search_form: new_form)
 
     pid = self()
@@ -79,11 +77,8 @@ defmodule LLWeb.SearchLive do
     socket.assigns.sources
     |> Enum.filter(&Map.get(params, "enable_#{&1.id}"))
     |> Enum.each(fn source ->
-      ExtensionManager.search(source, search, fn results ->
-        send(
-          pid,
-          {:search_result, %{id: search_id, source_id: source.source_id, results: results}}
-        )
+      ExtensionManager.search(source, query, filters, page, fn results ->
+        send(pid, {:search_result, search_id, source.source_id, results})
       end)
     end)
 

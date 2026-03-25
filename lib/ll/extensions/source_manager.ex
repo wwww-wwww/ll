@@ -30,6 +30,7 @@ defmodule LL.SourceManager do
       |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
 
     Agent.update(__MODULE__, &%{&1 | sources: sources})
-    LLWeb.SearchLive.update_sources(sources)
+
+    LLWeb.Endpoint.broadcast("sources", "update", sources)
   end
 end

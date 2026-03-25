@@ -160,12 +160,13 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def search(source, %{query: query, page: page}, cb) do
+  def search(source, query, filters, page, cb) do
     %{
       extension: source.extension.path,
       source: source.source_id,
       query: query,
-      page: page
+      page: page,
+      filters: filters
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "search", :local do

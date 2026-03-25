@@ -4,9 +4,7 @@ defmodule LLWeb.SourceLive do
 
   require LL.Downloader
 
-  alias LL.{Repo, Extension, Source, ExtensionManager}
-
-  @topic to_string(__MODULE__)
+  alias LL.{Repo, Source, ExtensionManager}
 
   def title(), do: "Source"
 
@@ -24,14 +22,16 @@ defmodule LLWeb.SourceLive do
           />
           {submit("Search")}
         </div>
-        <%= for filter <- @filters do %>
-          {render_filter(assigns, filter)}
-        <% end %>
-        <div></div>
+
+        <div class="filters">
+          <%= for filter <- @filters do %>
+            {render_filter(@search_form, filter)}
+          <% end %>
+        </div>
       </.form>
 
       <div class="library">
-        <%= for series <- @search.results do %>
+        <%= for series <- @results do %>
           <.live_component
             module={LLWeb.SeriesComponent}
             id={LLWeb.SeriesComponent.id(series.id)}
@@ -51,122 +51,134 @@ defmodule LLWeb.SourceLive do
     """
   end
 
-  def render_filter(assigns, %{name: name, type: type} = filter, id_acc \\ nil) do
-    filter_id = "#{if id_acc, do: id_acc <> "_"}#{name}"
+  def render_filter(form, filter, id_acc \\ nil) do
+    filter_id = "#{if id_acc, do: id_acc <> "_"}#{filter.name}"
 
-    case filter do
-      %{type: "group", group: group} ->
+    assigns = %{
+      form: form,
+      filter: filter,
+      filter_id: filter_id,
+      name: filter.name,
+      field: form[filter_id]
+    }
+
+    case filter.type do
+      "group" ->
         ~H"""
-        <div>
-          <span>{name}</span>
-          <div>
-            <%= for f <- group do %>
-              {render_filter(assigns, f, filter_id)}
+        <div class="group">
+          <span>{@name}</span>
+          <div class="items">
+            <%= for f <- @filter.group do %>
+              {render_filter(@form, f, @filter_id)}
             <% end %>
           </div>
         </div>
         """
 
-      %{type: "check", state: state} ->
+      "check" ->
         ~H"""
-        <div>
+        <div class="check">
           <input
-            name={@search_form[filter_id].name}
+            name={@field.name}
             type="checkbox"
-            id={@search_form[filter_id].id}
-            checked={@search_form[filter_id].value}
+            id={@field.id}
+            checked={@field.value}
           />
-          <label for={@search_form[filter_id].id}>{name}</label>
+          <label for={@field.id}>{@name}</label>
         </div>
         """
 
-      %{type: "sort", values: values, state: state} ->
+      "sort" ->
         ~H"""
         <div>
-          <span>{name}</span>
-          <select name={@search_form[filter_id].name} id={@search_form[filter_id].id}>
-            <%= for v <- values do %>
-              <option value={v} selected={v == @search_form[filter_id].value}>{v}</option>
+          <span>{@name}</span>
+          <select name={@field.name} id={@field.id}>
+            <%= for v <- @filter.values do %>
+              <option value={v} selected={v == @field.value}>{v}</option>
             <% end %>
           </select>
-          <input
-            name={@search_form["#{filter_id}_ascending"].name}
-            id={@search_form["#{filter_id}_ascending"].id}
-            type="checkbox"
-            checked={@search_form["#{filter_id}_ascending"].value}
-          />
+          <span class="check">
+            <input
+              class="ascending"
+              name={@form["#{@filter_id}_ascending"].name}
+              id={@form["#{@filter_id}_ascending"].id}
+              type="checkbox"
+              checked={@form["#{@filter_id}_ascending"].value}
+            />
+            <label for={@form["#{@filter_id}_ascending"].id}>Ascending</label>
+          </span>
         </div>
         """
 
-      %{type: "select", values: values, state: state} ->
+      "select" ->
         ~H"""
         <div>
-          <span>{name}</span>
-          <select name={@search_form[filter_id].name} id={@search_form[filter_id].id}>
-            <%= for v <- values do %>
-              <option value={v} selected={v == @search_form[filter_id].value}>{v}</option>
+          <span>{@name}</span>
+          <select name={@field.name} id={@field.id}>
+            <%= for v <- @filter.values do %>
+              <option value={v} selected={v == @field.value}>{v}</option>
             <% end %>
           </select>
         </div>
         """
 
-      %{type: "triState", state: state} ->
+      "triState" ->
         if id_acc do
           ~H"""
           <span>
             <input
-              name={@search_form[filter_id].name}
-              id={@search_form[filter_id].id}
-              value={@search_form[filter_id].value}
+              phx-hook="tristate"
+              class="tristate"
+              name={@field.name}
+              id={@field.id}
+              value={@field.value}
               type="number"
-              min="0"
-              max="2"
             />
-            <label for={@search_form[filter_id].id}>{name}</label>
+            <label class="tristate" for={@field.id}>{@name}</label>
           </span>
           """
         else
           ~H"""
           <div>
             <input
-              name={@search_form[filter_id].id}
-              id={@search_form[filter_id].id}
-              value={@search_form[filter_id].value}
+              phx-hook="tristate"
+              class="tristate"
+              name={@field.id}
+              id={@field.id}
+              value={@field.value}
               type="number"
-              min="0"
-              max="2"
             />
-            <label for={@search_form[filter_id].id}>{name}</label>
+            <label class="tristate" for={@field.id}>{@name}</label>
           </div>
           """
         end
 
-      %{type: "header"} ->
+      "header" ->
         ~H"""
-        <div><span>{name}</span></div>
+        <div><span>{@name}</span></div>
         """
 
-      %{type: "separator"} ->
+      "separator" ->
         ~H"""
         <div class="separator"></div>
         """
 
-      %{type: "text"} ->
+      "text" ->
         ~H"""
         <div>
-          <label for={@search_form[filter_id].id}>{name}</label>
+          <label for={@field.id}>{@name}</label>
           <input
-            name={@search_form[filter_id].name}
+            name={@field.name}
             type="text"
-            id={@search_form[filter_id].id}
-            value={@search_form[filter_id].value}
+            id={@field.id}
+            value={@field.value}
           />
         </div>
         """
 
       _ ->
         ~H"""
-        {inspect(filter)}
+        {inspect(@filter)}
         """
     end
   end
@@ -234,15 +246,18 @@ defmodule LLWeb.SourceLive do
       |> assign(options: options)
       |> assign(source: source)
       |> assign(filters: filters)
-      |> assign(search: %{id: 0, query: "", page: 1, results: []})
+      |> assign(search_id: 0)
+      |> assign(page: 1)
+      |> assign(query: "")
+      |> assign(results: [])
       |> assign(search_form: form)
 
     {:ok, socket}
   end
 
-  def handle_info({:search_result, %{id: search_id, results: results}}, socket)
-      when socket.assigns.search.id == search_id do
-    {:noreply, assign(socket, search: %{socket.assigns.search | results: results})}
+  def handle_info({:search_result, search_id, results}, socket)
+      when socket.assigns.search_id == search_id do
+    {:noreply, assign(socket, results: results)}
   end
 
   def handle_info({:search_result, _}, socket) do
@@ -256,28 +271,39 @@ defmodule LLWeb.SourceLive do
   def handle_event("search", %{"query" => query} = params, socket) do
     search_id = Ecto.UUID.generate()
 
-    search = %{
-      id: search_id,
-      query: query,
-      page: 1,
-      results: %{}
-    }
-
     new_form =
       socket.assigns.search_form.source
       |> Enum.map(&{elem(&1, 0), Map.get(params, elem(&1, 0)) || false})
       |> Map.new()
       |> to_form()
 
+    filters =
+      socket.assigns.options
+      |> Enum.map(fn {key, tree, default} ->
+        value =
+          case Map.get(params, key) do
+            nil -> default
+            "on" -> true
+            "off" -> false
+            val -> val
+          end
+
+        {key, tree, value}
+      end)
+
+    page = 1
+
     socket =
       socket
-      |> assign(search: search)
+      |> assign(search_id: search_id)
+      |> assign(query: query)
+      |> assign(page: page)
       |> assign(search_form: new_form)
 
     pid = self()
 
-    ExtensionManager.search(socket.assigns.source, search, fn results ->
-      send(pid, {:search_result, %{id: search_id, results: results}})
+    ExtensionManager.search(socket.assigns.source, query, filters, page, fn results ->
+      send(pid, {:search_result, search_id, results})
     end)
 
     {:noreply, socket}

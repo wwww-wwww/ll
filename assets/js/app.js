@@ -97,6 +97,28 @@ const hooks = {
       document.removeEventListener("mousemove", this.dragmove)
       document.removeEventListener("mouseup", this.dragend)
     }
+  },
+  tristate: {
+    mounted() {
+      this.el.min = 0
+      this.el.max = 2
+
+      Array.from(document.getElementsByTagName("label"))
+        .filter(e => e.htmlFor == this.el.id)
+        .forEach(el => {
+          el.classList.toggle(`state-0`, this.el.value == 0)
+          el.classList.toggle(`state-1`, this.el.value == 1)
+          el.classList.toggle(`state-2`, this.el.value == 2)
+          
+          el.addEventListener("click", e => {
+            this.el.value = parseInt(this.el.value) + 1
+            if (this.el.value > this.el.max) this.el.value = this.el.min
+            el.classList.toggle(`state-0`, this.el.value == 0)
+            el.classList.toggle(`state-1`, this.el.value == 1)
+            el.classList.toggle(`state-2`, this.el.value == 2)
+          })
+        })
+    }
   }
 }
 
