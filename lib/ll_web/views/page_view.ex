@@ -32,12 +32,12 @@ defmodule LLWeb.PageView do
         |> String.split(",")
         |> case do
           [":library", id] ->
-            series = Repo.get(Series, id)
+            series = Repo.get(Series, id) |> Repo.preload(:source)
 
             assigns = %{series: series}
 
             ~H"""
-            <.link navigate={~p"/library/#{@series.id}"}>{@series.title}</.link>
+            <.link navigate={~p"/library/#{@series.id}"}>{@series.title} ({@series.source.name})</.link>
             """
             |> Phoenix.HTML.Safe.to_iodata()
             |> IO.iodata_to_binary()
