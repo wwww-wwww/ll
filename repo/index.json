@@ -1,0 +1,20 @@
+[
+    {
+        "name": "Tachiyomi: Yuri",
+        "pkg": "eu.kanade.tachiyomi.extension.all.yuri",
+        "apk": "tachiyomi-all.yuri-v1.4.29-release.apk",
+        "lang": "all",
+        "code": 29,
+        "version": "1.4.29",
+        "nsfw": 1,
+        "sources": [
+            {
+                "name": "Yuri",
+                "lang": "all",
+                "id": "323910630341645598",
+                "baseUrl": "https://yuri.grass.moe",
+                "versionId": 1
+            }
+        ]
+    }
+]
