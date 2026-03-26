@@ -22,7 +22,9 @@ defmodule LL.Series do
     field :chapters_updated, :utc_datetime
 
     has_many :chapters, LL.Chapter
-    many_to_many :tags, LL.Tag, join_through: LL.SeriesTags, on_replace: :delete
+
+    belongs_to :multiseries, LL.MultiSeries
+    field :priority, :integer
 
     timestamps()
   end

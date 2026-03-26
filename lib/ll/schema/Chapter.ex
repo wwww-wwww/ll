@@ -16,8 +16,6 @@ defmodule LL.Chapter do
 
     field :files, {:array, :string}
 
-    many_to_many :tags, LL.Tag, join_through: LL.ChaptersTags, on_replace: :delete
-
     timestamps()
   end
 

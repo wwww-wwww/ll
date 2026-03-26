@@ -16,7 +16,7 @@ defmodule LLWeb.SeriesPageComponent do
       <div class="body" phx-value-sid={@series_id}>
         {live_render(@socket, LLWeb.SeriesLive,
           id: "#{LLWeb.SeriesLive}:#{@series_id}",
-          session: %{"id" => @series_id}
+          session: %{"series_id" => @series_id, "is_multi" => @is_multi}
         )}
       </div>
     </div>

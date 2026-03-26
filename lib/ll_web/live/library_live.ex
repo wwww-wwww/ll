@@ -23,15 +23,32 @@ defmodule LLWeb.LibraryLive do
         nil ->
           socket
 
+        "m" <> id ->
+          case Repo.get(LL.MultiSeries, id) do
+            nil ->
+              socket
+
+            multi ->
+              socket
+              |> assign(is_multi: true)
+              |> assign(series_id: multi.id)
+          end
+
         id ->
           case Repo.get(Series, id) do
             nil ->
               socket
 
             series ->
-              assign(socket, series_id: series.id)
+              socket
+              |> assign(is_multi: false)
+              |> assign(series_id: series.id)
           end
       end
+
+    multis =
+      Repo.all(LL.MultiSeries)
+      |> Repo.preload([:series, :children])
 
     library =
       from(s in Series, where: s.in_library == true)
@@ -41,6 +58,7 @@ defmodule LLWeb.LibraryLive do
     socket =
       socket
       |> assign(library: library)
+      |> assign(multis: multis)
 
     {:ok, socket}
   end

@@ -21,7 +21,6 @@ defmodule LLWeb.Router do
     live "/updates", UpdatesLive
     live "/search", SearchLive
     live "/search/:source", SourceLive
-    live "/tags", TagsLive
     live "/extensions", ExtensionsLive
 
     live "/series/:series_id", SeriesLive

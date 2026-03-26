@@ -84,9 +84,7 @@ defmodule LLWeb.ApiController do
   end
 
   def chapter(conn, %{"chapter_id" => chapter_id}) do
-    Repo.get(Chapter, chapter_id)
-    |> Repo.preload(:tags)
-    |> case do
+    case Repo.get(Chapter, chapter_id) do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
 

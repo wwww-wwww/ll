@@ -4,7 +4,9 @@
   <%= for e <- @messages |> Enum.sort_by(& &1.updated_at, :desc) do %>
     <div>
       <div>
-        <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">close</button>
+        <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
+          close
+        </button>
         <span>{replace_links(e.title)}</span>
       </div>
       <%= if e.body != "" do %>

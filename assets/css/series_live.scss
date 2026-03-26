@@ -6,7 +6,7 @@
         overflow-y: auto;
         display: flex;
         justify-content: center;
-        align-items: start;
+        // align-items: start;
         padding: 0;
     }
 
@@ -48,9 +48,14 @@
         flex-direction: column;
         min-width: 14em;
 
-        h1 a {
-            // text-decoration: none;
-            // color: black;
+        >span {
+            line-height: 1.2em;
+        }
+
+        div {
+            >span {
+                display: block;
+            }
         }
     }
 

@@ -8,18 +8,48 @@
       </div>
     <% end %>
     <div class="info">
-      <h1><.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link></h1>
+      <h1>
+        <%= if assigns[:is_multi] do %>
+          <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title} (Multi)</.link>
+        <% else %>
+          <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
+        <% end %>
+      </h1>
       <span>Author: <span class="author">{@series.author}</span></span>
       <span>Artist: <span class="artist">{@series.artist}</span></span>
       <span>Status: <span class="status">{status(@series)}</span></span>
       <span>
         Source:
         <span class="source">
-          <.link href={Path.join(@source.base_url, @series.url)}>
-            {@source.name} ({@source.lang})
-          </.link>
+          <%= if assigns[:is_multi] do %>
+            <span>Multi</span>
+          <% else %>
+            <.link href={Path.join(@source.base_url, @series.url)}>
+              {@source.name} ({@source.lang})
+            </.link>
+          <% end %>
         </span>
       </span>
+
+      <%= if assigns[:is_multi] do %>
+        <span>
+          Sources:
+          <span>
+            <.link navigate={~p"/series/#{@multi.series.id}"}>{@multi.series.source.name}</.link>
+          </span>
+
+          <%= for s <- @multi.children do %>
+            <span>
+              <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
+            </span>
+          <% end %>
+        </span>
+      <% else %>
+        <%= if assigns[:multi] do %>
+          <span>Multi: {@multi.id} [remove]</span>
+        <% end %>
+      <% end %>
+
       <span>
         Last details refresh:
         <span class="updated">{relative_time(@series.details_updated)}</span>
@@ -40,6 +70,20 @@
     <button phx-click="refresh_chapters">Refresh chapters</button>
     <button phx-click="download_all">Download all</button>
   </div>
+  <%= if assigns[:multi] == nil do %>
+    <div class="multis">
+      <button phx-click="multi_create">Create multi</button>
+      <button phx-click="multi_get">Get multi</button>
+      <%= if assigns[:multis] do %>
+        <%= for m <- @multis do %>
+          <div>
+            <span>{m.series.title}</span>
+            <button phx-click="multi_add" phx-value-id={m.id}>Add</button>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
   <div class="tags">{@series.genre}</div>
   <div class="description">{@series.description}</div>
   <div class="chapterlist">
