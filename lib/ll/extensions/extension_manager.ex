@@ -32,12 +32,12 @@ defmodule LL.ExtensionManager do
             Endpoint.broadcast("extensions", "remote", arr)
 
           err ->
-            Logger.error(err)
+            Logger.error(inspect(err))
             Message.create("Error", inspect(err))
         end
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -96,17 +96,17 @@ defmodule LL.ExtensionManager do
                     update_local()
 
                   err ->
-                    Logger.error(err)
+                    Logger.error(inspect(err))
                     Message.create("Error", inspect(err))
                 end
 
               err ->
-                Logger.error(err)
+                Logger.error(inspect(err))
                 Message.create("Error", inspect(err))
             end
 
           err ->
-            Logger.error(err)
+            Logger.error(inspect(err))
             Message.create("Error", inspect(err))
         end
 
@@ -133,7 +133,7 @@ defmodule LL.ExtensionManager do
           Endpoint.broadcast("series_thumb:#{series.id}", "update", series)
 
         err ->
-          Logger.error(err)
+          Logger.error(inspect(err))
           Message.create("Error", inspect(err))
       end
     end
@@ -186,7 +186,7 @@ defmodule LL.ExtensionManager do
         cb.(results, has_next)
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -223,7 +223,7 @@ defmodule LL.ExtensionManager do
       # TODO: if thumbnail url is different, redownload
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -299,12 +299,12 @@ defmodule LL.ExtensionManager do
             Endpoint.broadcast("series:#{series.id}", "update", series)
 
           err ->
-            Logger.error(err)
+            Logger.error(inspect(err))
             Message.create("Error", inspect(err))
         end
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -330,12 +330,12 @@ defmodule LL.ExtensionManager do
             |> Enum.each(&download_page(chapter, source, elem(&1, 0), elem(&1, 1)))
 
           err ->
-            Logger.error(err)
+            Logger.error(inspect(err))
             Message.create("Error", inspect(err))
         end
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -370,7 +370,7 @@ defmodule LL.ExtensionManager do
         Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
@@ -398,7 +398,7 @@ defmodule LL.ExtensionManager do
           save_page(body, get_ext(headers), chapter, index)
 
         err ->
-          Logger.error(err)
+          Logger.error(inspect(err))
           Message.create("Error", inspect(err))
       end
     else
@@ -407,7 +407,7 @@ defmodule LL.ExtensionManager do
           save_page(body, get_ext(headers), chapter, index)
 
         err ->
-          Logger.error(err)
+          Logger.error(inspect(err))
           Message.create("Error", inspect(err))
       end
     end
@@ -425,7 +425,7 @@ defmodule LL.ExtensionManager do
         LL.Source.update_filters(source, resp)
 
       err ->
-        Logger.error(err)
+        Logger.error(inspect(err))
         Message.create("Error", inspect(err))
     end
   end
