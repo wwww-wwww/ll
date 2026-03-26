@@ -40,10 +40,7 @@ defmodule LLWeb.SearchLive do
     {:noreply, assign(socket, sources: sources)}
   end
 
-  def handle_info(
-        {:search_result, search_id, source_id, results},
-        socket
-      )
+  def handle_info({:search_result, search_id, source_id, results}, socket)
       when socket.assigns.search_id == search_id do
     {:noreply, assign(socket, results: Map.put(socket.assigns.results, source_id, results))}
   end
@@ -77,7 +74,7 @@ defmodule LLWeb.SearchLive do
     socket.assigns.sources
     |> Enum.filter(&Map.get(params, "enable_#{&1.id}"))
     |> Enum.each(fn source ->
-      ExtensionManager.search(source, query, filters, page, fn results ->
+      ExtensionManager.search(source, query, filters, page, fn results, _has_next ->
         send(pid, {:search_result, search_id, source.source_id, results})
       end)
     end)

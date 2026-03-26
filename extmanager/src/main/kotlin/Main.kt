@@ -93,6 +93,7 @@ fun main() {
 
                         val req = source.getSearchManga(page, query, filterlist)
                         return@future buildJsonObject {
+                            put("has_next", req.hasNextPage)
                             put("results", buildJsonArray {
                                 req.mangas.forEach {
                                     add(buildJsonObject {

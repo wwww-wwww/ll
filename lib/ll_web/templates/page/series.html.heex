@@ -11,7 +11,7 @@
       <h1><.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link></h1>
       <span>Author: <span class="author">{@series.author}</span></span>
       <span>Artist: <span class="artist">{@series.artist}</span></span>
-      <span>Status: <span class="status">{@series.status}</span></span>
+      <span>Status: <span class="status">{status(@series)}</span></span>
       <span>
         Source:
         <span class="source">

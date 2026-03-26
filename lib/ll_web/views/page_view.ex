@@ -12,6 +12,18 @@ defmodule LLWeb.PageView do
     4 => "Category"
   }
 
+  @status %{
+    0 => "Unknown",
+    1 => "Ongoing",
+    2 => "Completed",
+    3 => "Licensed",
+    4 => "Publishing finished",
+    5 => "Canceled",
+    6 => "On hiatus"
+  }
+
+  def status(series), do: @status[series.status]
+
   def replace_links(body) do
     Regex.scan(~r/{(.+)?}/, body)
     |> Enum.reduce(body, fn [match, group], acc ->

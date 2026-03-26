@@ -173,7 +173,7 @@ defmodule LL.ExtensionManager do
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "search", :local do
-      {:ok, %{results: results}} ->
+      {:ok, %{results: results, has_next: has_next}} ->
         results =
           Enum.map(results, fn m ->
             series =
@@ -207,7 +207,7 @@ defmodule LL.ExtensionManager do
             series
           end)
 
-        cb.(results)
+        cb.(results, has_next)
 
       err ->
         Logger.error(err)

@@ -40,7 +40,7 @@ defmodule LLWeb.SourceLive do
             select={true}
           />
         <% end %>
-        <%= if length(@results) > 0 do %>
+        <%= if @has_next do %>
           <button phx-click="next_page">More</button>
         <% end %>
       </div>
@@ -263,14 +263,20 @@ defmodule LLWeb.SourceLive do
       |> assign(page: 1)
       |> assign(query: "")
       |> assign(results: [])
+      |> assign(has_next: false)
       |> assign(search_form: form)
 
     {:ok, socket}
   end
 
-  def handle_info({:search_result, search_id, results}, socket)
+  def handle_info({:search_result, search_id, results, has_next}, socket)
       when socket.assigns.search_id == search_id do
-    {:noreply, assign(socket, results: socket.assigns.results ++ results)}
+    socket =
+      socket
+      |> assign(results: socket.assigns.results ++ results)
+      |> assign(has_next: has_next)
+
+    {:noreply, socket}
   end
 
   def handle_info({:search_result, _}, socket) do
@@ -310,8 +316,8 @@ defmodule LLWeb.SourceLive do
 
     pid = self()
 
-    ExtensionManager.search(source, query, filters, page, fn results ->
-      send(pid, {:search_result, socket.assigns.search_id, results})
+    ExtensionManager.search(source, query, filters, page, fn results, has_next ->
+      send(pid, {:search_result, socket.assigns.search_id, results, has_next})
     end)
 
     {:noreply, socket}
@@ -346,8 +352,8 @@ defmodule LLWeb.SourceLive do
 
     pid = self()
 
-    ExtensionManager.search(source, query, filters, page, fn results ->
-      send(pid, {:search_result, socket.assigns.search_id, results})
+    ExtensionManager.search(source, query, filters, page, fn results, has_next ->
+      send(pid, {:search_result, socket.assigns.search_id, results, has_next})
     end)
 
     {:noreply, socket}
