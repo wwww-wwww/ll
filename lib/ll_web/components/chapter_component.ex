@@ -71,7 +71,7 @@ defmodule LLWeb.ChapterComponent do
     quote do
       def handle_event("download_chapter", %{"value" => chapter_id}, socket) do
         chapter = LL.Repo.get(LL.Chapter, chapter_id) |> LL.Repo.preload(source: :extension)
-        LL.ExtensionManager.chapter_pages(chapter, chapter.source)
+        LL.ExtensionManager.download_chapter(chapter, chapter.source)
 
         {:noreply, socket}
       end

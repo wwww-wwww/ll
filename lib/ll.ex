@@ -11,24 +11,33 @@ defmodule LL do
 
   alias LL.{Repo, Downloader, Chapter, Series, Extension}
 
-  def files_root(), do: Application.get_env(:ll, :files_root)
-
-  def migrate(path_from, path_to) do
+  def migrate_chapters() do
     Repo.transact(fn ->
       Repo.all(Chapter)
-      |> Enum.each(fn e ->
-        files =
-          case e.files do
-            nil -> nil
-            files -> files |> Enum.map(&String.replace(&1, path_from, path_to))
-          end
+      |> Enum.filter(fn c -> c.files != nil and Enum.all?(c.files, &File.exists?(&1)) end)
+      |> Enum.each(fn c ->
+        chapter_path = LL.Paths.get(c)
+        :ok = File.mkdir_p(chapter_path)
 
-        Ecto.Changeset.change(e, %{
+        files =
+          Enum.map(c.files, fn f ->
+            new_path = Path.join(chapter_path, Path.basename(f))
+            :ok = File.cp(f, new_path)
+            new_path
+          end)
+
+        Ecto.Changeset.change(c, %{
           files: files
         })
         |> Repo.update()
       end)
 
+      {:ok, nil}
+    end)
+  end
+
+  def migrate(path_from, path_to) do
+    Repo.transact(fn ->
       Repo.all(Extension)
       |> Enum.each(fn e ->
         Ecto.Changeset.change(e, %{

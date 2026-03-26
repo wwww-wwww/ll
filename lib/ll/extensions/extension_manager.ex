@@ -3,7 +3,7 @@ defmodule LL.ExtensionManager do
 
   require Logger
   require LL.Downloader
-  alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Tag}
+  alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Message}
   alias LLWeb.Endpoint
 
   @extensions_path "extensions"
@@ -22,30 +22,6 @@ defmodule LL.ExtensionManager do
 
   def extension_repo(), do: "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
 
-  def download_path(%Series{} = series) do
-    name = String.replace(series.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "") |> String.trim()
-    name = "#{name}-#{series.source.lang}-#{series.source.name}-#{series.id}"
-    Path.expand("downloads") |> Path.join(name)
-  end
-
-  def download_path(%Chapter{} = chapter) do
-    title = String.replace(chapter.title, ~r/[^ a-zA-Z0-9\.\-\_]/, "") |> String.trim()
-
-    name =
-      if chapter.number > 0 do
-        "#{chapter.number}-#{title}"
-      else
-        title
-      end
-
-    name = "#{name}-#{chapter.scanlator}-#{chapter.id}"
-
-    Repo.get(Series, chapter.series_id)
-    |> Repo.preload(:source)
-    |> download_path()
-    |> Path.join(name)
-  end
-
   def update_remote() do
     Downloader.get extension_repo() <> "index.json" do
       {:ok, body, _headers} ->
@@ -57,12 +33,12 @@ defmodule LL.ExtensionManager do
 
           err ->
             Logger.error(err)
-            LL.Message.create("Error", inspect(err))
+            Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
@@ -121,17 +97,17 @@ defmodule LL.ExtensionManager do
 
                   err ->
                     Logger.error(err)
-                    LL.Message.create("Error", inspect(err))
+                    Message.create("Error", inspect(err))
                 end
 
               err ->
                 Logger.error(err)
-                LL.Message.create("Error", inspect(err))
+                Message.create("Error", inspect(err))
             end
 
           err ->
             Logger.error(err)
-            LL.Message.create("Error", inspect(err))
+            Message.create("Error", inspect(err))
         end
 
       _ ->
@@ -158,7 +134,7 @@ defmodule LL.ExtensionManager do
 
         err ->
           Logger.error(err)
-          LL.Message.create("Error", inspect(err))
+          Message.create("Error", inspect(err))
       end
     end
   end
@@ -211,7 +187,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
@@ -248,7 +224,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
@@ -266,30 +242,36 @@ defmodule LL.ExtensionManager do
         Repo.transact(fn ->
           chapters =
             Enum.map(j.results, fn chapter_j ->
-              case Repo.get_by(Chapter,
-                     series_id: series.id,
-                     source_id: source.id,
-                     url: chapter_j.url
-                   ) do
-                nil ->
-                  %Chapter{
-                    series_id: series.id,
-                    source_id: source.id,
-                    url: chapter_j.url
-                  }
+              {new, chapter} =
+                case Repo.get_by(Chapter,
+                       series_id: series.id,
+                       source_id: source.id,
+                       url: chapter_j.url
+                     ) do
+                  nil ->
+                    {true,
+                     %Chapter{
+                       series_id: series.id,
+                       source_id: source.id,
+                       url: chapter_j.url
+                     }}
 
-                chapter ->
-                  chapter
-              end
-              |> Ecto.Changeset.change(%{
-                number: chapter_j.number,
-                scanlator: chapter_j.scanlator,
-                title: chapter_j.title,
-                date:
-                  DateTime.from_unix!(chapter_j.date, :millisecond)
-                  |> DateTime.truncate(:second)
-              })
-              |> Repo.insert_or_update!()
+                  chapter ->
+                    {false, chapter}
+                end
+
+              chapter =
+                Ecto.Changeset.change(chapter, %{
+                  number: chapter_j.number,
+                  scanlator: chapter_j.scanlator,
+                  title: chapter_j.title,
+                  date:
+                    DateTime.from_unix!(chapter_j.date, :millisecond)
+                    |> DateTime.truncate(:second)
+                })
+                |> Repo.insert_or_update!()
+
+              {new, chapter}
             end)
 
           series =
@@ -298,6 +280,16 @@ defmodule LL.ExtensionManager do
               chapters_updated: DateTime.utc_now() |> DateTime.truncate(:second)
             })
             |> Repo.update!()
+
+          if series.in_library do
+            Enum.filter(chapters, &elem(&1, 0))
+            |> Enum.each(fn {_, c} ->
+              Message.create("{:library,#{series.id}}", "New chapter {:chapter,#{c.id}}")
+              download_chapter(c, source)
+            end)
+          end
+
+          chapters = Enum.map(chapters, &elem(&1, 1))
 
           {:ok, {chapters, series}}
         end)
@@ -308,16 +300,16 @@ defmodule LL.ExtensionManager do
 
           err ->
             Logger.error(err)
-            LL.Message.create("Error", inspect(err))
+            Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
-  def chapter_pages(chapter, source) do
+  def download_chapter(chapter, source) do
     %{
       extension: source.extension.path,
       source: source.source_id,
@@ -325,26 +317,26 @@ defmodule LL.ExtensionManager do
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "chapter_pages", :local do
-      {:ok, j} ->
+      {:ok, %{results: results}} ->
         Repo.transact(fn ->
           Repo.get(Chapter, chapter.id)
-          |> Ecto.Changeset.change(%{files: List.duplicate("", length(j.results))})
+          |> Ecto.Changeset.change(%{files: List.duplicate("", length(results))})
           |> Repo.update()
         end)
         |> case do
           {:ok, chapter} ->
-            j.results
+            results
             |> Enum.with_index()
             |> Enum.each(&download_page(chapter, source, elem(&1, 0), elem(&1, 1)))
 
           err ->
             Logger.error(err)
-            LL.Message.create("Error", inspect(err))
+            Message.create("Error", inspect(err))
         end
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
@@ -354,10 +346,10 @@ defmodule LL.ExtensionManager do
     filename = "#{number}.#{ext}"
 
     Repo.transact(fn ->
-      path = download_path(chapter) |> Path.join(filename)
+      chapter_path = LL.Paths.get(chapter)
+      :ok = File.mkdir_p(chapter_path)
 
-      File.mkdir_p(Path.dirname(path))
-
+      path = Path.join(chapter_path, filename)
       {:ok, file} = File.open(path, [:write])
       IO.binwrite(file, body)
       File.close(file)
@@ -379,7 +371,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 
@@ -404,6 +396,10 @@ defmodule LL.ExtensionManager do
       |> Downloader.post @manager_api <> "image" do
         {:ok, body, headers} ->
           save_page(body, get_ext(headers), chapter, index)
+
+        err ->
+          Logger.error(err)
+          Message.create("Error", inspect(err))
       end
     else
       Downloader.get url do
@@ -412,7 +408,7 @@ defmodule LL.ExtensionManager do
 
         err ->
           Logger.error(err)
-          LL.Message.create("Error", inspect(err))
+          Message.create("Error", inspect(err))
       end
     end
   end
@@ -430,7 +426,7 @@ defmodule LL.ExtensionManager do
 
       err ->
         Logger.error(err)
-        LL.Message.create("Error", inspect(err))
+        Message.create("Error", inspect(err))
     end
   end
 end

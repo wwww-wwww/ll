@@ -2,7 +2,7 @@ defmodule LLWeb.SeriesLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  alias LL.{Repo, Series, Chapter}
+  alias LL.{Repo, Series, Chapter, ExtensionManager}
 
   def title(), do: "Series"
 
@@ -38,23 +38,23 @@ defmodule LLWeb.SeriesLive do
       |> assign(tags: tags)
 
     if series.details_updated == nil do
-      LL.ExtensionManager.series_details(series)
+      ExtensionManager.series_details(series)
     end
 
     if series.chapters_updated == nil do
-      LL.ExtensionManager.series_chapters(series)
+      ExtensionManager.series_chapters(series)
     end
 
     {:ok, socket}
   end
 
   def handle_event("refresh", _, socket) do
-    LL.ExtensionManager.series_details(socket.assigns.series)
+    ExtensionManager.series_details(socket.assigns.series)
     {:noreply, socket}
   end
 
   def handle_event("refresh_chapters", _, socket) do
-    LL.ExtensionManager.series_chapters(socket.assigns.series)
+    ExtensionManager.series_chapters(socket.assigns.series)
     {:noreply, socket}
   end
 
@@ -75,7 +75,7 @@ defmodule LLWeb.SeriesLive do
 
     LLWeb.LibraryLive.update()
 
-    LL.Message.create("Added {:library,#{series.id}} to library", "")
+    LL.Message.create("Added {:library,#{series.id}} to library")
 
     {:noreply, socket}
   end
@@ -96,6 +96,16 @@ defmodule LLWeb.SeriesLive do
     LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
 
     LLWeb.LibraryLive.update()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("download_all", _, socket) do
+    Repo.get(Series, socket.assigns.series.id)
+    |> Repo.preload(:chapters)
+    |> Map.get(:chapters)
+    |> Enum.reject(&Chapter.downloaded(&1))
+    |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.source))
 
     {:noreply, socket}
   end

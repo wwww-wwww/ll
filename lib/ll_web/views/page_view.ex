@@ -2,7 +2,7 @@ defmodule LLWeb.PageView do
   use LLWeb, :view
   use Phoenix.Component
 
-  alias LL.{Category, Repo, Series}
+  alias LL.{Category, Repo, Series, Chapter}
 
   @tag_types %{
     0 => "",
@@ -38,6 +38,17 @@ defmodule LLWeb.PageView do
 
             ~H"""
             <.link navigate={~p"/library/#{@series.id}"}>{@series.title}</.link>
+            """
+            |> Phoenix.HTML.Safe.to_iodata()
+            |> IO.iodata_to_binary()
+
+          [":chapter", id] ->
+            chapter = Repo.get(Chapter, id)
+
+            assigns = %{chapter: chapter}
+
+            ~H"""
+            <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>{@chapter.title}</.link>
             """
             |> Phoenix.HTML.Safe.to_iodata()
             |> IO.iodata_to_binary()

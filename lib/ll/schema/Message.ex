@@ -10,7 +10,7 @@ defmodule LL.Message do
     timestamps()
   end
 
-  def create(title, body) do
+  def create(title, body \\ "") do
     {:ok, message} =
       Ecto.Changeset.change(%__MODULE__{}, %{title: title, body: body})
       |> Repo.insert()

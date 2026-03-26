@@ -34,4 +34,7 @@ defmodule LL.Chapter do
       :desc
     )
   end
+
+  def downloaded(chapter),
+    do: chapter.files != nil and Enum.all?(chapter.files, &File.exists?(&1))
 end

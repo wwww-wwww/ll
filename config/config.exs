@@ -11,13 +11,13 @@ config :ll,
   get_all_pages: false,
   n_downloaders: 1,
   ecto_repos: [LL.Repo],
-  files_root: "/tank/llm/",
-  sync_interval: 7_200_000,
+  sync_interval: 21_600_000,
+  downloads_root: "/tank/yuriyomi",
   encode_interval: 3_600_000
 
 # Configures the endpoint
 config :ll, LLWeb.Endpoint,
-  url: [host: "m.grass.moe"],
+  url: [host: "yuri.grass.moe"],
   render_errors: [view: LLWeb.ErrorView, accepts: ~w(html json), layout: false],
   pubsub_server: LL.PubSub,
   live_view: [signing_salt: "fNgamUF+"]

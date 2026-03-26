@@ -15,7 +15,19 @@
 
             >:first-child {
                 font-weight: bold;
+                display: flex;
+                align-items: center;
+                justify-content: start;
+                gap: 0.5em;
             }
+        }
+
+        .material-symbols-rounded {
+            position: relative;
+            height: 100%;
+            display: inline;
+            padding: 0;
+            font-size: 1.1em;
         }
     }
 }
