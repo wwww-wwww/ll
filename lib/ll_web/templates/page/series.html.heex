@@ -49,7 +49,7 @@
             <%= for s <- @multi.children do %>
               <span>
                 <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
-                <span class="updated">{relative_time(@series.chapters_updated)}</span>
+                <span class="updated">{relative_time(s.chapters_updated)}</span>
                 <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
                 <button phx-click="multi_remove" phx-value-id={s.id}>Remove</button>
               </span>

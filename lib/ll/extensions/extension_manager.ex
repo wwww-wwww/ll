@@ -3,7 +3,7 @@ defmodule LL.ExtensionManager do
 
   require Logger
   require LL.Downloader
-  alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Message}
+  alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Message, MultiSeries}
   alias LLWeb.Endpoint
 
   @extensions_path "extensions"
@@ -129,7 +129,7 @@ defmodule LL.ExtensionManager do
             Ecto.Changeset.change(series, %{thumbnail_path: path})
             |> Repo.update()
 
-          Endpoint.broadcast("series:#{series.id}", "update", series)
+          LLWeb.SeriesLive.update(series)
           Endpoint.broadcast("series_thumb:#{series.id}", "update", series)
 
         err ->
@@ -218,7 +218,7 @@ defmodule LL.ExtensionManager do
             |> Repo.update()
           end)
 
-        Endpoint.broadcast("series:#{series.id}", "update", series)
+        LLWeb.SeriesLive.update(series)
 
       # TODO: if thumbnail url is different, redownload
 
@@ -377,7 +377,16 @@ defmodule LL.ExtensionManager do
         |> case do
           {:ok, {chapters, series}} ->
             Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
-            Endpoint.broadcast("series:#{series.id}", "update", series)
+            LLWeb.SeriesLive.update(series)
+
+            if series.multiseries_id != nil do
+              Repo.get(MultiSeries, series.multiseries_id)
+              |> LLWeb.SeriesLive.update()
+            end
+
+            if multi = Repo.get_by(MultiSeries, series_id: series.id) do
+              LLWeb.SeriesLive.update(multi)
+            end
 
           err ->
             Logger.error(inspect(err))

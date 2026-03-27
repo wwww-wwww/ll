@@ -80,6 +80,10 @@ defmodule LLWeb.SeriesLive do
   def update(%LL.Series{} = series) do
     series = LL.Repo.preload(series, multiseries: :series)
     Endpoint.broadcast("series:#{series.id}", "update", series)
+
+    if multi = Repo.get_by(MultiSeries, series_id: series.id) do
+      update(multi)
+    end
   end
 
   def update(%LL.MultiSeries{} = multi) do
@@ -94,6 +98,11 @@ defmodule LLWeb.SeriesLive do
 
   def handle_event("refresh_chapters", _, socket) do
     ExtensionManager.series_chapters(socket.assigns.series)
+
+    if socket.assigns.is_multi do
+      socket.assigns.multi.children |> Enum.each(&ExtensionManager.series_chapters/1)
+    end
+
     {:noreply, socket}
   end
 
@@ -277,15 +286,7 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
-    series = [{multi.series, true}] ++ Enum.map(multi.children, &{&1, false})
-
-    chapters =
-      series
-      |> Enum.map(fn {s, is_main} ->
-        Enum.map(s.chapters, fn c -> {s, c, is_main} end)
-      end)
-      |> List.flatten()
-      |> Enum.sort_by(fn {s, c, is_main} -> {c.number, s.priority, is_main} end, :desc)
+    chapters = MultiSeries.get_chapters(multi)
 
     socket =
       socket
