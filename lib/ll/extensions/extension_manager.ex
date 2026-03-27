@@ -323,7 +323,6 @@ defmodule LL.ExtensionManager do
                   {forwards, forwards_count} =
                     Enum.drop(chapters, i + 1)
                     |> Enum.map(&elem(&1, 2).number)
-                    |> IO.inspect
                     |> Enum.reduce_while({nil, 1}, fn n, {_, acc} ->
                       if n != -1.0 do
                         {:halt, {n, acc}}
@@ -331,7 +330,6 @@ defmodule LL.ExtensionManager do
                         {:cont, {nil, acc + 1}}
                       end
                     end)
-                    |> IO.inspect
 
                   cond do
                     backwards != nil and forwards != nil ->
