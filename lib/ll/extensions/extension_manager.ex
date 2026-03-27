@@ -228,6 +228,25 @@ defmodule LL.ExtensionManager do
     end
   end
 
+  def get_number(j) when j.number != -1, do: j.number
+
+  def get_number(j) do
+    cond do
+      match = Regex.run(~r/Vol\..+? Ch\.([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
+
+      match = Regex.run(~r/Volume .+? Chapter ([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
+
+      true ->
+        j.number
+    end
+  end
+
   def series_chapters(series) do
     source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
 
@@ -260,15 +279,67 @@ defmodule LL.ExtensionManager do
                     {false, chapter}
                 end
 
+              {new, chapter,
+               %{
+                 number: get_number(chapter_j),
+                 scanlator: chapter_j.scanlator,
+                 title: chapter_j.title,
+                 date:
+                   DateTime.from_unix!(chapter_j.date, :millisecond)
+                   |> DateTime.truncate(:second)
+               }}
+            end)
+
+          chapters =
+            chapters
+            |> Enum.with_index()
+            |> Enum.map(fn {{new, chapter, opts}, i} ->
+              number =
+                if opts.number != -1.0 do
+                  opts.number
+                else
+                  {backwards, backwards_count} =
+                    Enum.take(chapters, i)
+                    |> Enum.map(&elem(&1, 2).number)
+                    |> Enum.reverse()
+                    |> Enum.reduce_while({nil, 1}, fn n, {_, acc} ->
+                      if n != -1.0 do
+                        {:halt, {n, acc}}
+                      else
+                        {:cont, acc + 1}
+                      end
+                    end)
+
+                  {forwards, forwards_count} =
+                    Enum.drop(chapters, i + 1)
+                    |> Enum.map(&elem(&1, 2).number)
+                    |> Enum.reduce_while({nil, 1}, fn n, {_, acc} ->
+                      if n != -1.0 do
+                        {:halt, {n, acc}}
+                      else
+                        {:cont, acc + 1}
+                      end
+                    end)
+
+                  cond do
+                    backwards != nil and forwards != nil ->
+                      total = backwards_count + forwards_count
+
+                      backwards / total * backwards_count + forwards / total * forwards_count
+
+                    forwards != nil ->
+                      forwards + 0.5
+
+                    backwards != nil ->
+                      0.0
+
+                    true ->
+                      -1.0
+                  end
+                end
+
               chapter =
-                Ecto.Changeset.change(chapter, %{
-                  number: chapter_j.number,
-                  scanlator: chapter_j.scanlator,
-                  title: chapter_j.title,
-                  date:
-                    DateTime.from_unix!(chapter_j.date, :millisecond)
-                    |> DateTime.truncate(:second)
-                })
+                Ecto.Changeset.change(chapter, Map.put(opts, :number, number))
                 |> Repo.insert_or_update!()
 
               {new, chapter}

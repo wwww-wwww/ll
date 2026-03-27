@@ -6,4 +6,20 @@ defmodule LL.MultiSeries do
 
     has_many :children, LL.Series, foreign_key: :multiseries_id
   end
+
+  def get_chapters(multi) do
+    multi =
+      multi
+      |> LL.Repo.preload(series: [:chapters], children: [:chapters])
+
+    series = [{multi.series, true}] ++ Enum.map(multi.children, &{&1, false})
+
+    series
+    |> Enum.map(fn {s, is_main} ->
+      Enum.map(s.chapters, fn c -> {s, c, is_main} end)
+    end)
+    |> List.flatten()
+    |> Enum.sort_by(fn {s, c, is_main} -> {c.number, s.priority, is_main} end, :desc)
+    |> Enum.map(&{elem(&1, 0), elem(&1, 1)})
+  end
 end

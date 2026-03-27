@@ -2,7 +2,7 @@ defmodule LLWeb.ApiController do
   use LLWeb, :controller
 
   import Ecto.Query, only: [from: 2]
-  alias LL.{Repo, Chapter, Series}
+  alias LL.{Repo, Chapter, Series, MultiSeries}
 
   def all(conn, _params) do
     list =
@@ -21,7 +21,24 @@ defmodule LLWeb.ApiController do
         }
       end)
 
-    json(conn, list)
+    multis =
+      Repo.all(MultiSeries)
+      |> Repo.preload(:series)
+      |> Enum.map(fn multi ->
+        %{
+          url: Routes.live_path(conn, LLWeb.SeriesLive, "m#{multi.id}"),
+          title: multi.series.title <> " (Multi)",
+          artist: multi.series.artist,
+          author: multi.series.author,
+          genre: multi.series.genre,
+          status: multi.series.status,
+          thumbnail_url:
+            Routes.static_path(conn, "/thumbnail/#{Path.basename(multi.series.thumbnail_path)}"),
+          multi: true
+        }
+      end)
+
+    json(conn, list ++ multis)
   end
 
   def map_tags(tags) do
@@ -35,6 +52,50 @@ defmodule LLWeb.ApiController do
     |> Enum.sort_by(& &1.name)
   end
 
+  def series(conn, %{"series_id" => "m" <> multi_id}) do
+    Repo.get(MultiSeries, multi_id)
+    |> Repo.preload(series: :source, children: :source)
+    |> case do
+      nil ->
+        conn |> json(%{success: 0, reason: "chapter not found"})
+
+      multi ->
+        chapters =
+          MultiSeries.get_chapters(multi)
+          |> Enum.map(fn {series, chapter} ->
+            scanlator =
+              if chapter.scanlator == nil,
+                do: series.source.name,
+                else: "#{series.source.name} - #{chapter.scanlator}"
+
+            %{
+              url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
+              title: chapter.title,
+              number: chapter.number,
+              date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
+              scanlator: scanlator
+            }
+          end)
+          |> Enum.uniq_by(& &1.number)
+
+        conn
+        |> json(%{
+          success: 1,
+          url: Routes.live_path(conn, LLWeb.SeriesLive, "m#{multi.id}"),
+          title: multi.series.title <> " (Multi)",
+          artist: multi.series.artist || "",
+          author: multi.series.author || "",
+          description: multi.series.description,
+          genre: multi.series.genre,
+          status: multi.series.status,
+          thumbnail_url:
+            Routes.static_path(conn, "/thumbnail/#{Path.basename(multi.series.thumbnail_path)}"),
+          chapters: chapters,
+          multi: true
+        })
+    end
+  end
+
   def series(conn, %{"series_id" => series_id}) do
     Repo.get(Series, series_id)
     |> Repo.preload(:chapters)
@@ -44,18 +105,7 @@ defmodule LLWeb.ApiController do
 
       series ->
         chapters =
-          Enum.map(
-            series.chapters,
-            fn chapter ->
-              %{
-                url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
-                title: chapter.title,
-                number: chapter.number,
-                date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
-                scanlator: chapter.scanlator
-              }
-            end
-          )
+          series.chapters
           |> Enum.sort_by(
             fn c ->
               {c.number,
@@ -65,14 +115,23 @@ defmodule LLWeb.ApiController do
             end,
             :desc
           )
+          |> Enum.map(fn chapter ->
+            %{
+              url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
+              title: chapter.title,
+              number: chapter.number,
+              date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
+              scanlator: chapter.scanlator || ""
+            }
+          end)
 
         conn
         |> json(%{
           success: 1,
           url: Routes.live_path(conn, LLWeb.SeriesLive, series.id),
           title: series.title,
-          artist: series.artist,
-          author: series.author,
+          artist: series.artist || "",
+          author: series.author || "",
           description: series.description,
           genre: series.genre,
           status: series.status,

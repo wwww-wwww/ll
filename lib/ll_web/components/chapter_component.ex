@@ -25,20 +25,28 @@ defmodule LLWeb.ChapterComponent do
         <%= if downloaded do %>
           <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
             <div>
+              <span class="number">{@chapter.number}</span>
               <span class="title">{@chapter.title}</span>
             </div>
             <div>
               <span class="date">{relative_time(@chapter.date)}</span>
+              <%= if assigns[:show_source] do %>
+                <span class="source">{@source.name}</span>
+              <% end %>
               <span class="scanlator">{@chapter.scanlator}</span>
             </div>
           </.link>
         <% else %>
           <div>
             <div>
+              <span class="number">{@chapter.number}</span>
               <span class="title">{@chapter.title}</span>
             </div>
             <div>
               <span class="date">{relative_time(@chapter.date)}</span>
+              <%= if assigns[:show_source] do %>
+                <span class="source">{@source.name}</span>
+              <% end %>
               <span class="scanlator">{@chapter.scanlator}</span>
             </div>
           </div>

@@ -3,9 +3,7 @@ defmodule LLWeb.ExtensionsLive do
 
   require LL.Downloader
 
-  alias LL.{Extension, Downloader, ExtensionManager}
-
-  @topic to_string(__MODULE__)
+  alias LL.ExtensionManager
 
   def title(), do: "Extensions"
 

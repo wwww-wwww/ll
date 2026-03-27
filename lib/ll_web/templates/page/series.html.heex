@@ -43,6 +43,7 @@
               <.link navigate={~p"/series/#{@multi.series.id}"}>
                 {@multi.series.source.name}
               </.link>
+              <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
             </span>
 
             <%= for s <- @multi.children do %>
@@ -63,7 +64,10 @@
 
         <%= if @series.multiseries_id != nil do %>
           <span>
-            Multi: <.link navigate={~p"/series/m#{@series.multiseries.id}"}>{@series.multiseries.series.title}</.link>
+            Multi:
+            <.link navigate={~p"/series/m#{@series.multiseries.id}"}>
+              {@series.multiseries.series.title}
+            </.link>
             <button phx-click="multi_remove" phx-value-id={@series.id}>Remove</button>
           </span>
         <% end %>
@@ -71,7 +75,7 @@
         <%= if @multi != nil do %>
           <span>
             Multi: <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title}</.link>
-            <button phx-click="multi_delete"}>Delete</button>
+            <button phx-click="multi_delete" }>Delete</button>
           </span>
         <% end %>
       <% end %>
@@ -109,13 +113,25 @@
     <button phx-click="download_all">Download all</button>
   </div>
   <div class="chapterlist">
-    <%= for c <- @chapters do %>
-      <.live_component
-        module={LLWeb.ChapterComponent}
-        id={LLWeb.ChapterComponent.id(c.id)}
-        chapter={c}
-        source={@source}
-      />
+    <%= if @is_multi do %>
+      <%= for {s, c, _is_main} <- @chapters do %>
+        <.live_component
+          module={LLWeb.ChapterComponent}
+          id={LLWeb.ChapterComponent.id(c.id)}
+          chapter={c}
+          source={s.source}
+          show_source={true}
+        />
+      <% end %>
+    <% else %>
+      <%= for c <- @chapters do %>
+        <.live_component
+          module={LLWeb.ChapterComponent}
+          id={LLWeb.ChapterComponent.id(c.id)}
+          chapter={c}
+          source={@source}
+        />
+      <% end %>
     <% end %>
   </div>
 </div>

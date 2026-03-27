@@ -1,7 +1,7 @@
 defmodule LL.SourceManager do
   use Agent
 
-  alias LL.{Downloader, Repo, Extension, Source}
+  alias LL.{Repo, Source}
 
   defstruct sources: []
 

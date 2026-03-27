@@ -9,7 +9,7 @@ defmodule LL do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Downloader, Chapter, Series, Extension}
+  alias LL.{Repo, Chapter, Series, Extension}
 
   def migrate_chapters() do
     Repo.transact(fn ->

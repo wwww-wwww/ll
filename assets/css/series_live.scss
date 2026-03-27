@@ -7,6 +7,10 @@
         flex-direction: column;
         align-items: center;
         padding: 0;
+
+        >.inner {
+            width: 1000px;
+        }
     }
 
     .inner {
@@ -16,15 +20,7 @@
         flex-direction: column;
         gap: 0.5em;
         flex: 1;
-        // align-items: start;
         max-width: 1000px;
-        // height: 500%;
-        
-        // overflow:hidden
-        
-        // flex: 1;
-        // flex-shrink: 0;
-        // overflow:visible;
     }
 
     .head {

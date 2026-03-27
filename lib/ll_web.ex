@@ -19,7 +19,7 @@ defmodule LLWeb do
 
   def controller do
     quote do
-      use Phoenix.Controller, namespace: LLWeb
+      use Phoenix.Controller, formats: [html: "View", json: "View"]
 
       import Plug.Conn
       import LLWeb.Gettext
@@ -29,9 +29,7 @@ defmodule LLWeb do
 
   def view do
     quote do
-      use Phoenix.View,
-        root: "lib/ll_web/templates",
-        namespace: LLWeb
+      use Phoenix.View, root: "lib/ll_web/templates"
 
       # Import convenience functions from controllers
       import Phoenix.Controller,

@@ -6,7 +6,7 @@ defmodule LLWeb.SeriesComponent do
     <div class="SeriesComponent">
       <%= if assigns[:select] do %>
         <.link
-          id={"#{LLWeb.SeriesComponnent}:#{@series.id}"}
+          id={@id}
           href={@href}
           phx-value-id={@series.id}
           phx-hook={assigns[:select] && "select_series"}
@@ -21,7 +21,7 @@ defmodule LLWeb.SeriesComponent do
           <span class="title">{@series.title}</span>
         </.link>
       <% else %>
-        <.link id={"#{LLWeb.SeriesComponnent}:#{@series.id}"} navigate={@navigate}>
+        <.link id={@id} navigate={@navigate}>
           <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
             <img src={
               Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
