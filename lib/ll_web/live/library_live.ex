@@ -70,11 +70,19 @@ defmodule LLWeb.LibraryLive do
       )
       |> Repo.all()
 
-    Endpoint.broadcast("library", "update", library)
+    multis =
+      Repo.all(LL.MultiSeries)
+      |> Repo.preload([:series, :children])
+
+    Endpoint.broadcast("library", "update", {library, multis})
   end
 
-  def handle_info(%{topic: "library", event: "update", payload: library}, socket) do
-    socket = assign(socket, library: library)
+  def handle_info(%{topic: "library", event: "update", payload: {library, multis}}, socket) do
+    socket =
+      socket
+      |> assign(library: library)
+      |> assign(multis: multis)
+
     {:noreply, socket}
   end
 end

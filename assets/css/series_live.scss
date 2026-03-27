@@ -3,10 +3,9 @@
     display: flex;
 
     main {
-        overflow-y: auto;
         display: flex;
-        justify-content: center;
-        // align-items: start;
+        flex-direction: column;
+        align-items: center;
         padding: 0;
     }
 
@@ -16,10 +15,16 @@
         display: flex;
         flex-direction: column;
         gap: 0.5em;
-        align-items: start;
-        max-width: 1000px;
         flex: 1;
-        overflow: auto;
+        // align-items: start;
+        max-width: 1000px;
+        // height: 500%;
+        
+        // overflow:hidden
+        
+        // flex: 1;
+        // flex-shrink: 0;
+        // overflow:visible;
     }
 
     .head {

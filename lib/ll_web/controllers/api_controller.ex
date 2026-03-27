@@ -51,7 +51,7 @@ defmodule LLWeb.ApiController do
                 url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
                 title: chapter.title,
                 number: chapter.number,
-                date: chapter.date |> DateTime.to_unix(),
+                date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
                 scanlator: chapter.scanlator
               }
             end

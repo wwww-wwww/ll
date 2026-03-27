@@ -27,4 +27,14 @@
         flex-wrap: wrap;
         gap: 1em;
     }
+
+    .SeriesLive {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .inner {
+        max-width: 100%;
+    }
 }

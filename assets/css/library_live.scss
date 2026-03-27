@@ -14,12 +14,6 @@
         flex: 1;
     }
 
-    .SeriesPageComponent {
-        .inner {
-            max-width: 100%;
-        }
-    }
-
     .library:has(+ .SeriesPageComponent) {
         .SeriesComponent {
             width: 12.67em;

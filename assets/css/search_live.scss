@@ -56,12 +56,6 @@
         gap: 0.5em;
     }
 
-    .SeriesPageComponent {
-        .inner {
-            max-width: 100%;
-        }
-    }
-
     .left:has(+ .SeriesPageComponent) {
         .SeriesComponent {
             width: 12.67em;

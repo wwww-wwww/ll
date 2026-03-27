@@ -2,8 +2,8 @@ defmodule LLWeb.SeriesLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  import Ecto.Query, only: [from: 2]
-  alias LL.{Repo, Series, Chapter, ExtensionManager, MultiSeries}
+  require Logger
+  alias LL.{Repo, Series, Chapter, ExtensionManager, MultiSeries, Message}
 
   def title(), do: "Series"
 
@@ -16,6 +16,10 @@ defmodule LLWeb.SeriesLive do
   end
 
   def mount(%{"series_id" => multi_id, "is_multi" => true}, _session, socket) do
+    if connected?(socket) do
+      Endpoint.subscribe("multi:#{multi_id}")
+    end
+
     multi =
       Repo.get(MultiSeries, multi_id)
       |> Repo.preload(series: :source, children: :source)
@@ -43,18 +47,17 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload([[source: :extension], :multiseries])
+      |> Repo.preload([[source: :extension], [multiseries: :series]])
 
     source = series.source
 
     chapters = Chapter.list(series)
 
-    multi =
-      series.multiseries ||
-        from(m in MultiSeries, where: m.series_id == ^series.id) |> Repo.one()
+    multi = Repo.get_by(MultiSeries, series_id: series.id)
 
     socket =
       socket
+      |> assign(is_multi: false)
       |> assign(multi: multi)
       |> assign(page_title: series.title)
       |> assign(series: series)
@@ -72,7 +75,7 @@ defmodule LLWeb.SeriesLive do
     {:ok, socket}
   end
 
-  def handle_event("refresh", _, socket) do
+  def handle_event("refresh_details", _, socket) do
     ExtensionManager.series_details(socket.assigns.series)
     {:noreply, socket}
   end
@@ -90,11 +93,7 @@ defmodule LLWeb.SeriesLive do
         |> Repo.update()
       end)
 
-    series =
-      series
-      |> Repo.preload(source: :extension)
-
-    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+    Endpoint.broadcast("series:#{series.id}", "update", series)
 
     LLWeb.LibraryLive.update()
 
@@ -111,9 +110,7 @@ defmodule LLWeb.SeriesLive do
         |> Repo.update()
       end)
 
-    series = Repo.preload(series, source: :extension)
-
-    LLWeb.Endpoint.broadcast("series:#{series.id}", "update", series)
+    Endpoint.broadcast("series:#{series.id}", "update", series)
 
     LLWeb.LibraryLive.update()
 
@@ -131,9 +128,12 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_event("multi_create", _, socket) do
-    %MultiSeries{}
-    |> Ecto.Changeset.change(%{series_id: socket.assigns.series.id})
-    |> Repo.insert()
+    {:ok, multi} =
+      %MultiSeries{}
+      |> Ecto.Changeset.change(%{series_id: socket.assigns.series.id})
+      |> Repo.insert()
+
+    Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", multi)
 
     {:noreply, socket}
   end
@@ -147,11 +147,113 @@ defmodule LLWeb.SeriesLive do
     Repo.transact(fn ->
       multi = Repo.get(MultiSeries, id)
 
-      socket.assigns.series
-      |> Repo.reload()
-      |> Ecto.Changeset.change(%{multiseries_id: multi.id})
-      |> Repo.update()
+      series =
+        socket.assigns.series
+        |> Repo.reload()
+        |> Ecto.Changeset.change(%{multiseries_id: multi.id})
+        |> Repo.update!()
+        |> Repo.preload(multiseries: :series)
+
+      multi =
+        multi
+        |> Repo.reload()
+        |> Repo.preload(series: :source, children: :source)
+
+      {:ok, {multi, series}}
     end)
+    |> case do
+      {:ok, {multi, series}} ->
+        Endpoint.broadcast("series:#{series.id}", "update", series)
+        Endpoint.broadcast("multi:#{multi.id}", "update", multi)
+
+      err ->
+        Logger.error(inspect(err))
+        Message.create("Error", inspect(err))
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("multi_set_primary", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      multi =
+        socket.assigns.multi
+        |> Repo.reload()
+        |> Repo.preload(:series)
+
+      multi.series
+      |> Ecto.Changeset.change(%{multiseries_id: multi.id})
+      |> Repo.update!()
+
+      {:ok, series} =
+        Repo.get(Series, id)
+        |> Ecto.Changeset.change(%{multiseries_id: nil})
+        |> Repo.update()
+
+      multi =
+        multi
+        |> Ecto.Changeset.change(%{series_id: series.id})
+        |> Repo.update!()
+        |> Repo.preload(series: :source, children: :source)
+
+      {:ok, multi}
+    end)
+    |> case do
+      {:ok, multi} ->
+        IO.inspect(multi)
+        Endpoint.broadcast("multi:#{multi.id}", "update", multi)
+
+      err ->
+        Logger.error(inspect(err))
+        Message.create("Error", inspect(err))
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("multi_remove", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      series = Repo.get(Series, id)
+
+      multi = socket.assigns[:multi] || Repo.get(MultiSeries, series.multiseries_id)
+
+      series =
+        series
+        |> Ecto.Changeset.change(%{multiseries_id: nil})
+        |> Repo.update!()
+        |> Repo.preload(multiseries: :series)
+
+      multi =
+        multi
+        |> Repo.reload()
+        |> Repo.preload(series: :source, children: :source)
+
+      {:ok, {multi, series}}
+    end)
+    |> case do
+      {:ok, {multi, series}} ->
+        Endpoint.broadcast("series:#{series.id}", "update", series)
+        Endpoint.broadcast("multi:#{multi.id}", "update", multi)
+
+      err ->
+        Logger.error(inspect(err))
+        Message.create("Error", inspect(err))
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("multi_delete", _, socket) do
+    socket.assigns.multi
+    |> Repo.delete()
+    |> case do
+      {:ok, _} ->
+        Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", nil)
+
+      err ->
+        Logger.error(inspect(err))
+        Message.create("Error", inspect(err))
+    end
 
     {:noreply, socket}
   end
@@ -160,7 +262,22 @@ defmodule LLWeb.SeriesLive do
     {:noreply, assign(socket, series: series)}
   end
 
+  def handle_info(%{topic: "series:" <> _id, event: "multi", payload: multi}, socket) do
+    {:noreply, assign(socket, multi: multi)}
+  end
+
   def handle_info(%{topic: "chapters:" <> _id, event: "update", payload: chapters}, socket) do
     {:noreply, assign(socket, chapters: chapters)}
+  end
+
+  def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
+    socket =
+      socket
+      |> assign(multi: multi)
+      |> assign(page_title: multi.series.title)
+      |> assign(series: multi.series)
+      |> assign(chapters: [])
+
+    {:noreply, assign(socket, multi: multi)}
   end
 end
