@@ -1,0 +1,23 @@
+<h1>Categories</h1>
+
+<.form for={@form} phx-submit="create">
+  <div>
+    <input
+      type="text"
+      id={@form[:name].id}
+      name={@form[:name].name}
+      value={@form[:name].value}
+    />
+
+    {submit("Create")}
+  </div>
+</.form>
+
+<div>
+  <%= for c <- @categories do %>
+    <span>
+      {c.name}
+      <button phx-click="delete" phx-value-id={c.id}>Delete</button>
+    </span>
+  <% end %>
+</div>

@@ -12,6 +12,5 @@ defmodule LL.Repo.Migrations.CreateMultiseries do
       add :multiseries_id, references(:multiseries, on_delete: :nilify_all)
       add :priority, :integer
     end
-
   end
 end

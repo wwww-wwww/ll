@@ -1,6 +1,7 @@
 defmodule LL.Message do
   use Ecto.Schema
 
+  require Logger
   alias LL.Repo
 
   schema "messages" do
@@ -27,5 +28,10 @@ defmodule LL.Message do
     count = Repo.aggregate(__MODULE__, :count, :id)
     LLWeb.Endpoint.broadcast("messages", "delete", message)
     LLWeb.Endpoint.broadcast("message_count", "count", count)
+  end
+
+  def error(message) do
+    Logger.error(inspect(message))
+    create("Error", inspect(message))
   end
 end

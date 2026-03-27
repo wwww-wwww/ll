@@ -17,7 +17,6 @@ defmodule LL.Repo.Migrations.CreateSeries do
       add :thumbnail_path, :text
 
       add :in_library, :boolean, default: false
-      add :categories, {:array, :string}
 
       add :details_updated, :utc_datetime
       add :chapters_updated, :utc_datetime

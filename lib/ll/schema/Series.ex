@@ -16,7 +16,6 @@ defmodule LL.Series do
     field :thumbnail_path, :string
 
     field :in_library, :boolean, default: false
-    field :categories, {:array, :string}
 
     field :details_updated, :utc_datetime
     field :chapters_updated, :utc_datetime
@@ -25,6 +24,8 @@ defmodule LL.Series do
 
     belongs_to :multiseries, LL.MultiSeries
     field :priority, :integer
+
+    many_to_many :categories, LL.Category, join_through: LL.SeriesCategory
 
     timestamps()
   end

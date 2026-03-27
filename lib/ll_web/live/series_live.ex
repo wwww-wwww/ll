@@ -3,7 +3,17 @@ defmodule LLWeb.SeriesLive do
   use LLWeb.ChapterComponent
 
   require Logger
-  alias LL.{Repo, Series, Chapter, ExtensionManager, MultiSeries, Message}
+
+  alias LL.{
+    Repo,
+    Series,
+    Chapter,
+    ExtensionManager,
+    MultiSeries,
+    Message,
+    Category,
+    SeriesCategory
+  }
 
   def title(), do: "Series"
 
@@ -49,7 +59,7 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload([[source: :extension], [multiseries: :series]])
+      |> Repo.preload([[source: :extension], [multiseries: :series], :categories])
 
     source = series.source
 
@@ -78,7 +88,8 @@ defmodule LLWeb.SeriesLive do
   end
 
   def update(%LL.Series{} = series) do
-    series = LL.Repo.preload(series, multiseries: :series)
+    series = LL.Repo.preload(series, [[multiseries: :series], :categories])
+
     Endpoint.broadcast("series:#{series.id}", "update", series)
 
     if multi = Repo.get_by(MultiSeries, series_id: series.id) do
@@ -119,8 +130,7 @@ defmodule LLWeb.SeriesLive do
         LLWeb.LibraryLive.update()
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -139,8 +149,7 @@ defmodule LLWeb.SeriesLive do
         LLWeb.LibraryLive.update()
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -165,8 +174,7 @@ defmodule LLWeb.SeriesLive do
         Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", multi)
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -195,8 +203,7 @@ defmodule LLWeb.SeriesLive do
         update(multi)
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -227,8 +234,7 @@ defmodule LLWeb.SeriesLive do
         update(multi)
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -251,8 +257,7 @@ defmodule LLWeb.SeriesLive do
         update(multi)
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -266,8 +271,55 @@ defmodule LLWeb.SeriesLive do
         Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", nil)
 
       err ->
-        Logger.error(inspect(err))
-        Message.create("Error", inspect(err))
+        Message.error(err)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("category_get", _, socket) do
+    categories = Repo.all(Category)
+    {:noreply, assign(socket, categories: categories)}
+  end
+
+  def handle_event("category_add", %{"id" => id}, socket) do
+    category = Repo.get(Category, id)
+
+    Repo.transact(fn ->
+      %SeriesCategory{}
+      |> Ecto.Changeset.change(%{})
+      |> Ecto.Changeset.put_assoc(:series, socket.assigns.series)
+      |> Ecto.Changeset.put_assoc(:category, category)
+      |> Repo.insert!()
+
+      series = Repo.reload(socket.assigns.series)
+      {:ok, series}
+    end)
+    |> case do
+      {:ok, series} ->
+        update(series)
+
+      err ->
+        Message.error(err)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("category_remove", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      Repo.get_by(SeriesCategory, series_id: socket.assigns.series.id, category_id: id)
+      |> Repo.delete!()
+
+      series = Repo.reload(socket.assigns.series)
+      {:ok, series}
+    end)
+    |> case do
+      {:ok, series} ->
+        update(series)
+
+      err ->
+        Message.error(err)
     end
 
     {:noreply, socket}

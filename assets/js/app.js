@@ -2,23 +2,13 @@ import "phoenix_html"
 
 import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
+import { hooks as colocatedHooks } from "phoenix-colocated/ll"
 import topbar from "../vendor/topbar"
 
 // Show progress bar on live navigation and form submits
 topbar.config({ barColors: { 0: "#29d" }, shadowColor: "rgba(0, 0, 0, .3)" })
-
-let topBarScheduled = undefined
-window.addEventListener("phx:page-loading-start", () => {
-  if (!topBarScheduled) {
-    topBarScheduled = setTimeout(() => topbar.show(), 120)
-  }
-})
-
-window.addEventListener("phx:page-loading-stop", () => {
-  clearTimeout(topBarScheduled)
-  topBarScheduled = undefined
-  topbar.hide()
-})
+window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
+window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
@@ -26,7 +16,6 @@ const hooks = {
   search: {
     mounted() {
       this.el.addEventListener("input", () => {
-        console.log(this.el.value)
         this.pushEvent("search", { "q": this.el.value })
       })
     }
@@ -93,7 +82,6 @@ const hooks = {
       document.addEventListener("mouseup", this.dragend)
     },
     destroyed() {
-      console.log("unmount")
       document.removeEventListener("mousemove", this.dragmove)
       document.removeEventListener("mouseup", this.dragend)
     }
@@ -114,7 +102,6 @@ const hooks = {
   select_series: {
     mounted() {
       this.el.addEventListener("click", e => {
-        console.log(e)
         e.preventDefault()
         this.pushEvent("select_series", { id: this.el.getAttribute("phx-value-id") })
       })
@@ -122,7 +109,10 @@ const hooks = {
   }
 }
 
-let liveSocket = new LiveSocket("/live", Socket, { hooks: hooks, params: { _csrf_token: csrfToken } })
+let liveSocket = new LiveSocket("/live", Socket, {
+  params: { _csrf_token: csrfToken },
+  hooks: { ...colocatedHooks, ...hooks },
+})
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()

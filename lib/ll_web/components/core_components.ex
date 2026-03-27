@@ -22,4 +22,7 @@ defmodule LLWeb.CoreComponents do
       Timex.format!(time, "{relative}", :relative)
     end
   end
+
+  def is_multi?(%LL.MultiSeries{}), do: true
+  def is_multi?(_), do: false
 end

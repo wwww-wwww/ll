@@ -93,19 +93,48 @@
       <%= if @series.multiseries_id == nil and assigns[:multi] == nil do %>
         <div class="multis">
           <button phx-click="multi_create">Create multi</button>
-          <button phx-click="multi_get">Get multi</button>
-          <%= if assigns[:multis] do %>
-            <%= for m <- @multis do %>
+          <button phx-click="multi_get">Add to multi</button>
+          <div>
+            <%= if assigns[:multis] do %>
+              <%= for m <- @multis do %>
+                <span>
+                  <span>{m.series.title}</span>
+                  <button phx-click="multi_add" phx-value-id={m.id}>Add</button>
+                </span>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
+      <%= if not @is_multi do %>
+        <div class="categories">
+          <span>Categories:</span>
+          <div>
+            <%= for c <- @series.categories do %>
               <span>
-                <span>{m.series.title}</span>
-                <button phx-click="multi_add" phx-value-id={m.id}>Add</button>
+                <span>{c.name}</span>
+                <button phx-click="category_remove" phx-value-id={c.id}>Remove</button>
               </span>
             <% end %>
-          <% end %>
+          </div>
+
+          <button phx-click="category_get">Add to category</button>
+          <div>
+            <%= if assigns[:categories] do %>
+              <%= for c <- @categories |> Enum.reject(fn c -> Enum.any?(@series.categories, & &1.id == c.id) end) do %>
+                <span>
+                  <span>{c.name}</span>
+                  <button phx-click="category_add" phx-value-id={c.id}>Add</button>
+                </span>
+              <% end %>
+            <% end %>
+          </div>
         </div>
       <% end %>
     </div>
   </div>
+
   <div class="tags">{@series.genre}</div>
   <div class="description">{@series.description}</div>
   <div class="actions">

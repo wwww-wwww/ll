@@ -4,34 +4,21 @@ defmodule LLWeb.SeriesComponent do
   def render(assigns) do
     ~H"""
     <div class="SeriesComponent">
-      <%= if assigns[:select] do %>
-        <.link
-          id={@id}
-          href={@href}
-          phx-value-id={@series.id}
-          phx-hook={assigns[:select] && "select_series"}
-        >
-          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={
-              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
-            } />
-          <% else %>
-            <img />
-          <% end %>
-          <span class="title">{@series.title}</span>
-        </.link>
-      <% else %>
-        <.link id={@id} navigate={@navigate}>
-          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={
-              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
-            } />
-          <% else %>
-            <img />
-          <% end %>
-          <span class="title">{@series.title}</span>
-        </.link>
-      <% end %>
+      <.link
+        id={@id}
+        href={@href}
+        phx-value-id={if assigns[:multi_id], do: "m#{@multi_id}", else: @series.id}
+        phx-hook="select_series"
+      >
+        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
+          <img src={
+            Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
+          } />
+        <% else %>
+          <img />
+        <% end %>
+        <span class="title">{@series.title}</span>
+      </.link>
     </div>
     """
   end

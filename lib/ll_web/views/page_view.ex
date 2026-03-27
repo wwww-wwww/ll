@@ -121,7 +121,4 @@ defmodule LLWeb.PageView do
     list_mean = mean(list)
     list |> Enum.map(fn x -> (list_mean - x) * (list_mean - x) end) |> mean
   end
-
-  def is_multi?(%LL.MultiSeries{}), do: true
-  def is_multi?(_), do: false
 end

@@ -1,3 +1,21 @@
+<input id="filters_chk" type="checkbox" phx-update="ignore" />
+<div class="filters">
+  <label for="filters_chk" class="material-symbols-rounded">filter_alt</label>
+  <div>
+    <div>
+      <span>Categories:</span>
+      <div class="categories">
+        <%= for c <- @categories do %>
+          <div class="check">
+            <input type="checkbox" id={"filter-category-#{c.id}"} />
+            <label for={"filter-category-#{c.id}"}>{c.name}</label>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="library">
   <%= for series <- @library ++ @multis do %>
     <%= if is_multi?(series) do %>
@@ -5,14 +23,15 @@
         module={LLWeb.SeriesComponent}
         id={"#{LLWeb.SeriesComponent.id(series.id)}-Multi"}
         series={series.series}
-        navigate={~p"/library/m#{series.id}"}
+        multi_id={series.id}
+        href={~p"/library/m#{series.id}"}
       />
     <% else %>
       <.live_component
         module={LLWeb.SeriesComponent}
         id={LLWeb.SeriesComponent.id(series.id)}
         series={series}
-        navigate={~p"/library/#{series.id}"}
+        href={~p"/library/#{series.id}"}
       />
     <% end %>
   <% end %>
@@ -24,6 +43,5 @@
     id={LLWeb.SeriesPageComponent.id(@series_id)}
     series_id={@series_id}
     is_multi={@is_multi}
-    close={~p"/"}
   />
 <% end %>

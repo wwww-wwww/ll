@@ -84,8 +84,8 @@ defmodule LLWeb.SourceLive do
         ~H"""
         <div class="check">
           <input
-            name={@field.name}
             type="checkbox"
+            name={@field.name}
             id={@field.id}
             checked={@field.value}
           />
@@ -105,10 +105,10 @@ defmodule LLWeb.SourceLive do
           <span class="check">
             <% ascending_id = key(@filter_id ++ ["ascending"]) %>
             <input
+              type="checkbox"
               class="ascending"
               name={@form[ascending_id].name}
               id={@form[ascending_id].id}
-              type="checkbox"
               checked={@form[ascending_id].value}
             />
             <label for={@form[ascending_id].id}>Ascending</label>
@@ -131,34 +131,32 @@ defmodule LLWeb.SourceLive do
       "triState" ->
         if id_acc do
           ~H"""
-          <span>
+          <span class="tristate">
             <input
-              phx-hook="tristate"
-              class="tristate"
-              name={@field.name}
-              id={@field.id}
-              value={@field.value}
               type="number"
               min="0"
               max="2"
+              phx-hook="tristate"
+              name={@field.name}
+              id={@field.id}
+              value={@field.value}
             />
-            <label class="tristate" for={@field.id} state={@field.value}>{@name}</label>
+            <label for={@field.id} state={@field.value}>{@name}</label>
           </span>
           """
         else
           ~H"""
-          <div>
+          <div class="tristate">
             <input
-              phx-hook="tristate"
-              class="tristate"
-              name={@field.id}
-              id={@field.id}
-              value={@field.value}
               type="number"
               min="0"
               max="2"
+              phx-hook="tristate"
+              name={@field.id}
+              id={@field.id}
+              value={@field.value}
             />
-            <label class="tristate" for={@field.id} state={@field.value}>{@name}</label>
+            <label for={@field.id} state={@field.value}>{@name}</label>
           </div>
           """
         end

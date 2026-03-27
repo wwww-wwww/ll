@@ -105,7 +105,9 @@ defmodule LLWeb do
   defp view_helpers do
     quote do
       # Use all HTML functionality (forms, tags, etc)
-      use Phoenix.HTML
+      import Phoenix.HTML
+      import Phoenix.HTML.Form
+      use PhoenixHTMLHelpers
       use Phoenix.Component
 
       # Import LiveView and .heex helpers (live_render, live_patch, <.form>, etc)
@@ -114,7 +116,6 @@ defmodule LLWeb do
       # Import basic rendering functionality (render, render_layout, etc)
       import Phoenix.View
 
-      import LLWeb.ErrorHelpers
       import LLWeb.Gettext
       alias LLWeb.Router.Helpers, as: Routes
 
@@ -124,6 +125,7 @@ defmodule LLWeb do
         statics: ~w(images)
 
       alias LLWeb.Endpoint
+      alias Phoenix.LiveView.JS
 
       import LLWeb.CoreComponents
     end

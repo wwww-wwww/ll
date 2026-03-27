@@ -22,13 +22,112 @@
     }
 
     @media only screen and (max-width: calc(1000px + 19.67em)) {
-        .library:has(+ .SeriesPageComponent) {
+        .library:has(~ .SeriesPageComponent) {
             display: none
         }
 
         .SeriesPageComponent {
             width: 100%;
             max-width: 100%;
+
+            .inner {
+                max-width: 100%;
+            }
+        }
+
+        .filters:has(~ .SeriesPageComponent) {
+            display: none;
+        }
+    }
+
+    #filters_chk {
+        display: none;
+
+        &:checked+.filters {
+            >label {
+                box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5), 0 0 2px rgba(0, 0, 0, 0.25);
+            }
+        }
+
+        &:not(:checked)+.filters {
+            pointer-events: none;
+
+            >div {
+                // display: none;
+                opacity: 0;
+                transform: translateY(100%);
+            }
+        }
+    }
+
+    .filters {
+        z-index: 1;
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        padding: 1em;
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 0.5em;
+        overflow: hidden;
+
+        >label {
+            user-select: none;
+            z-index: 1;
+            pointer-events: all;
+            padding: 0.5em;
+            display: block;
+            align-self: flex-start;
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            cursor: pointer;
+            border-radius: 100%;
+        }
+
+        >div {
+            transform: translate(0);
+            overflow: hidden;
+            transition: transform 0.2s ease-out, opacity 0.1s ease-out;
+            opacity: 1;
+            border-radius: 4px;
+            padding: 0.5em;
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            width: 10em;
+
+            >div {
+                display: flex;
+                flex-direction: column;
+                gap: 0.5em;
+
+                >div {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5em;
+                }
+            }
+        }
+
+        .check {
+            input {
+                display: none;
+            }
+
+            label {
+                box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+                display: inline-block;
+                padding: 0.5em;
+                border-radius: 4px;
+                user-select: none;
+                cursor: pointer;
+            }
+
+            input:checked+label {
+                box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5), 0 0 2px rgba(0, 0, 0, 0.25);
+                background: rgba(0, 0, 0, 0.04);
+            }
         }
     }
 }
