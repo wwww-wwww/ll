@@ -114,7 +114,7 @@
   </div>
   <div class="chapterlist">
     <%= if @is_multi do %>
-      <%= for {s, c, _is_main} <- @chapters do %>
+      <%= for {s, c} <- @chapters do %>
         <.live_component
           module={LLWeb.ChapterComponent}
           id={LLWeb.ChapterComponent.id(c.id)}
