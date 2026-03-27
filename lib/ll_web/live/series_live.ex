@@ -200,7 +200,6 @@ defmodule LLWeb.SeriesLive do
     end)
     |> case do
       {:ok, multi} ->
-        IO.inspect(multi)
         Endpoint.broadcast("multi:#{multi.id}", "update", multi)
 
       err ->
