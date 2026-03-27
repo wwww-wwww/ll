@@ -237,7 +237,17 @@ defmodule LL.ExtensionManager do
         {n, _} = Float.parse(g)
         n
 
+      match = Regex.run(~r/Ch\.([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
+
       match = Regex.run(~r/Volume .+? Chapter ([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
+
+      match = Regex.run(~r/Chapter ([0-9\.]+)/, j.title) ->
         [_, g] = match
         {n, _} = Float.parse(g)
         n
@@ -306,20 +316,22 @@ defmodule LL.ExtensionManager do
                       if n != -1.0 do
                         {:halt, {n, acc}}
                       else
-                        {:cont, acc + 1}
+                        {:cont, {nil, acc + 1}}
                       end
                     end)
 
                   {forwards, forwards_count} =
                     Enum.drop(chapters, i + 1)
                     |> Enum.map(&elem(&1, 2).number)
+                    |> IO.inspect
                     |> Enum.reduce_while({nil, 1}, fn n, {_, acc} ->
                       if n != -1.0 do
                         {:halt, {n, acc}}
                       else
-                        {:cont, acc + 1}
+                        {:cont, {nil, acc + 1}}
                       end
                     end)
+                    |> IO.inspect
 
                   cond do
                     backwards != nil and forwards != nil ->
