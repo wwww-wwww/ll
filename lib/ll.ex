@@ -9,7 +9,17 @@ defmodule LL do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Chapter, Series, Extension}
+  alias LL.{Repo, Chapter, Series, Extension, ExtensionManager, Category}
+
+  def sync_chapters() do
+    Repo.all(Category)
+    |> Enum.filter(& &1.autoupdate)
+    |> Repo.preload(:series)
+    |> Enum.map(& &1.series)
+    |> List.flatten()
+    |> Enum.uniq_by(& &1.id)
+    |> Enum.each(&ExtensionManager.series_chapters/1)
+  end
 
   def migrate_chapters() do
     Repo.transact(fn ->

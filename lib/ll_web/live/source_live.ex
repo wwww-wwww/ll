@@ -87,7 +87,7 @@ defmodule LLWeb.SourceLive do
             type="checkbox"
             name={@field.name}
             id={@field.id}
-            checked={@field.value}
+            checked={@field.value || false}
           />
           <label for={@field.id}>{@name}</label>
         </div>
@@ -139,9 +139,9 @@ defmodule LLWeb.SourceLive do
               phx-hook="tristate"
               name={@field.name}
               id={@field.id}
-              value={@field.value}
+              value={@field.value || 0}
             />
-            <label for={@field.id} state={@field.value}>{@name}</label>
+            <label for={@field.id} state={@field.value || 0}>{@name}</label>
           </span>
           """
         else
@@ -154,9 +154,9 @@ defmodule LLWeb.SourceLive do
               phx-hook="tristate"
               name={@field.id}
               id={@field.id}
-              value={@field.value}
+              value={@field.value || 0}
             />
-            <label for={@field.id} state={@field.value}>{@name}</label>
+            <label for={@field.id} state={@field.value || 0}>{@name}</label>
           </div>
           """
         end
@@ -269,9 +269,14 @@ defmodule LLWeb.SourceLive do
 
   def handle_info({:search_result, search_id, results, has_next}, socket)
       when socket.assigns.search_id == search_id do
+    new_results =
+      socket.assigns.results
+      |> Kernel.++(results)
+      |> Enum.uniq_by(& &1.id)
+
     socket =
       socket
-      |> assign(results: socket.assigns.results ++ results)
+      |> assign(results: new_results)
       |> assign(has_next: has_next)
 
     {:noreply, socket}

@@ -25,7 +25,6 @@ defmodule LLWeb.ChapterComponent do
         <%= if downloaded do %>
           <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
             <div>
-              <span class="number">{@chapter.number}</span>
               <span class="title">{@chapter.title}</span>
             </div>
             <div>
@@ -39,7 +38,6 @@ defmodule LLWeb.ChapterComponent do
         <% else %>
           <div>
             <div>
-              <span class="number">{@chapter.number}</span>
               <span class="title">{@chapter.title}</span>
             </div>
             <div>

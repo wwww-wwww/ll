@@ -17,6 +17,10 @@
   <%= for c <- @categories do %>
     <span>
       {c.name}
+      <span class="check" phx-click="toggle_autoupdate" phx-value-id={c.id}>
+        <input type="checkbox" id={"chk-autoupdate-#{c.id}"} checked={c.autoupdate} />
+        <label for={"chk-autoupdate-#{c.id}"}>Auto update</label>
+      </span>
       <button phx-click="delete" phx-value-id={c.id}>Delete</button>
     </span>
   <% end %>

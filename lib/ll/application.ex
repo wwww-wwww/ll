@@ -24,12 +24,14 @@ defmodule LL.Application do
       ),
       Supervisor.child_spec({LL.WorkerManager, name: :local},
         id: :local
+      ),
+      Supervisor.child_spec(
+        {LL.Timer,
+         id: :sync,
+         fun: &LL.sync_chapters/0,
+         interval: Application.fetch_env!(:ll, :sync_interval)},
+        id: LL.TimerSync
       )
-      # Supervisor.child_spec(
-      #  {LL.Timer,
-      #   id: :sync, fun: &LL.sync_all/0, interval: Application.fetch_env!(:ll, :sync_interval)},
-      #  id: LL.TimerSync
-      # ),
       # Supervisor.child_spec(
       #  {LL.Timer,
       #   id: :encode,

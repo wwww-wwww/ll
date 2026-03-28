@@ -211,6 +211,12 @@ defmodule LL.ExtensionManager do
             |> Repo.update()
           end)
 
+        if series.thumbnail_path == nil and
+             series.thumbnail_url != nil and
+             not String.contains?(series.thumbnail_url, "keiyoushi-chapter-cover") do
+          download_thumbnail(series)
+        end
+
         LLWeb.SeriesLive.update(series)
 
       # TODO: if thumbnail url is different, redownload

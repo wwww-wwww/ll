@@ -57,4 +57,23 @@ defmodule LLWeb.CategoriesLive do
 
     {:noreply, socket}
   end
+
+  def handle_event("toggle_autoupdate", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      category = Repo.get(Category, id)
+
+      Ecto.Changeset.change(category, %{autoupdate: not (category.autoupdate || false)})
+      |> Repo.update()
+    end)
+    |> case do
+      {:ok, _} ->
+        categories = Repo.all(Category)
+        Endpoint.broadcast("categories", "update", categories)
+
+      err ->
+        Message.error(err)
+    end
+
+    {:noreply, socket}
+  end
 end

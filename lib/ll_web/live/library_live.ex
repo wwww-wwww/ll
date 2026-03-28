@@ -64,8 +64,41 @@ defmodule LLWeb.LibraryLive do
       |> assign(library: library)
       |> assign(multis: multis)
       |> assign(categories: categories)
+      |> assign(filter_categories: [])
 
     {:ok, socket}
+  end
+
+  def handle_params(params, _path, socket) do
+    socket =
+      case Map.get(params, "id") do
+        nil ->
+          socket
+
+        "m" <> id ->
+          case Repo.get(LL.MultiSeries, id) do
+            nil ->
+              socket
+
+            multi ->
+              socket
+              |> assign(is_multi: true)
+              |> assign(series_id: multi.id)
+          end
+
+        id ->
+          case Repo.get(Series, id) do
+            nil ->
+              socket
+
+            series ->
+              socket
+              |> assign(is_multi: false)
+              |> assign(series_id: series.id)
+          end
+      end
+
+    {:noreply, socket}
   end
 
   def update() do
@@ -129,5 +162,17 @@ defmodule LLWeb.LibraryLive do
 
   def handle_event("close_series", _, socket) do
     {:noreply, assign(socket, series_id: nil)}
+  end
+
+  def handle_event("filter-categories", params, socket) do
+    categories =
+      Enum.reduce(params, [], fn {param, _}, acc ->
+        case param do
+          "category:" <> id -> acc ++ [Integer.parse(id) |> elem(0)]
+          _ -> acc
+        end
+      end)
+
+    {:noreply, socket |> assign(filter_categories: categories)}
   end
 end

@@ -4,14 +4,19 @@
   <div>
     <div>
       <span>Categories:</span>
-      <div class="categories">
+      <form phx-change="filter-categories" class="categories">
         <%= for c <- @categories do %>
           <div class="check">
-            <input type="checkbox" id={"filter-category-#{c.id}"} />
+            <input
+              type="checkbox"
+              id={"filter-category-#{c.id}"}
+              name={"category:#{c.id}"}
+              checked={c.id in @filter_categories}
+            />
             <label for={"filter-category-#{c.id}"}>{c.name}</label>
           </div>
         <% end %>
-      </div>
+      </form>
     </div>
   </div>
 </div>
@@ -19,20 +24,24 @@
 <div class="library">
   <%= for series <- @library ++ @multis do %>
     <%= if is_multi?(series) do %>
-      <.live_component
-        module={LLWeb.SeriesComponent}
-        id={"#{LLWeb.SeriesComponent.id(series.id)}-Multi"}
-        series={series.series}
-        multi_id={series.id}
-        href={~p"/library/m#{series.id}"}
-      />
+      <%= if length(@filter_categories) == 0 do %>
+        <.live_component
+          module={LLWeb.SeriesComponent}
+          id={"#{LLWeb.SeriesComponent.id(series.id)}-Multi"}
+          series={series.series}
+          multi_id={series.id}
+          href={~p"/library/m#{series.id}"}
+        />
+      <% end %>
     <% else %>
-      <.live_component
-        module={LLWeb.SeriesComponent}
-        id={LLWeb.SeriesComponent.id(series.id)}
-        series={series}
-        href={~p"/library/#{series.id}"}
-      />
+      <%= if length(@filter_categories) == 0 or Enum.any?(series.categories, & &1.id in @filter_categories) do %>
+        <.live_component
+          module={LLWeb.SeriesComponent}
+          id={LLWeb.SeriesComponent.id(series.id)}
+          series={series}
+          href={~p"/library/#{series.id}"}
+        />
+      <% end %>
     <% end %>
   <% end %>
 </div>
