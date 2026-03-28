@@ -359,8 +359,9 @@ defmodule LL.ExtensionManager do
               chapters_updated: DateTime.utc_now() |> DateTime.truncate(:second)
             })
             |> Repo.update!()
+            |> Repo.preload(:categories)
 
-          if series.in_library do
+          if Enum.any?(series.categories, & &1.autoupdate) do
             Enum.filter(chapters, &elem(&1, 0))
             |> Enum.each(fn {_, c} ->
               Message.create("{:library,#{series.id}}", "New chapter {:chapter,#{c.id}}")
