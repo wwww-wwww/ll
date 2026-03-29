@@ -1,10 +1,5 @@
 <h1>Status</h1>
 
-<div>
-  <button phx-click="sync">Sync</button>
-  <button phx-click="sync_series">Sync Series</button>
-</div>
-
 <table>
   <%= for {key, value} <- @status do %>
     <tr>

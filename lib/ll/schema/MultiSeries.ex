@@ -21,5 +21,6 @@ defmodule LL.MultiSeries do
     |> List.flatten()
     |> Enum.sort_by(fn {s, c, is_main} -> {c.number, s.priority, is_main} end, :desc)
     |> Enum.map(&{elem(&1, 0), elem(&1, 1)})
+    |> Enum.uniq_by(&elem(&1, 1).number)
   end
 end

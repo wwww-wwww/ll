@@ -6,6 +6,7 @@
     flex-direction: column;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
     position: relative;
+    animation: 0.2s fade-in;
 
     >.header {
         position: absolute;
@@ -42,5 +43,15 @@
 
     .inner {
         max-width: 100%;
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
     }
 }

@@ -15,123 +15,152 @@
           <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
         <% end %>
       </h1>
-      <span>Author: <span class="author">{@series.author}</span></span>
-      <span>Artist: <span class="artist">{@series.artist}</span></span>
-      <span>Status: <span class="status">{status(@series)}</span></span>
-      <span>
-        Source:
-        <span class="source">
-          <%= if @is_multi do %>
-            <span>Multi</span>
-          <% else %>
-            <.link href={Path.join(@source.base_url, @series.url)}>
-              {@source.name} ({@source.lang})
-            </.link>
-          <% end %>
-        </span>
-      </span>
-      <span>
-        Last details refresh:
-        <span class="updated">{relative_time(@series.details_updated)}</span>
-        <button phx-click="refresh_details">Refresh</button>
-      </span>
-      <%= if @is_multi do %>
-        <span>
-          Sources:
-          <div class="multi-sources">
+      <div>
+        <div>
+          <div>
+            <span>Author: <span class="author">{@series.author}</span></span>
+            <span>Artist: <span class="artist">{@series.artist}</span></span>
+            <span>Status: <span class="status">{status(@series)}</span></span>
             <span>
-              <.link navigate={~p"/series/#{@multi.series.id}"}>
-                {@multi.series.source.name}
-              </.link>
-              <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
+              Source:
+              <span class="source">
+                <%= if @is_multi do %>
+                  <span>Multi</span>
+                <% else %>
+                  <.link href={Path.join(@source.base_url, @series.url)}>
+                    {@source.name} ({@source.lang})
+                  </.link>
+                <% end %>
+              </span>
+            </span>
+            <span>
+              Last details refresh:
+              <span class="updated">{relative_time(@series.details_updated)}</span>
+              <button phx-click="refresh_details">Refresh</button>
             </span>
 
-            <%= for s <- @multi.children do %>
+            <%= if not @is_multi do %>
               <span>
-                <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
-                <span class="updated">{relative_time(s.chapters_updated)}</span>
-                <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
-                <button phx-click="multi_remove" phx-value-id={s.id}>Remove</button>
+                Last chapter refresh:
+                <span class="updated">{relative_time(@series.chapters_updated)}</span>
+              </span>
+            <% end %>
+
+            <%= if not @is_multi do %>
+              <span>
+                <%= if @series.in_library do %>
+                  <button phx-click="library_remove">Remove from library</button>
+                <% else %>
+                  <button phx-click="library_add">Add to library</button>
+                <% end %>
               </span>
             <% end %>
           </div>
-        </span>
-      <% else %>
-        <span>
-          Last chapter refresh:
-          <span class="updated">{relative_time(@series.chapters_updated)}</span>
-        </span>
 
-        <%= if @series.multiseries_id != nil do %>
-          <span>
-            Multi:
-            <.link navigate={~p"/series/m#{@series.multiseries.id}"}>
-              {@series.multiseries.series.title}
-            </.link>
-            <button phx-click="multi_remove" phx-value-id={@series.id}>Remove</button>
-          </span>
-        <% end %>
+          <div class="multis">
+            <div>
+              Multi:
+              <%= if not @is_multi and @series.multiseries_id == nil and assigns[:multi] == nil do %>
+                <button phx-click="multi_create">Create multi</button>
+                <button phx-click="multi_get">Add to multi</button>
+              <% end %>
 
-        <%= if @multi != nil do %>
-          <span>
-            Multi: <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title}</.link>
-            <button phx-click="multi_delete" }>Delete</button>
-          </span>
-        <% end %>
-      <% end %>
+              <%= if not @is_multi do %>
+                <%= if @multi != nil do %>
+                  <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title}</.link>
+                <% end %>
+                <%= if @series.multiseries != nil do %>
+                  <.link navigate={~p"/series/m#{@series.multiseries.id}"}>
+                    {@series.multiseries.series.title}
+                  </.link>
+                <% end %>
+              <% end %>
+            </div>
 
-      <%= if not @is_multi do %>
-        <span>
-          <%= if @series.in_library do %>
-            <button phx-click="library_remove">Remove from library</button>
-          <% else %>
-            <button phx-click="library_add">Add to library</button>
+            <div>
+              <%= if @is_multi do %>
+                <span>
+                  <.link navigate={~p"/series/#{@multi.series.id}"}>
+                    {@multi.series.source.name}
+                  </.link>
+                  <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
+                </span>
+
+                <%= for s <- @multi.children do %>
+                  <span>
+                    <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
+                    <span class="updated">{relative_time(s.chapters_updated)}</span>
+                    <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
+                    <button
+                      phx-click="multi_remove"
+                      phx-value-id={s.id}
+                      class="material-symbols-rounded"
+                    >
+                      close
+                    </button>
+                  </span>
+                <% end %>
+              <% end %>
+            </div>
+            <div>
+              <%= if assigns[:multis] do %>
+                <%= for m <- @multis |> Enum.filter(& @series.multiseries_id != &1.id) do %>
+                  <span>
+                    <span>{m.series.title}</span>
+                    <button
+                      phx-click="multi_add"
+                      phx-value-id={m.id}
+                      class="material-symbols-rounded"
+                    >
+                      add
+                    </button>
+                  </span>
+                <% end %>
+              <% end %>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <%= if not @is_multi do %>
+            <div class="categories">
+              <span>Categories:</span>
+              <div>
+                <%= for c <- @series.categories do %>
+                  <span>
+                    <span>{c.name}</span>
+                    <button
+                      phx-click="category_remove"
+                      phx-value-id={c.id}
+                      class="material-symbols-rounded"
+                    >
+                      close
+                    </button>
+                  </span>
+                <% end %>
+              </div>
+
+              <button phx-click="category_get">Add to category</button>
+              <div>
+                <%= if assigns[:categories] do %>
+                  <%= for c <- @categories |> Enum.reject(fn c -> Enum.any?(@series.categories, & &1.id == c.id) end) do %>
+                    <span>
+                      <span>{c.name}</span>
+                      <button
+                        phx-click="category_add"
+                        phx-value-id={c.id}
+                        class="material-symbols-rounded"
+                      >
+                        add
+                      </button>
+                    </span>
+                  <% end %>
+                <% end %>
+              </div>
+            </div>
           <% end %>
-        </span>
-      <% end %>
-
-      <%= if @series.multiseries_id == nil and assigns[:multi] == nil do %>
-        <div class="multis">
-          <button phx-click="multi_create">Create multi</button>
-          <button phx-click="multi_get">Add to multi</button>
-          <div>
-            <%= if assigns[:multis] do %>
-              <%= for m <- @multis do %>
-                <span>
-                  <span>{m.series.title}</span>
-                  <button phx-click="multi_add" phx-value-id={m.id}>Add</button>
-                </span>
-              <% end %>
-            <% end %>
-          </div>
         </div>
-      <% end %>
-
-      <%= if not @is_multi do %>
-        <div class="categories">
-          <span>Categories:</span>
-          <div>
-            <%= for c <- @series.categories do %>
-              <span>
-                <span>{c.name}</span>
-                <button phx-click="category_remove" phx-value-id={c.id}>Remove</button>
-              </span>
-            <% end %>
-          </div>
-
-          <button phx-click="category_get">Add to category</button>
-          <div>
-            <%= if assigns[:categories] do %>
-              <%= for c <- @categories |> Enum.reject(fn c -> Enum.any?(@series.categories, & &1.id == c.id) end) do %>
-                <span>
-                  <span>{c.name}</span>
-                  <button phx-click="category_add" phx-value-id={c.id}>Add</button>
-                </span>
-              <% end %>
-            <% end %>
-          </div>
-        </div>
-      <% end %>
+      </div>
     </div>
   </div>
 

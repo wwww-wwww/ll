@@ -29,24 +29,6 @@ defmodule LLWeb.StatusLive do
     {:noreply, assign(socket, status: status)}
   end
 
-  def handle_event("sync", _, socket) do
-    # LL.sync_all()
-
-    {:noreply, socket}
-  end
-
-  def handle_event("sync_series", _, socket) do
-    # LL.sync_series()
-
-    {:noreply, socket}
-  end
-
-  def handle_event("encode_pages", _, socket) do
-    # LL.encode_missing()
-
-    {:noreply, socket}
-  end
-
   def update() do
     Endpoint.broadcast(@topic, "status:update", %{status: status()})
   end
