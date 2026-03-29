@@ -74,6 +74,7 @@ defmodule LL.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       "assets.deploy": [
+        "compile",
         "esbuild default --minify",
         "sass default --no-source-map --style=compressed",
         "phx.digest"
