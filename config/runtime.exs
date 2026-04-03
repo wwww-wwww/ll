@@ -27,8 +27,8 @@ if config_env() == :prod do
   # variable instead.
 
   config :ll, LLWeb.Endpoint,
-    http: [ip: {0, 0, 0, 0}, port: 5002],
-    url: [host: "m.grass.moe", port: 443],
+    http: [ip: {0, 0, 0, 0}, port: 15006],
+    url: [host: "yuri.grass.moe", port: 443],
     secret_key_base: "/Mfsbj4r4L34AavA5oW1p7B+BejCx6GclATApmzNtZ9SorLR6QW7go4huiAnp9OS",
     cache_static_manifest: "priv/static/cache_manifest.json"
 
