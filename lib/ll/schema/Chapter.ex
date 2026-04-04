@@ -33,6 +33,6 @@ defmodule LL.Chapter do
     )
   end
 
-  def downloaded(chapter),
+  def downloaded?(chapter),
     do: chapter.files != nil and Enum.all?(chapter.files, &File.exists?(&1))
 end

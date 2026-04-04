@@ -159,7 +159,7 @@ defmodule LLWeb.SeriesLive do
     Repo.get(Series, socket.assigns.series.id)
     |> Repo.preload(:chapters)
     |> Map.get(:chapters)
-    |> Enum.reject(&Chapter.downloaded(&1))
+    |> Enum.reject(&Chapter.downloaded?(&1))
     |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.source))
 
     {:noreply, socket}
