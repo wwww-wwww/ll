@@ -7,7 +7,7 @@ defmodule LL.MultiSeries do
     has_many :children, LL.Series, foreign_key: :multiseries_id
   end
 
-  def get_chapters(multi) do
+  def get_chapters(multi, show_all \\ false) do
     multi =
       multi
       |> LL.Repo.preload(series: [:chapters], children: [:chapters])
@@ -22,5 +22,6 @@ defmodule LL.MultiSeries do
     |> Enum.sort_by(fn {s, c, is_main} -> {c.number, s.priority, is_main} end, :desc)
     |> Enum.map(&{elem(&1, 0), elem(&1, 1)})
     |> Enum.uniq_by(&elem(&1, 1).number)
+    |> Enum.filter(&(show_all or elem(&1, 1).hidden != true))
   end
 end

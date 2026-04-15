@@ -16,6 +16,8 @@ defmodule LL.Chapter do
 
     field :files, {:array, :string}
 
+    field :hidden, :boolean
+
     timestamps()
   end
 

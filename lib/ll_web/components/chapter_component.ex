@@ -1,6 +1,8 @@
 defmodule LLWeb.ChapterComponent do
   use LLWeb, :live_component
 
+  alias LL.Repo
+
   def render(assigns) do
     ~H"""
     <div class={["ChapterComponent", assigns[:selected] && "selected"]}>
@@ -52,6 +54,13 @@ defmodule LLWeb.ChapterComponent do
       </div>
 
       <div class="extra">
+        <%= if assigns[:show_hidden] do %>
+          <%= if @chapter.hidden != true do %>
+            <button phx-click="hide-chapter" phx-target={@myself}>Hide</button>
+          <%= else %>
+            <button phx-click="unhide-chapter" phx-target={@myself}>Show</button>
+          <% end %>
+        <% end %>
         <.link
           class="button material-symbols-rounded"
           target="_blank"
@@ -71,6 +80,36 @@ defmodule LLWeb.ChapterComponent do
       |> assign(assigns)
 
     {:ok, socket}
+  end
+
+  def handle_event("hide-chapter", _params, socket) do
+    socket.assigns.chapter
+    |> Ecto.Changeset.change(%{hidden: true})
+    |> Repo.update()
+    |> case do
+      {:ok, chapter} ->
+        Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
+
+      err ->
+        nil
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("unhide-chapter", _params, socket) do
+    socket.assigns.chapter
+    |> Ecto.Changeset.change(%{hidden: false})
+    |> Repo.update()
+    |> case do
+      {:ok, chapter} ->
+        Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
+
+      err ->
+        nil
+    end
+
+    {:noreply, socket}
   end
 
   defmacro __using__(_opts) do
