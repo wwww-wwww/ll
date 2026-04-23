@@ -1,6 +1,9 @@
 <h1>Updates</h1>
 
 <div class="messages">
+  <button phx-click="clear-errors" style="align-self: start">
+    Clear errors
+  </button>
   <%= for e <- @messages |> Enum.sort(&(Date.compare(&1.updated_at, &2.updated_at) != :lt)) do %>
     <div>
       <div>

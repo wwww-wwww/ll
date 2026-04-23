@@ -26,12 +26,9 @@
   </div>
 </div>
 
-<div class="body">
-  <div id="page_container">
-    <%= for {_, i} <- Enum.with_index(@chapter.files) do %>
-      <div>
-        <img src={~p"/page/#{@chapter.id}/#{i + 1}"} loading="lazy" />
-      </div>
-    <% end %>
+<div class="body" id="reader" phx-hook="Reader" phx-update="ignore" pages={Jason.encode!(@files)}>
+  <canvas></canvas>
+  <div class="img-nav-info">
+    <span class="zoom"></span>
   </div>
 </div>

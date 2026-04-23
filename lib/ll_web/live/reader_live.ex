@@ -27,6 +27,10 @@ defmodule LLWeb.ReaderLive do
 
         chapter = Map.put(chapter, :series, nil)
 
+        files =
+          Enum.with_index(chapter.files)
+          |> Enum.map(fn {_, i} -> ~p"/page/#{chapter.id}/#{i + 1}" end)
+
         socket =
           socket
           |> assign(page_title: chapter.title)
@@ -34,6 +38,7 @@ defmodule LLWeb.ReaderLive do
           |> assign(chapters: chapters)
           |> assign(chapter: chapter)
           |> assign(source: chapter.source)
+          |> assign(files: files)
 
         {:ok, socket}
     end

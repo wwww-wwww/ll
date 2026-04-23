@@ -1,6 +1,8 @@
 defmodule LLWeb.UpdatesLive do
   use LLWeb, :live_view
 
+  import Ecto.Query, only: [from: 2]
+
   alias LL.{Repo, Message}
 
   def title(), do: "Updates"
@@ -21,6 +23,14 @@ defmodule LLWeb.UpdatesLive do
       |> assign(messages: messages)
 
     {:ok, socket}
+  end
+
+  def handle_event("clear-errors", _params, socket) do
+    from(m in Message, where: m.title == "Error")
+    |> Repo.all()
+    |> Enum.each(&Repo.delete/1)
+
+    {:noreply, socket}
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
