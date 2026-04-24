@@ -5,7 +5,7 @@ class Reader extends ViewHook {
     private files: string[] = []
     private draw_image: (() => void) | null = null
     private loaded_page = -1
-    private page = 0
+    private page = -1
 
     create_shader(code: string) {
         const module = this.device!.createShaderModule({ code })
@@ -224,6 +224,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let cubeTexture: GPUTexture | null = null
 
         this.draw_image = async () => {
+            if (this.page == -1) return
             if (this.page != this.loaded_page) {
                 this.loaded_page = this.page
 
@@ -376,11 +377,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (e.clientX - rect.x) / rect.width
 
             if (x < 1 / 3) {
-                canvas.classList.toggle("cursor-left", true)
+                canvas.classList.toggle("cursor-left", this.page > 0)
                 canvas.classList.toggle("cursor-right", false)
+                canvas.classList.toggle("cursor-zoom-out", false)
+                canvas.classList.toggle("cursor-zoom-in", false)
             } else if (x > 2 / 3) {
                 canvas.classList.toggle("cursor-left", false)
-                canvas.classList.toggle("cursor-right", true)
+                canvas.classList.toggle("cursor-right", this.page < this.files.length - 1)
+                canvas.classList.toggle("cursor-zoom-out", false)
+                canvas.classList.toggle("cursor-zoom-in", false)
             } else {
                 canvas.classList.toggle("cursor-left", false)
                 canvas.classList.toggle("cursor-right", false)
@@ -405,13 +410,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
                 if (x < 1 / 3) {
-                    canvas.classList.toggle("cursor-left", true)
+                    canvas.classList.toggle("cursor-left", this.page > 0)
                     canvas.classList.toggle("cursor-right", false)
+                    canvas.classList.toggle("cursor-zoom-out", false)
+                    canvas.classList.toggle("cursor-zoom-in", false)
                     this.set_page(this.page - 1)
-                    this.draw_image!()
                 } else if (x > 2 / 3) {
                     canvas.classList.toggle("cursor-left", false)
-                    canvas.classList.toggle("cursor-right", true)
+                    canvas.classList.toggle("cursor-right", this.page < this.files.length - 1)
+                    canvas.classList.toggle("cursor-zoom-out", false)
+                    canvas.classList.toggle("cursor-zoom-in", false)
                     this.set_page(this.page + 1)
                 } else {
                     const ratiox = canvas.width / im.width
@@ -470,6 +478,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     private e_page!: HTMLElement
 
     set_page(page: number) {
+        if (this.files.length == 0) return
         this.page = Math.max(Math.min(page, this.files.length - 1), 0)
         this.e_page.textContent = `${this.page + 1}/${this.files.length}`
         this.draw_image?.()
@@ -478,7 +487,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     mounted() {
         this.e_page = this.el.querySelector(".info>.page")!
 
-        this.files = JSON.parse(this.el.dataset.files!)
+        this.files = JSON.parse(this.el.dataset.files! || "[]")
+
         this.handleEvent("files", data => {
             console.info("files", data)
             this.files = data.files
@@ -486,13 +496,26 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             this.set_page(0)
         })
 
-        this.init()
+        this.init().then(() => {
+            this.set_page(0)
+        })
+
+        const canvas = this.el.querySelector("canvas")!
+        canvas.addEventListener("drop", e => {
+            Array.from(e.dataTransfer!.items).forEach((item) => {
+                if (item.type.startsWith("image/")) {
+                    const f = item.getAsFile()!
+                    this.files.push(URL.createObjectURL(f))
+                }
+            })
+            this.set_page(this.files.length - 1)
+        })
     }
 }
 
 class chapterlist extends ViewHook {
     mounted() {
-        ;[...this.el.children].forEach(e => {
+        Array.from(this.el.children).forEach(e => {
             if (e.classList.contains("selected")) {
                 e.scrollIntoView({ block: "center" })
             }

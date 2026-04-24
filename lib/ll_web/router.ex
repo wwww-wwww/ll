@@ -24,6 +24,8 @@ defmodule LLWeb.Router do
     live "/extensions", ExtensionsLive
     live "/categories", CategoriesLive
 
+    live "/reader", ReaderLiveS
+
     live "/series/:series_id", SeriesLive
 
     live "/series/:series_id/:chapter_id", ReaderLive
