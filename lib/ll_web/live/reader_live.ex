@@ -5,7 +5,48 @@ defmodule LLWeb.ReaderLive do
   alias LL.{Repo, Chapter}
 
   def render(assigns) do
-    LLWeb.PageView.render("reader.html", assigns)
+    ~H"""
+    <input type="checkbox" id="series_details_toggle" />
+    <div class="series_details">
+      <div class="inner">
+        <div class="details">
+          <h1><.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link></h1>
+          <.link target="_blank" href={Path.join(@source.base_url, @chapter.url)}>
+            Read at source
+          </.link>
+        </div>
+
+        <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
+          <%= for c <- @chapters do %>
+            <.live_component
+              module={LLWeb.ChapterComponent}
+              id={LLWeb.ChapterComponent.id(c.id)}
+              chapter={c}
+              source={@source}
+              selected={c.id == @chapter.id}
+            />
+          <% end %>
+        </div>
+      </div>
+
+      <div class="series_details_toggle">
+        <label for="series_details_toggle" class="material-symbols-rounded"></label>
+      </div>
+    </div>
+
+    <div
+      id="reader"
+      phx-hook="Reader"
+      phx-update="ignore"
+      data-files={Jason.encode!(@files)}
+    >
+      <canvas></canvas>
+      <div class="info">
+        <span class="page"></span>
+        <span class="zoom"></span>
+      </div>
+    </div>
+    """
   end
 
   def mount(%{"chapter_id" => chapter_id}, _session, socket) do
@@ -42,5 +83,11 @@ defmodule LLWeb.ReaderLive do
 
         {:ok, socket}
     end
+  end
+
+  def handle_params(params, _path, socket) do
+    {:ok, socket} = mount(params, %{}, socket)
+    socket = push_event(socket, "files", %{files: socket.assigns.files})
+    {:noreply, socket}
   end
 end

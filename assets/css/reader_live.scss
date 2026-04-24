@@ -8,13 +8,15 @@
     .series_details {
         display: flex;
         position: relative;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        z-index: 1;
 
         >.inner {
             flex: 1;
             display: flex;
             flex-direction: column;
             width: 24em;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            // box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
         }
 
         .details {
@@ -73,26 +75,55 @@
         }
     }
 
-    .body {
+    #reader {
         height: 100%;
         overflow-y: auto;
         flex: 1;
         display: flex;
         align-items: center;
         justify-content: center;
-        // position: fixed;
-        // width: 100%;
-        // height: 100%;
-        // left: 0;
-        // top: 0;
-        // background: #222222;
-    }
-
-    #reader {
         position: relative;
+        // overflow: hidden;
+        padding: 0;
+        margin: 0;
+
+        &.loading {
+            cursor: wait;
+
+            &::after {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                content: "Loading";
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 1;
+                // background: rgba(255, 255, 255, 0.5);
+                // backdrop-filter: blur(5px);
+                text-shadow: 0 0 4px rgba(255, 255, 255, 1);
+                font-size: 32px;
+            }
+        }
 
         canvas {
-            cursor: grab;
+            &.cursor-zoom-in {
+                cursor: zoom-in;
+            }
+
+            &.cursor-zoom-out {
+                cursor: zoom-out;
+            }
+
+            &.cursor-left {
+                cursor: w-resize;
+            }
+
+            &.cursor-right {
+                cursor: w-resize;
+            }
 
             &.grabbing {
                 cursor: grabbing;
@@ -107,7 +138,7 @@
             flex-direction: column;
         }
 
-        .img-nav-info {
+        .info {
             position: absolute;
             right: 0;
             bottom: 0;
@@ -115,6 +146,8 @@
             backdrop-filter: blur(5px);
             padding: 4px;
             border-top-left-radius: 8px;
+            display: flex;
+            gap: 0.5em;
 
             .zoom {}
         }

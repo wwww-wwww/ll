@@ -1,7 +1,11 @@
 import { ViewHook } from "phoenix_live_view"
 
 class Reader extends ViewHook {
-    device: GPUDevice | null = null
+    private device: GPUDevice | null = null
+    private files: string[] = []
+    private draw_image: (() => void) | null = null
+    private loaded_page = -1
+    private page = 0
 
     create_shader(code: string) {
         const module = this.device!.createShaderModule({ code })
@@ -18,7 +22,6 @@ class Reader extends ViewHook {
     }
 
     async init() {
-        const pages = JSON.parse(this.el.getAttribute("pages")!)
         const canvas: HTMLCanvasElement = this.el.querySelector("canvas")!
 
         const adapter = await navigator.gpu?.requestAdapter({ powerPreference: "high-performance" })
@@ -135,7 +138,7 @@ fn textureSampleCatmullRom(uv: vec2<f32>) -> vec4<f32> {
     }
     
     // ⚠️ CRUCIAL: Clamp the final color to prevent negative alpha!
-    // Because Catmull-Rom has negative curve weights, interpolating between 
+    // Because Catmull-Rom has negative curve weights, interpolating between
     // a bright edge pixel (1.0) and a transparent out-of-bounds pixel (0.0) 
     // can cause the alpha to dip to -0.1, which causes weird blending bugs.
     return clamp(final_color, vec4<f32>(0.0), vec4<f32>(1.0));
@@ -196,7 +199,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let ratio = dst_size_f / src_size_f;
 
     let scale = vec2(1.0 / transform.scale);
-    let offset = (transform.offset) - vec2(0.5, 0) + vec2(0.5 * ratio.x * scale.x, 0);
+    let offset = transform.offset - vec2(0.5) + vec2(0.5) * ratio * scale;
 
     if (max(scale.x, scale.y) > 1.0) {
         let col = downsample(vec2<f32>(id.xy) * scale - offset * src_size_f, scale);
@@ -210,27 +213,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             },
         })
 
-        let page = 0
-        let im: HTMLImageElement | null = null
-
-        im = new Image()
-        im.src = pages[page]
-        await im.decode()
-
-        let cubeTexture = device.createTexture({
-            size: [im.width, im.height, 1],
-            format: "rgba8unorm",
-            usage:
-                GPUTextureUsage.TEXTURE_BINDING |
-                GPUTextureUsage.COPY_DST |
-                GPUTextureUsage.RENDER_ATTACHMENT,
-        })
-
-        device.queue.copyExternalImageToTexture({ source: im }, { texture: cubeTexture }, [
-            im.width,
-            im.height,
-        ])
-
         const uniform_buffer = this.device.createBuffer({
             size: 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -238,7 +220,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let fit = true
 
-        const draw_image = async () => {
+        let im: HTMLImageElement = new Image()
+        let cubeTexture: GPUTexture | null = null
+
+        this.draw_image = async () => {
+            if (this.page != this.loaded_page) {
+                this.loaded_page = this.page
+
+                this.el.classList.toggle("loading", true)
+                const new_im = new Image()
+                new_im.src = this.files[this.page]
+                await new_im.decode()
+                im = new_im
+
+                {
+                    const next = new Image()
+                    next.src = this.files[Math.min(this.page + 1, this.files.length - 1)]
+                    next.decode()
+                }
+
+                cubeTexture?.destroy()
+                cubeTexture = device.createTexture({
+                    size: [im.width, im.height, 1],
+                    format: "rgba8unorm",
+                    usage:
+                        GPUTextureUsage.TEXTURE_BINDING |
+                        GPUTextureUsage.COPY_DST |
+                        GPUTextureUsage.RENDER_ATTACHMENT,
+                })
+                device.queue.copyExternalImageToTexture({ source: im }, { texture: cubeTexture }, [
+                    im.width,
+                    im.height,
+                ])
+
+                this.el.classList.toggle("loading", false)
+
+                if (fit) {
+                    const zoom = Math.min(canvas.height / im.height, canvas.width / im.width)
+                    move(0, 0, zoom)
+                }
+            }
             const encoder = device.createCommandEncoder()
 
             const texture_canvas = context.getCurrentTexture().createView()
@@ -250,7 +271,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 device.createBindGroup({
                     layout: pipeline_draw.getBindGroupLayout(0),
                     entries: [
-                        { binding: 0, resource: cubeTexture },
+                        { binding: 0, resource: cubeTexture! },
                         { binding: 1, resource: texture_canvas },
                         { binding: 2, resource: uniform_buffer },
                     ],
@@ -263,7 +284,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         const uniformData = new Float32Array(4)
 
-        const e_zoom = this.el.querySelector(".img-nav-info>.zoom")!
+        const e_zoom = this.el.querySelector(".info>.zoom")!
 
         const move = (x: number, y: number, zoom: number) => {
             uniformData[0] = x
@@ -280,69 +301,98 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             canvas.height = rect.height
 
             if (fit) {
-                const zoom = canvas.height / im.height
+                const zoom = Math.min(canvas.height / im.height, canvas.width / im.width)
                 move(0, 0, zoom)
             }
-            draw_image()
+
+            this.draw_image!()
         })
 
         observer.observe(this.el)
 
-        canvas.addEventListener("wheel", e => {
+        let last_pos = [0, 0]
+        let start = [0, 0]
+
+        const pan = (e: MouseEvent) => {
+            if (!canvas.hasPointerCapture(0)) return
+
             const rect = canvas.getBoundingClientRect()
-            let x = 0.5 - (e.clientX - rect.x) / rect.width
-            let y = (e.clientY - rect.y) / rect.height
+            const x = (e.clientX - rect.x) / rect.width
+            const y = (e.clientY - rect.y) / rect.height
 
             const ratiox = canvas.width / im.width
             const ratioy = canvas.height / im.height
 
-            let off = e.deltaY > 0 ? -0.05 : +0.05
-            let new_zoom = Math.pow(10, Math.log10(uniformData[2]) + off)
-            let diff = 1 / new_zoom - 1 / uniformData[2]
+            move(
+                uniformData[0] + ((x - last_pos[0]) / uniformData[2]) * ratiox,
+                uniformData[1] + ((y - last_pos[1]) / uniformData[2]) * ratioy,
+                uniformData[2],
+            )
+
+            last_pos = [x, y]
+        }
+
+        canvas.addEventListener("wheel", e => {
+            pan(e)
 
             fit = false
 
+            const rect = canvas.getBoundingClientRect()
+            const x = (e.clientX - rect.x) / rect.width
+            const y = (e.clientY - rect.y) / rect.height
+
+            const ratiox = canvas.width / im.width
+            const ratioy = canvas.height / im.height
+
+            const off = e.deltaY > 0 ? -0.05 : +0.05
+            const new_zoom = Math.pow(10, Math.log10(uniformData[2]) + off)
+            const diff = 1 / new_zoom - 1 / uniformData[2]
+
             move(
-                uniformData[0] - x * diff * ratiox,
-                uniformData[1] + y * diff * ratioy,
+                uniformData[0] + (x - 0.5) * diff * ratiox,
+                uniformData[1] + (y - 0.5) * diff * ratioy,
                 new_zoom,
             )
 
-            draw_image()
+            this.draw_image!()
         })
 
-        let start = [0, 0]
-        let base = [0, 0]
-
         canvas.addEventListener("pointerdown", e => {
-            e.preventDefault()
             if (e.button != 0) return
             canvas.setPointerCapture(e.pointerId)
+            e.preventDefault()
             canvas.classList.toggle("grabbing", true)
 
             const rect = canvas.getBoundingClientRect()
-            let x = (e.clientX - rect.x) / rect.width
-            let y = (e.clientY - rect.y) / rect.height
-            base = [uniformData[0], uniformData[1]]
+            const x = (e.clientX - rect.x) / rect.width
+            const y = (e.clientY - rect.y) / rect.height
+
+            last_pos = [x, y]
             start = [x, y]
         })
 
         canvas.addEventListener("pointermove", e => {
+            const rect = canvas.getBoundingClientRect()
+            const x = (e.clientX - rect.x) / rect.width
+
+            if (x < 1 / 3) {
+                canvas.classList.toggle("cursor-left", true)
+                canvas.classList.toggle("cursor-right", false)
+            } else if (x > 2 / 3) {
+                canvas.classList.toggle("cursor-left", false)
+                canvas.classList.toggle("cursor-right", true)
+            } else {
+                canvas.classList.toggle("cursor-left", false)
+                canvas.classList.toggle("cursor-right", false)
+                canvas.classList.toggle("cursor-zoom-out", !fit)
+                canvas.classList.toggle("cursor-zoom-in", fit)
+            }
+
             if (!canvas.hasPointerCapture(e.pointerId)) return
 
-            const rect = canvas.getBoundingClientRect()
-            let x = (e.clientX - rect.x) / rect.width
-            let y = (e.clientY - rect.y) / rect.height
+            pan(e)
 
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
-            move(
-                base[0] + (x - start[0]) * 1 / uniformData[2] * ratiox,
-                base[1] + (y - start[1]) * 1 / uniformData[2] * ratioy,
-                uniformData[2],
-            )
-            draw_image()
+            this.draw_image!()
         })
 
         window.addEventListener("pointerup", e => {
@@ -351,100 +401,103 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             canvas.classList.toggle("grabbing", false)
 
             const rect = canvas.getBoundingClientRect()
-            let x = (e.clientX - rect.x) / rect.width
-            let y = (e.clientY - rect.y) / rect.height
+            const x = (e.clientX - rect.x) / rect.width
+            const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
-                if (!fit) {
-                    // scale to fit
-                    fit = true
-                    const zoom = canvas.height / im.height
-                    move(0, 0, zoom)
+                if (x < 1 / 3) {
+                    canvas.classList.toggle("cursor-left", true)
+                    canvas.classList.toggle("cursor-right", false)
+                    this.set_page(this.page - 1)
+                    this.draw_image!()
+                } else if (x > 2 / 3) {
+                    canvas.classList.toggle("cursor-left", false)
+                    canvas.classList.toggle("cursor-right", true)
+                    this.set_page(this.page + 1)
                 } else {
-                    // 100%
-                    fit = false
-                    move(0, 0, 1)
+                    const ratiox = canvas.width / im.width
+                    const ratioy = canvas.height / im.height
+
+                    if (!fit) {
+                        // scale to fit
+                        fit = true
+                        const zoom = Math.min(ratiox, ratioy)
+                        move(0, 0, zoom)
+                    } else {
+                        // 100%
+                        fit = false
+
+                        const diff = 1 - 1 / uniformData[2]
+
+                        fit = false
+                        let offx = uniformData[0] + (x - 0.5) * diff * ratiox
+                        let offy = uniformData[1] + (y - 0.5) * diff * ratioy
+                        if (ratiox > 1) {
+                            offx = 0
+                        }
+                        if (ratioy > 1) {
+                            offy = 0
+                        }
+                        move(offx, offy, 1)
+                    }
+
+                    canvas.classList.toggle("cursor-left", false)
+                    canvas.classList.toggle("cursor-right", false)
+                    canvas.classList.toggle("cursor-zoom-out", !fit)
+                    canvas.classList.toggle("cursor-zoom-in", fit)
                 }
             } else {
                 fit = false
-                const ratiox = canvas.width / im.width
-                const ratioy = canvas.height / im.height
-
-                move(
-                    base[0] + (x - start[0]) * 1 / uniformData[2] * ratiox,
-                    base[1] + (y - start[1]) * 1 / uniformData[2] * ratioy,
-                    uniformData[2],
-                )
+                pan(e)
             }
 
-            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
-            draw_image()
+            this.draw_image!()
         })
 
         window.addEventListener("keydown", async e => {
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
 
-                page = Math.max(page - 1, 0)
-
-                {
-                    im = new Image()
-                    im.src = pages[page]
-                    await im.decode()
-                    cubeTexture = device.createTexture({
-                        size: [im.width, im.height, 1],
-                        format: "rgba8unorm",
-                        usage:
-                            GPUTextureUsage.TEXTURE_BINDING |
-                            GPUTextureUsage.COPY_DST |
-                            GPUTextureUsage.RENDER_ATTACHMENT,
-                    })
-                    device.queue.copyExternalImageToTexture(
-                        { source: im },
-                        { texture: cubeTexture },
-                        [im.width, im.height],
-                    )
-                    if (fit) {
-                        const zoom = canvas.height / im.height
-                        move(0, 0, zoom)
-                    }
-                }
-                draw_image()
+                this.set_page(this.page - 1)
             }
             if (e.key == "ArrowRight") {
                 e.preventDefault()
 
-                page = Math.min(page + 1, pages.length - 1)
-
-                {
-                    im = new Image()
-                    im.src = pages[page]
-                    await im.decode()
-                    cubeTexture = device.createTexture({
-                        size: [im.width, im.height, 1],
-                        format: "rgba8unorm",
-                        usage:
-                            GPUTextureUsage.TEXTURE_BINDING |
-                            GPUTextureUsage.COPY_DST |
-                            GPUTextureUsage.RENDER_ATTACHMENT,
-                    })
-                    device.queue.copyExternalImageToTexture(
-                        { source: im },
-                        { texture: cubeTexture },
-                        [im.width, im.height],
-                    )
-                    if (fit) {
-                        const zoom = canvas.height / im.height
-                        move(0, 0, zoom)
-                    }
-                }
-                draw_image()
+                this.set_page(this.page + 1)
             }
         })
     }
 
+    private e_page!: HTMLElement
+
+    set_page(page: number) {
+        this.page = Math.max(Math.min(page, this.files.length - 1), 0)
+        this.e_page.textContent = `${this.page + 1}/${this.files.length}`
+        this.draw_image?.()
+    }
+
     mounted() {
+        this.e_page = this.el.querySelector(".info>.page")!
+
+        this.files = JSON.parse(this.el.dataset.files!)
+        this.handleEvent("files", data => {
+            console.info("files", data)
+            this.files = data.files
+            this.loaded_page = -1
+            this.set_page(0)
+        })
+
         this.init()
     }
 }
 
-export { Reader }
+class chapterlist extends ViewHook {
+    mounted() {
+        ;[...this.el.children].forEach(e => {
+            if (e.classList.contains("selected")) {
+                e.scrollIntoView({ block: "center" })
+            }
+        })
+    }
+}
+
+export default { Reader, chapterlist }

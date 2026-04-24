@@ -25,7 +25,7 @@ defmodule LLWeb.ChapterComponent do
       <% end %>
       <div class="body">
         <%= if downloaded do %>
-          <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
+          <.link patch={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
             <div>
               <span class="title">{@chapter.title}</span>
             </div>
@@ -57,7 +57,7 @@ defmodule LLWeb.ChapterComponent do
         <%= if assigns[:show_hidden] do %>
           <%= if @chapter.hidden != true do %>
             <button phx-click="hide-chapter" phx-target={@myself}>Hide</button>
-          <%= else %>
+          <% else %>
             <button phx-click="unhide-chapter" phx-target={@myself}>Show</button>
           <% end %>
         <% end %>

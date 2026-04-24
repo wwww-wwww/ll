@@ -10,7 +10,64 @@ defmodule LLWeb.LibraryLive do
   def title(), do: "Library"
 
   def render(assigns) do
-    LLWeb.PageView.render("library.html", assigns)
+    ~H"""
+    <input id="filters_chk" type="checkbox" phx-update="ignore" />
+    <div class="filters">
+      <label for="filters_chk" class="material-symbols-rounded">filter_alt</label>
+      <div>
+        <div>
+          <span>Categories:</span>
+          <form phx-change="filter-categories" class="categories">
+            <%= for c <- @categories do %>
+              <div class="check">
+                <input
+                  type="checkbox"
+                  id={"filter-category-#{c.id}"}
+                  name={"category:#{c.id}"}
+                  checked={c.id in @filter_categories}
+                />
+                <label for={"filter-category-#{c.id}"}>{c.name}</label>
+              </div>
+            <% end %>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="library">
+      <%= for series <- @library do %>
+        <%= if is_multi?(series) do %>
+          <%= if length(@filter_categories) == 0 do %>
+            <.live_component
+              module={LLWeb.SeriesComponent}
+              id={"#{LLWeb.SeriesComponent.id(series.id)}-Multi"}
+              series={series.series}
+              multi_id={series.id}
+              href={~p"/library/m#{series.id}"}
+            />
+          <% end %>
+        <% else %>
+          <%= if length(@filter_categories) == 0 or Enum.any?(series.categories, & &1.id in @filter_categories) do %>
+            <.live_component
+              module={LLWeb.SeriesComponent}
+              id={LLWeb.SeriesComponent.id(series.id)}
+              series={series}
+              href={~p"/library/#{series.id}"}
+            />
+          <% end %>
+        <% end %>
+      <% end %>
+    </div>
+
+    <%= if assigns[:series_id] do %>
+      <.live_component
+        module={LLWeb.SeriesPageComponent}
+        id={LLWeb.SeriesPageComponent.id(@series_id)}
+        series_id={@series_id}
+        is_multi={@is_multi}
+      />
+    <% end %>
+    """
   end
 
   def mount(params, _session, socket) do
@@ -59,10 +116,17 @@ defmodule LLWeb.LibraryLive do
 
     categories = Repo.all(LL.Category)
 
+    library =
+      (library ++ multis)
+      |> Enum.sort_by(
+        &(Map.get(&1, :series, &1).title
+          |> String.downcase())
+      )
+
     socket =
       socket
       |> assign(library: library)
-      |> assign(multis: multis)
+      # |> assign(multis: multis)
       |> assign(categories: categories)
       |> assign(filter_categories: [])
 
