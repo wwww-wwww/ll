@@ -234,15 +234,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 await new_im.decode()
                 im = new_im
 
-                {
+                if (this.page < this.files.length - 1) {
                     const next = new Image()
-                    next.src = this.files[Math.min(this.page + 1, this.files.length - 1)]
+                    next.src = this.files[this.page + 1]
                     next.decode()
                 }
 
-                {
+                if (this.page > 0) {
                     const next = new Image()
-                    next.src = this.files[Math.max(this.page - 1, 0)]
+                    next.src = this.files[this.page - 1]
                     next.decode()
                 }
 
@@ -385,12 +385,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const rect = canvas.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
 
-            if (x < 1 / 3) {
+            if (x > 2 / 3) {
                 this.el.classList.toggle("cursor-left", this.page > 0 || this.prev_chapter != null)
                 this.el.classList.toggle("cursor-right", false)
                 this.el.classList.toggle("cursor-zoom-out", false)
                 this.el.classList.toggle("cursor-zoom-in", false)
-            } else if (x > 2 / 3) {
+            } else if (x < 1 / 3) {
                 this.el.classList.toggle("cursor-left", false)
                 this.el.classList.toggle(
                     "cursor-right",
@@ -425,9 +425,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
-                if (x < 1 / 3) {
+                if (x > 2 / 3) {
                     this.set_page(this.page - 1)
-                } else if (x > 2 / 3) {
+                } else if (x < 1 / 3) {
                     this.set_page(this.page + 1)
                 } else {
                     const ratiox = canvas.width / im.width
@@ -492,7 +492,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             this.e_interstitial.onclick = e => {
                 const rect = this.e_interstitial.getBoundingClientRect()
                 const x = (e.clientX - rect.x) / rect.width
-                if ((page == this.files.length && x > 0.5) || (page == -1 && x < 0.5)) {
+                if ((page == this.files.length && x < 0.5) || (page == -1 && x > 0.5)) {
                     next_chapter.querySelector("a")?.click()
                 } else {
                     this.e_interstitial.classList.toggle("visible", false)
@@ -529,12 +529,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let mounted = false
 
-        const chapters = Array.from(document.getElementById("chapterlist")!.children)
+        let chapters: HTMLElement[] | null = null
 
-        {
+        if (document.getElementById("chapterlist")) {
+            chapters = Array.from(document.getElementById("chapterlist")!.children) as HTMLElement[]
             const current_index = chapters.findIndex(e => e.classList.contains("selected"))
-            this.next_chapter = chapters.at(current_index - 1) as HTMLElement
-            this.prev_chapter = chapters.at(current_index + 1) as HTMLElement
+            this.next_chapter = current_index > 0 ? chapters.at(current_index - 1)! : null
+            this.prev_chapter = chapters.at(current_index + 1)!
         }
 
         this.files = JSON.parse(this.el.dataset.files! || "[]")
@@ -542,19 +543,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         this.handleEvent("files", data => {
             if (!mounted) return
             console.info("files", data, window.history.state)
+
             this.files = data.files
             this.loaded_page = -1
             this.e_interstitial.classList.toggle("visible", false)
-            const current_index = chapters.findIndex(e => e.classList.contains("selected"))
 
-            if (this.prev_chapter == chapters.at(current_index)) {
-                this.set_page(this.files.length - 1, false)
-            } else {
-                this.set_page(window.history.state.page || 0, false)
+            if (chapters) {
+                const current_index = chapters.findIndex(e => e.classList.contains("selected"))
+
+                if (this.prev_chapter == chapters.at(current_index)) {
+                    this.set_page(this.files.length - 1, false)
+                } else {
+                    this.set_page(window.history.state.page || 0, false)
+                }
+
+                this.next_chapter = current_index > 0 ? chapters.at(current_index - 1)! : null
+                this.prev_chapter = chapters.at(current_index + 1)!
             }
-
-            this.next_chapter = chapters.at(current_index - 1) as HTMLElement
-            this.prev_chapter = chapters.at(current_index + 1) as HTMLElement
         })
 
         const params = new URLSearchParams(window.location.search)
