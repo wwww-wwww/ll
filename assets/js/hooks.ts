@@ -240,6 +240,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     next.decode()
                 }
 
+                {
+                    const next = new Image()
+                    next.src = this.files[Math.max(this.page - 1, 0)]
+                    next.decode()
+                }
+
                 cubeTexture?.destroy()
                 cubeTexture = device.createTexture({
                     size: [im.width, im.height, 1],
@@ -261,6 +267,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     move(0, 0, zoom)
                 }
             }
+
+            if (!cubeTexture) return
+
             const encoder = device.createCommandEncoder()
 
             const texture_canvas = context.getCurrentTexture().createView()
@@ -372,26 +381,33 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             start = [x, y]
         })
 
-        canvas.addEventListener("pointermove", e => {
+        const update_cursor = (e: PointerEvent) => {
             const rect = canvas.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
 
             if (x < 1 / 3) {
-                canvas.classList.toggle("cursor-left", this.page > 0)
-                canvas.classList.toggle("cursor-right", false)
-                canvas.classList.toggle("cursor-zoom-out", false)
-                canvas.classList.toggle("cursor-zoom-in", false)
+                this.el.classList.toggle("cursor-left", this.page > 0 || this.prev_chapter != null)
+                this.el.classList.toggle("cursor-right", false)
+                this.el.classList.toggle("cursor-zoom-out", false)
+                this.el.classList.toggle("cursor-zoom-in", false)
             } else if (x > 2 / 3) {
-                canvas.classList.toggle("cursor-left", false)
-                canvas.classList.toggle("cursor-right", this.page < this.files.length - 1)
-                canvas.classList.toggle("cursor-zoom-out", false)
-                canvas.classList.toggle("cursor-zoom-in", false)
+                this.el.classList.toggle("cursor-left", false)
+                this.el.classList.toggle(
+                    "cursor-right",
+                    this.page < this.files.length - 1 || this.next_chapter != null,
+                )
+                this.el.classList.toggle("cursor-zoom-out", false)
+                this.el.classList.toggle("cursor-zoom-in", false)
             } else {
-                canvas.classList.toggle("cursor-left", false)
-                canvas.classList.toggle("cursor-right", false)
-                canvas.classList.toggle("cursor-zoom-out", !fit)
-                canvas.classList.toggle("cursor-zoom-in", fit)
+                this.el.classList.toggle("cursor-left", false)
+                this.el.classList.toggle("cursor-right", false)
+                this.el.classList.toggle("cursor-zoom-out", !fit)
+                this.el.classList.toggle("cursor-zoom-in", fit)
             }
+        }
+
+        canvas.addEventListener("pointermove", e => {
+            update_cursor(e)
 
             if (!canvas.hasPointerCapture(e.pointerId)) return
 
@@ -400,7 +416,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             this.draw_image!()
         })
 
-        window.addEventListener("pointerup", e => {
+        canvas.addEventListener("pointerup", e => {
             if (!canvas.hasPointerCapture(e.pointerId)) return
             canvas.releasePointerCapture(e.pointerId)
             canvas.classList.toggle("grabbing", false)
@@ -410,16 +426,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
                 if (x < 1 / 3) {
-                    canvas.classList.toggle("cursor-left", this.page > 0)
-                    canvas.classList.toggle("cursor-right", false)
-                    canvas.classList.toggle("cursor-zoom-out", false)
-                    canvas.classList.toggle("cursor-zoom-in", false)
                     this.set_page(this.page - 1)
                 } else if (x > 2 / 3) {
-                    canvas.classList.toggle("cursor-left", false)
-                    canvas.classList.toggle("cursor-right", this.page < this.files.length - 1)
-                    canvas.classList.toggle("cursor-zoom-out", false)
-                    canvas.classList.toggle("cursor-zoom-in", false)
                     this.set_page(this.page + 1)
                 } else {
                     const ratiox = canvas.width / im.width
@@ -447,12 +455,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                         }
                         move(offx, offy, 1)
                     }
-
-                    canvas.classList.toggle("cursor-left", false)
-                    canvas.classList.toggle("cursor-right", false)
-                    canvas.classList.toggle("cursor-zoom-out", !fit)
-                    canvas.classList.toggle("cursor-zoom-in", fit)
                 }
+
+                update_cursor(e)
             } else {
                 fit = false
                 pan(e)
@@ -460,8 +465,120 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
             this.draw_image!()
         })
+    }
 
-        window.addEventListener("keydown", async e => {
+    private e_page!: HTMLElement
+    private e_interstitial!: HTMLElement
+
+    private next_chapter!: HTMLElement | null
+    private prev_chapter!: HTMLElement | null
+
+    set_page(page: number, push_state: boolean = true) {
+        if (this.files.length == 0) return
+
+        if (page == this.files.length || page == -1) {
+            let next_chapter: HTMLElement | null = null
+
+            next_chapter = page == this.files.length ? this.next_chapter : this.prev_chapter
+
+            if (!next_chapter) return
+
+            if (this.e_interstitial.classList.contains("visible")) {
+                next_chapter.querySelector("a")?.click()
+                this.e_interstitial.classList.toggle("visible", false)
+                return
+            }
+
+            this.e_interstitial.onclick = e => {
+                const rect = this.e_interstitial.getBoundingClientRect()
+                const x = (e.clientX - rect.x) / rect.width
+                if ((page == this.files.length && x > 0.5) || (page == -1 && x < 0.5)) {
+                    next_chapter.querySelector("a")?.click()
+                } else {
+                    this.e_interstitial.classList.toggle("visible", false)
+                }
+            }
+
+            this.e_interstitial.textContent = next_chapter.querySelector(".title")!.textContent
+            this.e_interstitial.classList.toggle("visible", true)
+            return
+        }
+
+        if (this.e_interstitial.classList.contains("visible")) {
+            this.e_interstitial.classList.toggle("visible", false)
+            return
+        }
+
+        if (push_state) {
+            const params = new URLSearchParams(window.location.search)
+            params.set("page", (page + 1).toString())
+            const new_url = decodeURIComponent(`${window.location.pathname}?${params}`)
+            window.history.replaceState({ ...window.history.state, page: page }, "", new_url)
+        }
+
+        this.page = Math.max(Math.min(page, this.files.length - 1), 0)
+        this.e_page.textContent = `${this.page + 1}/${this.files.length}`
+        this.draw_image?.()
+    }
+
+    private key_event!: ((e: KeyboardEvent) => void) | null
+
+    mounted() {
+        this.e_page = this.el.querySelector(".info>.page")!
+        this.e_interstitial = this.el.querySelector(".interstitial")!
+
+        let mounted = false
+
+        const chapters = Array.from(document.getElementById("chapterlist")!.children)
+
+        {
+            const current_index = chapters.findIndex(e => e.classList.contains("selected"))
+            this.next_chapter = chapters.at(current_index - 1) as HTMLElement
+            this.prev_chapter = chapters.at(current_index + 1) as HTMLElement
+        }
+
+        this.files = JSON.parse(this.el.dataset.files! || "[]")
+
+        this.handleEvent("files", data => {
+            if (!mounted) return
+            console.info("files", data, window.history.state)
+            this.files = data.files
+            this.loaded_page = -1
+            this.e_interstitial.classList.toggle("visible", false)
+            const current_index = chapters.findIndex(e => e.classList.contains("selected"))
+
+            if (this.prev_chapter == chapters.at(current_index)) {
+                this.set_page(this.files.length - 1, false)
+            } else {
+                this.set_page(window.history.state.page || 0, false)
+            }
+
+            this.next_chapter = chapters.at(current_index - 1) as HTMLElement
+            this.prev_chapter = chapters.at(current_index + 1) as HTMLElement
+        })
+
+        const params = new URLSearchParams(window.location.search)
+        const page = window.history.state.page || parseInt(params?.get("page")! ?? "1") - 1
+
+        this.set_page(page)
+
+        this.init().then(() => {
+            this.set_page(page)
+            mounted = true
+        })
+
+        const canvas = this.el.querySelector("canvas")!
+        canvas.addEventListener("drop", e => {
+            Array.from(e.dataTransfer!.items).forEach(item => {
+                if (item.type.startsWith("image/")) {
+                    const f = item.getAsFile()!
+                    this.files.push(URL.createObjectURL(f))
+                }
+            })
+            this.set_page(this.files.length - 1)
+        })
+
+        this.key_event = (e: KeyboardEvent) => {
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
 
@@ -472,44 +589,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
                 this.set_page(this.page + 1)
             }
-        })
+        }
+
+        window.addEventListener("keydown", this.key_event)
     }
 
-    private e_page!: HTMLElement
-
-    set_page(page: number) {
-        if (this.files.length == 0) return
-        this.page = Math.max(Math.min(page, this.files.length - 1), 0)
-        this.e_page.textContent = `${this.page + 1}/${this.files.length}`
-        this.draw_image?.()
-    }
-
-    mounted() {
-        this.e_page = this.el.querySelector(".info>.page")!
-
-        this.files = JSON.parse(this.el.dataset.files! || "[]")
-
-        this.handleEvent("files", data => {
-            console.info("files", data)
-            this.files = data.files
-            this.loaded_page = -1
-            this.set_page(0)
-        })
-
-        this.init().then(() => {
-            this.set_page(0)
-        })
-
-        const canvas = this.el.querySelector("canvas")!
-        canvas.addEventListener("drop", e => {
-            Array.from(e.dataTransfer!.items).forEach((item) => {
-                if (item.type.startsWith("image/")) {
-                    const f = item.getAsFile()!
-                    this.files.push(URL.createObjectURL(f))
-                }
-            })
-            this.set_page(this.files.length - 1)
-        })
+    destroyed() {
+        window.removeEventListener("keydown", this.key_event!)
     }
 }
 

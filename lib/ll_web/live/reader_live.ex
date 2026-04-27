@@ -40,6 +40,7 @@ defmodule LLWeb.ReaderLive do
       phx-update="ignore"
       data-files={Jason.encode!(@files)}
     >
+      <div class="interstitial"></div>
       <canvas></canvas>
       <div class="info">
         <span class="page"></span>
@@ -87,6 +88,11 @@ defmodule LLWeb.ReaderLive do
 
   def handle_params(params, _path, socket) do
     {:ok, socket} = mount(params, %{}, socket)
+    send(self(), %{files: socket.assigns.files})
+    {:noreply, socket}
+  end
+
+  def handle_info(params, socket) do
     socket = push_event(socket, "files", %{files: socket.assigns.files})
     {:noreply, socket}
   end
