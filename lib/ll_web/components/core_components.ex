@@ -6,7 +6,7 @@ defmodule LLWeb.CoreComponents do
     ~H"""
     <.link
       navigate={Routes.live_path(@socket, @view)}
-      class={if @socket.private.root_view == @view, do: "active"}
+      class={if(@socket.private.root_view == @view, do: ["active"], else: []) ++ [assigns[:class]]}
     >
       <span>{@view.title()}{if assigns[:suffix], do: @suffix}</span>
     </.link>

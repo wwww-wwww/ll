@@ -213,7 +213,7 @@ defmodule LLWeb.LibraryLive do
   end
 
   def handle_event("close_series", _, socket) do
-    {:noreply, assign(socket, series_id: nil)}
+    {:noreply, push_patch(socket, to: ~p"/")}
   end
 
   def handle_event("filter-categories", params, socket) do
