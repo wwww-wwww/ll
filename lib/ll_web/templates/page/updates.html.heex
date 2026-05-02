@@ -4,18 +4,14 @@
   <button phx-click="clear-errors" style="align-self: start">
     Clear errors
   </button>
-  <%= for e <- @messages |> Enum.sort(&(Date.compare(&1.updated_at, &2.updated_at) != :lt)) do %>
+  <div :for={e <- @messages |> Enum.sort_by(& &1.inserted_at, {:desc, NaiveDateTime})}>
     <div>
-      <div>
-        <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
-          close
-        </button>
-        <span>{relative_time(e.updated_at)}</span>
-        <span>{replace_links(e.title)}</span>
-      </div>
-      <%= if e.body != "" do %>
-        <div>{replace_links(e.body)}</div>
-      <% end %>
+      <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
+        close
+      </button>
+      <span>{relative_time(e.inserted_at)}</span>
+      <span>{replace_links(e.title)}</span>
     </div>
-  <% end %>
+    <div :if={e.body != ""}>{replace_links(e.body)}</div>
+  </div>
 </div>
