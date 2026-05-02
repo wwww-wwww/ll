@@ -307,8 +307,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         const observer = new ResizeObserver(() => {
             const rect = this.el.getBoundingClientRect()
-            canvas.width = rect.width
-            canvas.height = rect.height
+            canvas.width = rect.width * window.devicePixelRatio
+            canvas.height = rect.height * window.devicePixelRatio
 
             if (fit) {
                 const zoom = Math.min(canvas.height / im.height, canvas.width / im.width)
@@ -323,8 +323,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let last_pos = [0, 0]
         let start = [0, 0]
 
-        const pan = (e: MouseEvent) => {
-            if (!canvas.hasPointerCapture(0)) return
+        const pan = (e: PointerEvent) => {
+            if (!canvas.hasPointerCapture(e.pointerId)) return
 
             const rect = canvas.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
@@ -368,17 +368,28 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         })
 
         canvas.addEventListener("pointerdown", e => {
-            if (e.button != 0) return
-            canvas.setPointerCapture(e.pointerId)
-            e.preventDefault()
-            canvas.classList.toggle("grabbing", true)
-
             const rect = canvas.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
 
-            last_pos = [x, y]
-            start = [x, y]
+            console.log(e.button)
+
+            if (e.button == 1) {
+                canvas.setPointerCapture(e.pointerId)
+                e.preventDefault()
+                canvas.classList.toggle("grabbing", true)
+
+                last_pos = [x, y]
+                start = [x, y]
+            }
+
+            if (e.button == 0) {
+                if (x > 2 / 3) {
+                    this.set_page(this.page - 1)
+                } else if (x < 1 / 3) {
+                    this.set_page(this.page + 1)
+                }
+            }
         })
 
         const update_cursor = (e: PointerEvent) => {
@@ -388,21 +399,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (x > 2 / 3) {
                 this.el.classList.toggle("cursor-left", this.page > 0 || this.prev_chapter != null)
                 this.el.classList.toggle("cursor-right", false)
-                this.el.classList.toggle("cursor-zoom-out", false)
-                this.el.classList.toggle("cursor-zoom-in", false)
             } else if (x < 1 / 3) {
                 this.el.classList.toggle("cursor-left", false)
                 this.el.classList.toggle(
                     "cursor-right",
                     this.page < this.files.length - 1 || this.next_chapter != null,
                 )
-                this.el.classList.toggle("cursor-zoom-out", false)
-                this.el.classList.toggle("cursor-zoom-in", false)
             } else {
                 this.el.classList.toggle("cursor-left", false)
                 this.el.classList.toggle("cursor-right", false)
-                this.el.classList.toggle("cursor-zoom-out", !fit)
-                this.el.classList.toggle("cursor-zoom-in", fit)
             }
         }
 
@@ -410,6 +415,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             update_cursor(e)
 
             if (!canvas.hasPointerCapture(e.pointerId)) return
+            if (e.button != 1) return
 
             pan(e)
 
@@ -418,6 +424,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         canvas.addEventListener("pointerup", e => {
             if (!canvas.hasPointerCapture(e.pointerId)) return
+            if (e.button != 1) return
             canvas.releasePointerCapture(e.pointerId)
             canvas.classList.toggle("grabbing", false)
 
@@ -425,36 +432,30 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
-                if (x > 2 / 3) {
-                    this.set_page(this.page - 1)
-                } else if (x < 1 / 3) {
-                    this.set_page(this.page + 1)
+                const ratiox = canvas.width / im.width
+                const ratioy = canvas.height / im.height
+
+                if (!fit) {
+                    // scale to fit
+                    fit = true
+                    const zoom = Math.min(ratiox, ratioy)
+                    move(0, 0, zoom)
                 } else {
-                    const ratiox = canvas.width / im.width
-                    const ratioy = canvas.height / im.height
+                    // 100%
+                    fit = false
 
-                    if (!fit) {
-                        // scale to fit
-                        fit = true
-                        const zoom = Math.min(ratiox, ratioy)
-                        move(0, 0, zoom)
-                    } else {
-                        // 100%
-                        fit = false
+                    const diff = 1 - 1 / uniformData[2]
 
-                        const diff = 1 - 1 / uniformData[2]
-
-                        fit = false
-                        let offx = uniformData[0] + (x - 0.5) * diff * ratiox
-                        let offy = uniformData[1] + (y - 0.5) * diff * ratioy
-                        if (ratiox > 1) {
-                            offx = 0
-                        }
-                        if (ratioy > 1) {
-                            offy = 0
-                        }
-                        move(offx, offy, 1)
+                    fit = false
+                    let offx = uniformData[0] + (x - 0.5) * diff * ratiox
+                    let offy = uniformData[1] + (y - 0.5) * diff * ratioy
+                    if (ratiox > 1) {
+                        offx = 0
                     }
+                    if (ratioy > 1) {
+                        offy = 0
+                    }
+                    move(offx, offy, 1)
                 }
 
                 update_cursor(e)
@@ -472,6 +473,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     private next_chapter!: HTMLElement | null
     private prev_chapter!: HTMLElement | null
+    private navigating = false
 
     set_page(page: number, push_state: boolean = true) {
         if (this.files.length == 0) return
@@ -484,19 +486,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (!next_chapter) return
 
             if (this.e_interstitial.classList.contains("visible")) {
+                this.navigating = true
                 next_chapter.querySelector("a")?.click()
                 this.e_interstitial.classList.toggle("visible", false)
                 return
-            }
-
-            this.e_interstitial.onclick = e => {
-                const rect = this.e_interstitial.getBoundingClientRect()
-                const x = (e.clientX - rect.x) / rect.width
-                if ((page == this.files.length && x < 0.5) || (page == -1 && x > 0.5)) {
-                    next_chapter.querySelector("a")?.click()
-                } else {
-                    this.e_interstitial.classList.toggle("visible", false)
-                }
             }
 
             this.e_interstitial.textContent = next_chapter.querySelector(".title")!.textContent
@@ -527,6 +520,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         this.e_page = this.el.querySelector(".info>.page")!
         this.e_interstitial = this.el.querySelector(".interstitial")!
 
+        this.e_interstitial.onclick = e => {
+            const rect = this.e_interstitial.getBoundingClientRect()
+            const x = (e.clientX - rect.x) / rect.width
+            if (x < 0.5) {
+                this.set_page(this.page + 1)
+            } else {
+                this.set_page(this.page - 1)
+            }
+        }
+
         let mounted = false
 
         let chapters: HTMLElement[] | null = null
@@ -551,7 +554,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (chapters) {
                 const current_index = chapters.findIndex(e => e.classList.contains("selected"))
 
-                if (this.prev_chapter == chapters.at(current_index)) {
+                if (this.navigating && this.prev_chapter == chapters.at(current_index)) {
                     this.set_page(this.files.length - 1, false)
                 } else {
                     this.set_page(window.history.state.page || 0, false)
@@ -560,6 +563,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 this.next_chapter = current_index > 0 ? chapters.at(current_index - 1)! : null
                 this.prev_chapter = chapters.at(current_index + 1)!
             }
+
+            this.navigating = false
         })
 
         const params = new URLSearchParams(window.location.search)
@@ -587,12 +592,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
 
-                this.set_page(this.page - 1)
+                this.set_page(this.page + 1)
             }
             if (e.key == "ArrowRight") {
                 e.preventDefault()
 
-                this.set_page(this.page + 1)
+                this.set_page(this.page - 1)
             }
         }
 

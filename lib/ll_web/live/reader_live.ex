@@ -6,7 +6,7 @@ defmodule LLWeb.ReaderLive do
 
   def render(assigns) do
     ~H"""
-    <input type="checkbox" id="series_details_toggle" />
+    <input type="checkbox" id="series_details_toggle" phx-update="ignore" />
     <div class="series_details">
       <div class="inner">
         <div class="details">
@@ -17,15 +17,14 @@ defmodule LLWeb.ReaderLive do
         </div>
 
         <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
-          <%= for c <- @chapters do %>
-            <.live_component
-              module={LLWeb.ChapterComponent}
-              id={LLWeb.ChapterComponent.id(c.id)}
-              chapter={c}
-              source={@source}
-              selected={c.id == @chapter.id}
-            />
-          <% end %>
+          <.live_component
+            :for={c <- @chapters}
+            module={LLWeb.ChapterComponent}
+            id={LLWeb.ChapterComponent.id(c.id)}
+            chapter={c}
+            source={@source}
+            selected={c.id == @chapter.id}
+          />
         </div>
       </div>
 
@@ -40,6 +39,12 @@ defmodule LLWeb.ReaderLive do
       phx-update="ignore"
       data-files={Jason.encode!(@files)}
     >
+      <svg style="position: fixed; visibility: hidden; transform: scale(0);">
+        <filter id="noise2">
+          <feTurbulence type="fractalNoise" baseFrequency="0.2" numOctaves="4" stitchTiles="stitch" />
+          <feColorMatrix type="matrix" values="100 0 0 0 -75 0 100 0 0 -75 0 0 100 0 -75 0 0 0 0.3 0" />
+        </filter>
+      </svg>
       <div class="interstitial"></div>
       <canvas></canvas>
       <div class="info">

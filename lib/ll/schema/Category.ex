@@ -6,6 +6,7 @@ defmodule LL.Category do
     field :autoupdate, :boolean
 
     many_to_many :series, LL.Series, join_through: LL.SeriesCategory
+    many_to_many :multiseries, LL.MultiSeries, join_through: LL.MultiSeriesCategory
   end
 end
 
@@ -14,6 +15,15 @@ defmodule LL.SeriesCategory do
 
   schema "series_category" do
     belongs_to :series, LL.Series
+    belongs_to :category, LL.Category
+  end
+end
+
+defmodule LL.MultiSeriesCategory do
+  use Ecto.Schema
+
+  schema "multiseries_category" do
+    belongs_to :multiseries, LL.MultiSeries
     belongs_to :category, LL.Category
   end
 end

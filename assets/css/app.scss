@@ -13,6 +13,10 @@
 @import "source_live";
 @import "ReaderLiveS";
 
+body {
+    background: rgb(255, 255, 255);
+}
+
 *,
 ::after {
     box-sizing: border-box;

@@ -3,33 +3,25 @@ defmodule LLWeb.SeriesComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="SeriesComponent">
+    <div class={"SeriesComponent #{if assigns[:is_multi], do: "multi"}"}>
       <%= if assigns[:select] do %>
-        <.link
-          id={@id}
-          href={@href}
-          phx-value-id={@series.id}
-          phx-hook={assigns[:select] && "select_series"}
-        >
-          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={
-              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
-            } />
-          <% else %>
-            <img />
-          <% end %>
+        <.link id={@id} href={~p"/#{@href}"} phx-value-id={@series.id} phx-hook="select_series">
+          <img
+            :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
+            src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")}
+          />
           <span class="title">{@series.title}</span>
         </.link>
       <% else %>
-        <.link id={@id} patch={@href}>
-          <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-            <img src={
-              Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")
-            } />
-          <% else %>
-            <img />
-          <% end %>
-          <span class="title">{@series.title}</span>
+        <% r = if assigns[:library], do: "library", else: "series" %>
+        <% m = if assigns[:is_multi], do: "m#{@series.id}", else: @series.id %>
+        <.link id={@id} patch={~p"/#{r}/#{m}"}>
+          <% series = if assigns[:is_multi], do: @series.series, else: @series %>
+          <img
+            :if={series.thumbnail_path != nil and File.exists?(series.thumbnail_path)}
+            src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(series.thumbnail_path)}")}
+          />
+          <span class="title">{series.title}</span>
         </.link>
       <% end %>
     </div>

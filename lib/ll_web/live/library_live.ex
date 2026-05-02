@@ -18,55 +18,42 @@ defmodule LLWeb.LibraryLive do
         <div>
           <span>Categories:</span>
           <form phx-change="filter-categories" class="categories">
-            <%= for c <- @categories do %>
-              <div class="check">
-                <input
-                  type="checkbox"
-                  id={"filter-category-#{c.id}"}
-                  name={"category:#{c.id}"}
-                  checked={c.id in @filter_categories}
-                />
-                <label for={"filter-category-#{c.id}"}>{c.name}</label>
-              </div>
-            <% end %>
+            <div :for={c <- @categories} class="check">
+              <input
+                type="checkbox"
+                id={"filter-category-#{c.id}"}
+                name={"category:#{c.id}"}
+                checked={c.id in @filter_categories}
+              />
+              <label for={"filter-category-#{c.id}"}>{c.name}</label>
+            </div>
           </form>
         </div>
       </div>
     </div>
 
     <div class="library">
-      <%= for series <- @library do %>
-        <%= if is_multi?(series) do %>
-          <%= if length(@filter_categories) == 0 do %>
-            <.live_component
-              module={LLWeb.SeriesComponent}
-              id={"#{LLWeb.SeriesComponent.id(series.id)}-Multi"}
-              series={series.series}
-              multi_id={series.id}
-              href={~p"/library/m#{series.id}"}
-            />
-          <% end %>
-        <% else %>
-          <%= if length(@filter_categories) == 0 or Enum.any?(series.categories, & &1.id in @filter_categories) do %>
-            <.live_component
-              module={LLWeb.SeriesComponent}
-              id={LLWeb.SeriesComponent.id(series.id)}
-              series={series}
-              href={~p"/library/#{series.id}"}
-            />
-          <% end %>
-        <% end %>
-      <% end %>
+      <.live_component
+        :for={series <- @library}
+        :if={
+          length(@filter_categories) == 0 or
+            Enum.any?(series.categories, &(&1.id in @filter_categories))
+        }
+        module={LLWeb.SeriesComponent}
+        id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
+        series={series}
+        library={true}
+        is_multi={is_multi?(series)}
+      />
     </div>
 
-    <%= if assigns[:series_id] do %>
-      <.live_component
-        module={LLWeb.SeriesPageComponent}
-        id={LLWeb.SeriesPageComponent.id(@series_id)}
-        series_id={@series_id}
-        is_multi={@is_multi}
-      />
-    <% end %>
+    <.live_component
+      :if={assigns[:series_id]}
+      module={LLWeb.SeriesPageComponent}
+      id={LLWeb.SeriesPageComponent.id(@series_id)}
+      series_id={@series_id}
+      is_multi={@is_multi}
+    />
     """
   end
 
@@ -106,7 +93,7 @@ defmodule LLWeb.LibraryLive do
 
     multis =
       Repo.all(LL.MultiSeries)
-      |> Repo.preload([:series, :children])
+      |> Repo.preload([:series, :children, :categories])
 
     library =
       from(s in Series, where: s.in_library == true)
@@ -126,7 +113,6 @@ defmodule LLWeb.LibraryLive do
     socket =
       socket
       |> assign(library: library)
-      # |> assign(multis: multis)
       |> assign(categories: categories)
       |> assign(filter_categories: [])
 
@@ -137,7 +123,7 @@ defmodule LLWeb.LibraryLive do
     socket =
       case Map.get(params, "id") do
         nil ->
-          socket
+          socket |> assign(series_id: nil)
 
         "m" <> id ->
           case Repo.get(LL.MultiSeries, id) do
@@ -176,16 +162,18 @@ defmodule LLWeb.LibraryLive do
       Repo.all(LL.MultiSeries)
       |> Repo.preload([:series, :children])
 
-    Endpoint.broadcast("library", "update", {library, multis})
+    library =
+      (library ++ multis)
+      |> Enum.sort_by(
+        &(Map.get(&1, :series, &1).title
+          |> String.downcase())
+      )
+
+    Endpoint.broadcast("library", "update", library)
   end
 
-  def handle_info(%{topic: "library", event: "update", payload: {library, multis}}, socket) do
-    socket =
-      socket
-      |> assign(library: library)
-      |> assign(multis: multis)
-
-    {:noreply, socket}
+  def handle_info(%{topic: "library", event: "update", payload: library}, socket) do
+    {:noreply, assign(socket, library: library)}
   end
 
   def handle_info(%{topic: "categories", event: "update", payload: categories}, socket) do

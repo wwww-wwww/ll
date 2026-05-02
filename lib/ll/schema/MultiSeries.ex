@@ -5,6 +5,10 @@ defmodule LL.MultiSeries do
     belongs_to :series, LL.Series
 
     has_many :children, LL.Series, foreign_key: :multiseries_id
+
+    many_to_many :categories, LL.Category,
+      join_through: LL.MultiSeriesCategory,
+      join_keys: [multiseries_id: :id, category_id: :id]
   end
 
   def get_chapters(multi, show_all \\ false) do

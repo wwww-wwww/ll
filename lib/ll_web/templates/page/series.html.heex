@@ -9,11 +9,10 @@
     <% end %>
     <div class="info">
       <h1>
-        <%= if @is_multi do %>
-          <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title} (Multi)</.link>
-        <% else %>
-          <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
-        <% end %>
+        <.link :if={@is_multi} navigate={~p"/series/m#{@multi.id}"}>
+          {@series.title} (Multi)
+        </.link>
+        <.link :if={not @is_multi} navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
       </h1>
       <div>
         <div>
@@ -24,13 +23,10 @@
             <span>
               Source:
               <span class="source">
-                <%= if @is_multi do %>
-                  <span>Multi</span>
-                <% else %>
-                  <.link href={Path.join(@source.base_url, @series.url)}>
-                    {@source.name} ({@source.lang})
-                  </.link>
-                <% end %>
+                <span :if={@is_multi}>Multi</span>
+                <.link :if={not @is_multi} href={Path.join(@source.base_url, @series.url)}>
+                  {@source.name} ({@source.lang})
+                </.link>
               </span>
             </span>
             <span>
@@ -39,27 +35,22 @@
               <button phx-click="refresh_details">Refresh</button>
             </span>
 
-            <%= if not @is_multi do %>
-              <span>
-                Last chapter refresh:
-                <span class="updated">{relative_time(@series.chapters_updated)}</span>
-              </span>
-            <% end %>
+            <span :if={not @is_multi}>
+              Last chapter refresh:
+              <span class="updated">{relative_time(@series.chapters_updated)}</span>
+            </span>
 
-            <%= if not @is_multi do %>
-              <span>
-                <%= if @series.in_library do %>
-                  <button phx-click="library_remove">Remove from library</button>
-                <% else %>
-                  <button phx-click="library_add">Add to library</button>
-                <% end %>
-              </span>
-            <% end %>
+            <span :if={not @is_multi}>
+              <button :if={@series.in_library} phx-click="library_remove">
+                Remove from library
+              </button>
+              <button :if={not @series.in_library} phx-click="library_add">Add to library</button>
+            </span>
           </div>
 
           <div class="multis">
             <div>
-              Multi:
+              Multi: <button :if={@is_multi} phx-click="multi_delete">Delete multi</button>
               <%= if not @is_multi and @series.multiseries_id == nil and assigns[:multi] == nil do %>
                 <button phx-click="multi_create">Create multi</button>
                 <button phx-click="multi_get">Add to multi</button>
@@ -86,79 +77,70 @@
                   <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
                 </span>
 
-                <%= for s <- @multi.children do %>
-                  <span>
-                    <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
-                    <span class="updated">{relative_time(s.chapters_updated)}</span>
-                    <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
-                    <button
-                      phx-click="multi_remove"
-                      phx-value-id={s.id}
-                      class="material-symbols-rounded"
-                    >
-                      close
-                    </button>
-                  </span>
-                <% end %>
+                <span :for={s <- @multi.children}>
+                  <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
+                  <span class="updated">{relative_time(s.chapters_updated)}</span>
+                  <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
+                  <button
+                    phx-click="multi_remove"
+                    phx-value-id={s.id}
+                    class="material-symbols-rounded"
+                  >
+                    close
+                  </button>
+                </span>
               <% end %>
             </div>
-            <div>
-              <%= if assigns[:multis] do %>
-                <%= for m <- @multis |> Enum.filter(& @series.multiseries_id != &1.id) do %>
-                  <span>
-                    <span>{m.series.title}</span>
-                    <button
-                      phx-click="multi_add"
-                      phx-value-id={m.id}
-                      class="material-symbols-rounded"
-                    >
-                      add
-                    </button>
-                  </span>
-                <% end %>
-              <% end %>
+
+            <div :if={assigns[:multis]}>
+              <span :for={m <- @multis |> Enum.filter(&(@series.multiseries_id != &1.id))}>
+                <span>{m.series.title}</span>
+                <button
+                  phx-click="multi_add"
+                  phx-value-id={m.id}
+                  class="material-symbols-rounded"
+                >
+                  add
+                </button>
+              </span>
             </div>
           </div>
         </div>
 
         <div>
-          <%= if not @is_multi do %>
-            <div class="categories">
-              <span>Categories:</span>
-              <div>
-                <%= for c <- @series.categories do %>
-                  <span>
-                    <span>{c.name}</span>
-                    <button
-                      phx-click="category_remove"
-                      phx-value-id={c.id}
-                      class="material-symbols-rounded"
-                    >
-                      close
-                    </button>
-                  </span>
-                <% end %>
-              </div>
-
-              <button phx-click="category_get">Add to category</button>
-              <div>
-                <%= if assigns[:categories] do %>
-                  <%= for c <- @categories |> Enum.reject(fn c -> Enum.any?(@series.categories, & &1.id == c.id) end) do %>
-                    <span>
-                      <span>{c.name}</span>
-                      <button
-                        phx-click="category_add"
-                        phx-value-id={c.id}
-                        class="material-symbols-rounded"
-                      >
-                        add
-                      </button>
-                    </span>
-                  <% end %>
-                <% end %>
-              </div>
+          <div class="categories">
+            <span>Categories:</span>
+            <div>
+              <% categories = if @is_multi, do: @multi.categories, else: @series.categories %>
+              <span :for={c <- categories}>
+                <span>{c.name}</span>
+                <button
+                  phx-click="category_remove"
+                  phx-value-id={c.id}
+                  class="material-symbols-rounded"
+                >
+                  close
+                </button>
+              </span>
             </div>
-          <% end %>
+
+            <button phx-click="category_get">Add to category</button>
+            <div :if={assigns[:categories]}>
+              <span :for={
+                c <-
+                  @categories |> Enum.reject(fn c -> Enum.any?(categories, &(&1.id == c.id)) end)
+              }>
+                <span>{c.name}</span>
+                <button
+                  phx-click="category_add"
+                  phx-value-id={c.id}
+                  class="material-symbols-rounded"
+                >
+                  add
+                </button>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -172,24 +154,22 @@
   </div>
   <div class="chapterlist">
     <%= if @is_multi do %>
-      <%= for {s, c} <- @chapters do %>
-        <.live_component
-          module={LLWeb.ChapterComponent}
-          id={LLWeb.ChapterComponent.id(c.id)}
-          chapter={c}
-          source={s.source}
-          show_source={true}
-        />
-      <% end %>
+      <.live_component
+        :for={{s, c} <- @chapters}
+        module={LLWeb.ChapterComponent}
+        id={LLWeb.ChapterComponent.id(c.id)}
+        chapter={c}
+        source={s.source}
+        show_source={true}
+      />
     <% else %>
-      <%= for c <- @chapters do %>
-        <.live_component
-          module={LLWeb.ChapterComponent}
-          id={LLWeb.ChapterComponent.id(c.id)}
-          chapter={c}
-          source={@source}
-        />
-      <% end %>
+      <.live_component
+        :for={c <- @chapters}
+        module={LLWeb.ChapterComponent}
+        id={LLWeb.ChapterComponent.id(c.id)}
+        chapter={c}
+        source={@source}
+      />
     <% end %>
   </div>
 </div>
