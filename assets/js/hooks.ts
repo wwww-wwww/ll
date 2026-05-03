@@ -296,12 +296,55 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
         const e_zoom = this.el.querySelector(".info>.zoom")!
 
-        const move = (x: number, y: number, zoom: number) => {
-            uniformData[0] = x
-            uniformData[1] = y
-            uniformData[2] = zoom
+        let tx = 0
+        let ty = 0
+        let tz = 1
+
+        let tx0 = 0
+        let ty0 = 0
+        let tz0 = 1
+
+        let end_time = 0
+
+        const render = () => {
+            const t = performance.now()
+            const m = Math.pow(Math.max(end_time - t, 0) / 200, 2)
+
+            uniformData[0] = tx + (tx0 - tx) * m
+            uniformData[1] = ty + (ty0 - ty) * m
+            uniformData[2] = tz + (tz0 - tz) * m
 
             device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+            this.draw_image!()
+
+            if (t < end_time) {
+                requestAnimationFrame(render)
+            }
+        }
+
+        const move = (x: number, y: number, zoom: number, animate: boolean = false) => {
+            if (animate) {
+                tx0 = tx
+                ty0 = ty
+                tz0 = tz
+
+                end_time = performance.now() + 200
+                requestAnimationFrame(render)
+            }
+
+            tx = x
+            ty = y
+            tz = Math.min(Math.max(0.01, zoom || 1), 1000)
+
+            if (!animate) {
+                end_time = performance.now()
+                uniformData[0] = x
+                uniformData[1] = y
+                uniformData[2] = zoom
+                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+                this.draw_image!()
+            }
+
             e_zoom.textContent = `${(zoom * 100).toFixed(2)}%`
         }
 
@@ -323,27 +366,23 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let last_pos = [0, 0]
         let start = [0, 0]
 
-        const pan = (e: PointerEvent) => {
-            if (!canvas.hasPointerCapture(e.pointerId)) return
-
+        const pan = (clientX: number, clientY: number) => {
             const rect = canvas.getBoundingClientRect()
-            const x = (e.clientX - rect.x) / rect.width
-            const y = (e.clientY - rect.y) / rect.height
+            const x = (clientX - rect.x) / rect.width
+            const y = (clientY - rect.y) / rect.height
 
             const ratiox = canvas.width / im.width
             const ratioy = canvas.height / im.height
 
-            move(
-                uniformData[0] + ((x - last_pos[0]) / uniformData[2]) * ratiox,
-                uniformData[1] + ((y - last_pos[1]) / uniformData[2]) * ratioy,
-                uniformData[2],
-            )
+            move(tx + ((x - last_pos[0]) / tz) * ratiox, ty + ((y - last_pos[1]) / tz) * ratioy, tz)
 
             last_pos = [x, y]
         }
 
         canvas.addEventListener("wheel", e => {
-            pan(e)
+            if (canvas.classList.contains("grabbing")) {
+                pan(e.clientX, e.clientY)
+            }
 
             fit = false
 
@@ -355,33 +394,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const ratioy = canvas.height / im.height
 
             const off = e.deltaY > 0 ? -0.05 : +0.05
-            const new_zoom = Math.pow(10, Math.log10(uniformData[2]) + off)
-            const diff = 1 / new_zoom - 1 / uniformData[2]
+            const new_zoom = Math.pow(10, Math.log10(tz) + off)
+            const diff = 1 / new_zoom - 1 / tz
 
-            move(
-                uniformData[0] + (x - 0.5) * diff * ratiox,
-                uniformData[1] + (y - 0.5) * diff * ratioy,
-                new_zoom,
-            )
+            move(tx + (x - 0.5) * diff * ratiox, ty + (y - 0.5) * diff * ratioy, new_zoom)
 
             this.draw_image!()
         })
 
-        canvas.addEventListener("pointerdown", e => {
+        canvas.addEventListener("click", e => {
             const rect = canvas.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
-
-            console.log(e.button)
-
-            if (e.button == 1) {
-                canvas.setPointerCapture(e.pointerId)
-                e.preventDefault()
-                canvas.classList.toggle("grabbing", true)
-
-                last_pos = [x, y]
-                start = [x, y]
-            }
 
             if (e.button == 0) {
                 if (x > 2 / 3) {
@@ -390,6 +414,82 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     this.set_page(this.page + 1)
                 }
             }
+
+            if (e.detail == 2) {
+                if (x > 1 / 3 && x < 2 / 3) {
+                    toggle_fit(x, y)
+                }
+            }
+        })
+
+        let last_dist = 0
+
+        canvas.addEventListener("touchstart", e => {
+            if (e.touches.length == 2) {
+                const rect = canvas.getBoundingClientRect()
+                const clientX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+                const clientY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+                const x = (clientX - rect.x) / rect.width
+                const y = (clientY - rect.y) / rect.height
+                last_pos = [x, y]
+
+                last_dist = Math.sqrt(
+                    Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) +
+                        Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
+                )
+            }
+        })
+
+        canvas.addEventListener("touchend", e => {
+            if (e.touches.length == 1) {
+                const rect = canvas.getBoundingClientRect()
+                const x = (e.touches[0].clientX - rect.x) / rect.width
+                const y = (e.touches[0].clientY - rect.y) / rect.height
+                last_pos = [x, y]
+            }
+        })
+
+        canvas.addEventListener("touchmove", e => {
+            if (e.touches.length == 2) {
+                fit = false
+                const clientX = (e.touches[0].clientX + e.touches[1].clientX) / 2
+                const clientY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+                pan(clientX, clientY)
+                const dist = Math.sqrt(
+                    Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) +
+                        Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
+                )
+                const rect = canvas.getBoundingClientRect()
+                const x = (clientX - rect.x) / rect.width
+                const y = (clientY - rect.y) / rect.height
+
+                const ratiox = canvas.width / im.width
+                const ratioy = canvas.height / im.height
+
+                const new_zoom = tz * (dist / last_dist)
+                const diff = 1 / new_zoom - 1 / tz
+
+                last_dist = dist
+
+                move(tx + (x - 0.5) * diff * ratiox, ty + (y - 0.5) * diff * ratioy, new_zoom)
+
+                this.draw_image!()
+            }
+        })
+
+        canvas.addEventListener("pointerdown", e => {
+            if (e.button != 1) return
+
+            const rect = canvas.getBoundingClientRect()
+            const x = (e.clientX - rect.x) / rect.width
+            const y = (e.clientY - rect.y) / rect.height
+
+            canvas.setPointerCapture(e.pointerId)
+            e.preventDefault()
+            canvas.classList.toggle("grabbing", true)
+
+            last_pos = [x, y]
+            start = [x, y]
         })
 
         const update_cursor = (e: PointerEvent) => {
@@ -415,16 +515,45 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             update_cursor(e)
 
             if (!canvas.hasPointerCapture(e.pointerId)) return
-            if (e.button != 1) return
+            if (!canvas.classList.contains("grabbing")) return
 
-            pan(e)
+            pan(e.clientX, e.clientY)
 
             this.draw_image!()
         })
 
+        const toggle_fit = (x: number, y: number) => {
+            const ratiox = canvas.width / im.width
+            const ratioy = canvas.height / im.height
+
+            if (!fit) {
+                // scale to fit
+                fit = true
+                const zoom = Math.min(ratiox, ratioy)
+                move(0, 0, zoom, true)
+            } else {
+                // 100%
+                fit = false
+
+                const diff = 1 - 1 / tz
+
+                fit = false
+                let offx = tx + (x - 0.5) * diff * ratiox
+                let offy = ty + (y - 0.5) * diff * ratioy
+                if (ratiox > 1) {
+                    offx = 0
+                }
+                if (ratioy > 1) {
+                    offy = 0
+                }
+                move(offx, offy, 1, true)
+            }
+            this.draw_image!()
+        }
+
         canvas.addEventListener("pointerup", e => {
-            if (!canvas.hasPointerCapture(e.pointerId)) return
             if (e.button != 1) return
+            if (!canvas.hasPointerCapture(e.pointerId)) return
             canvas.releasePointerCapture(e.pointerId)
             canvas.classList.toggle("grabbing", false)
 
@@ -432,39 +561,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
             if (x == start[0] && y == start[1]) {
-                const ratiox = canvas.width / im.width
-                const ratioy = canvas.height / im.height
-
-                if (!fit) {
-                    // scale to fit
-                    fit = true
-                    const zoom = Math.min(ratiox, ratioy)
-                    move(0, 0, zoom)
-                } else {
-                    // 100%
-                    fit = false
-
-                    const diff = 1 - 1 / uniformData[2]
-
-                    fit = false
-                    let offx = uniformData[0] + (x - 0.5) * diff * ratiox
-                    let offy = uniformData[1] + (y - 0.5) * diff * ratioy
-                    if (ratiox > 1) {
-                        offx = 0
-                    }
-                    if (ratioy > 1) {
-                        offy = 0
-                    }
-                    move(offx, offy, 1)
-                }
-
+                toggle_fit(x, y)
                 update_cursor(e)
             } else {
                 fit = false
-                pan(e)
+                pan(e.clientX, e.clientY)
+                this.draw_image!()
             }
-
-            this.draw_image!()
         })
     }
 
