@@ -50,6 +50,7 @@ defmodule LLWeb.ReaderLive do
       <div class="info">
         <span class="page"></span>
         <span class="zoom"></span>
+        <div class="log"></div>
       </div>
     </div>
     """

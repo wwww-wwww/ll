@@ -81,7 +81,7 @@ body {
 }
 
 header {
-    width: 6em;
+    width: 100px;
 
     @media only screen and (max-width: calc(700px)) {
         width: unset;
@@ -116,7 +116,6 @@ header {
                 }
 
                 box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.5);
-                pointer-events: none;
             }
         }
 
@@ -125,6 +124,34 @@ header {
 
             > a {
                 flex: 1;
+            }
+        }
+
+        > .sub {
+            display: flex;
+            flex-direction: column;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+            font-size: 14px;
+            flex-wrap: wrap;
+            width: 100%;
+            max-width: 100%;
+
+            > a {
+                word-break: break-all;
+                white-space: collapse;
+            }
+
+            @media only screen and (max-width: calc(700px)) {
+                align-items: center;
+
+                > a {
+                    word-break: keep-all;
+                }
+
+                padding-left: 0;
+                width: unset;
+                flex-direction: row;
+                flex-shrink: 0;
             }
         }
 

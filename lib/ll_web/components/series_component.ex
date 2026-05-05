@@ -13,9 +13,7 @@ defmodule LLWeb.SeriesComponent do
           <span class="title">{@series.title}</span>
         </.link>
       <% else %>
-        <% r = if assigns[:library], do: "library", else: "series" %>
-        <% m = if assigns[:is_multi], do: "m#{@series.id}", else: @series.id %>
-        <.link id={@id} patch={~p"/#{r}/#{m}"}>
+        <.link id={@id} patch={create_path(assigns)}>
           <% series = if assigns[:is_multi], do: @series.series, else: @series %>
           <img
             :if={series.thumbnail_path != nil and File.exists?(series.thumbnail_path)}
@@ -26,6 +24,24 @@ defmodule LLWeb.SeriesComponent do
       <% end %>
     </div>
     """
+  end
+
+  def create_path(%{series: series} = assigns) do
+    r = if assigns[:library], do: "library", else: "series"
+
+    case assigns do
+      %{category: category, is_multi: true} when not is_nil(category) ->
+        ~p"/#{r}/c/#{category.name}/m/#{series.id}"
+
+      %{category: category} when not is_nil(category) ->
+        ~p"/#{r}/c/#{category.name}/#{series.id}"
+
+      %{is_multi: true} ->
+        ~p"/#{r}/m/#{series.id}"
+
+      %{} ->
+        ~p"/#{r}/#{series.id}"
+    end
   end
 
   def update(assigns, socket) do

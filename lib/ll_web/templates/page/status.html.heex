@@ -1,10 +1,8 @@
 <h1>Status</h1>
 
 <table>
-  <%= for {key, value} <- @status do %>
-    <tr>
-      <td>{key_string(key)}</td>
-      <td>{value}</td>
-    </tr>
-  <% end %>
+  <tr :for={{key,value} <- @status}>
+    <td>{key_string(key)}</td>
+    <td>{value}</td>
+  </tr>
 </table>

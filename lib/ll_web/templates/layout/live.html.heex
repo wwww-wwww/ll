@@ -5,6 +5,9 @@
 <header>
   <nav>
     <.nav socket={@socket} view={LLWeb.LibraryLive} />
+    <%= if assigns[:library_nav] do %>
+      {@library_nav}
+    <% end %>
     {live_render(@socket, LLWeb.UpdatesNavLive, id: LLWeb.UpdatesNavLive)}
     <.nav socket={@socket} view={LLWeb.SearchLive} />
     <.nav socket={@socket} view={LLWeb.CategoriesLive} class="only-wide" />

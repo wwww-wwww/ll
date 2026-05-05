@@ -5,44 +5,20 @@ defmodule LLWeb.LibraryLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Series}
+  alias LL.{Repo, Series, Category}
 
   def title(), do: "Library"
 
   def render(assigns) do
     ~H"""
-    <input id="filters_chk" type="checkbox" phx-update="ignore" />
-    <div class="filters">
-      <label for="filters_chk" class="material-symbols-rounded">filter_alt</label>
-      <div>
-        <div>
-          <span>Categories:</span>
-          <form phx-change="filter-categories" class="categories">
-            <div :for={c <- @categories} class="check">
-              <input
-                type="checkbox"
-                id={"filter-category-#{c.id}"}
-                name={"category:#{c.id}"}
-                checked={c.id in @filter_categories}
-              />
-              <label for={"filter-category-#{c.id}"}>{c.name}</label>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-
     <div class="library">
       <.live_component
         :for={series <- @library}
-        :if={
-          length(@filter_categories) == 0 or
-            Enum.any?(series.categories, &(&1.id in @filter_categories))
-        }
         module={LLWeb.SeriesComponent}
         id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
         series={series}
         library={true}
+        category={assigns[:category]}
         is_multi={is_multi?(series)}
       />
     </div>
@@ -57,43 +33,33 @@ defmodule LLWeb.LibraryLive do
     """
   end
 
+  def assign_series(params, socket) do
+    if socket.assigns.live_action == :multi do
+      LL.MultiSeries
+    else
+      Series
+    end
+    |> Repo.get(Map.get(params, "id", -1))
+    |> case do
+      nil ->
+        socket
+
+      series ->
+        socket
+        |> assign(is_multi: socket.assigns.live_action == :multi)
+        |> assign(series_id: series.id)
+    end
+  end
+
   def mount(params, _session, socket) do
     if connected?(socket) do
       Endpoint.subscribe("library")
       Endpoint.subscribe("categories")
     end
 
-    socket =
-      case Map.get(params, "id") do
-        nil ->
-          socket
+    socket = assign_series(params, socket)
 
-        "m" <> id ->
-          case Repo.get(LL.MultiSeries, id) do
-            nil ->
-              socket
-
-            multi ->
-              socket
-              |> assign(is_multi: true)
-              |> assign(series_id: multi.id)
-          end
-
-        id ->
-          case Repo.get(Series, id) do
-            nil ->
-              socket
-
-            series ->
-              socket
-              |> assign(is_multi: false)
-              |> assign(series_id: series.id)
-          end
-      end
-
-    multis =
-      Repo.all(LL.MultiSeries)
-      |> Repo.preload([:series, :children, :categories])
+    category = Repo.get_by(Category, name: Map.get(params, "category", ""))
 
     library =
       from(s in Series, where: s.in_library == true)
@@ -101,54 +67,43 @@ defmodule LLWeb.LibraryLive do
       |> Repo.preload(:categories)
       |> Enum.map(&Map.put(&1, :description, ""))
 
-    categories = Repo.all(LL.Category)
+    multis = Repo.all(LL.MultiSeries) |> Repo.preload([:series, :children, :categories])
 
     library =
       (library ++ multis)
-      |> Enum.sort_by(
-        &(Map.get(&1, :series, &1).title
-          |> String.downcase())
-      )
+      |> Enum.filter(fn series ->
+        category == nil or Enum.any?(series.categories, &(&1.id == category.id))
+      end)
+      |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
+
+    categories = Repo.all(Category)
+
+    assigns = %{socket: socket, categories: categories, category: category}
+
+    library_nav = ~H"""
+    <div class="sub">
+      <.link
+        :for={c <- @categories}
+        navigate={~p"/library/c/#{c.name}"}
+        class={if(@category && @category.id == c.id, do: ["active"], else: [])}
+      >
+        <span>{c.name}</span>
+      </.link>
+    </div>
+    """
 
     socket =
       socket
+      |> assign(category: category)
+      |> assign(library_nav: library_nav)
       |> assign(library: library)
       |> assign(categories: categories)
-      |> assign(filter_categories: [])
 
     {:ok, socket}
   end
 
   def handle_params(params, _path, socket) do
-    socket =
-      case Map.get(params, "id") do
-        nil ->
-          socket |> assign(series_id: nil)
-
-        "m" <> id ->
-          case Repo.get(LL.MultiSeries, id) do
-            nil ->
-              socket
-
-            multi ->
-              socket
-              |> assign(is_multi: true)
-              |> assign(series_id: multi.id)
-          end
-
-        id ->
-          case Repo.get(Series, id) do
-            nil ->
-              socket
-
-            series ->
-              socket
-              |> assign(is_multi: false)
-              |> assign(series_id: series.id)
-          end
-      end
-
-    {:noreply, socket}
+    {:noreply, assign_series(params, socket)}
   end
 
   def update() do
@@ -158,21 +113,22 @@ defmodule LLWeb.LibraryLive do
       |> Repo.preload(:categories)
       |> Enum.map(&Map.put(&1, :description, ""))
 
-    multis =
-      Repo.all(LL.MultiSeries)
-      |> Repo.preload([:series, :children])
+    multis = Repo.all(LL.MultiSeries) |> Repo.preload([:series, :children])
 
     library =
       (library ++ multis)
-      |> Enum.sort_by(
-        &(Map.get(&1, :series, &1).title
-          |> String.downcase())
-      )
+      |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
 
     Endpoint.broadcast("library", "update", library)
   end
 
   def handle_info(%{topic: "library", event: "update", payload: library}, socket) do
+    library =
+      Enum.filter(library, fn series ->
+        socket.assigns[:category] == nil or
+          Enum.any?(series.categories, &(&1.id == socket.assigns.category.id))
+      end)
+
     {:noreply, assign(socket, library: library)}
   end
 
@@ -180,51 +136,11 @@ defmodule LLWeb.LibraryLive do
     {:noreply, assign(socket, categories: categories)}
   end
 
-  def handle_event("select_series", %{"id" => id}, socket) do
-    socket =
-      case id do
-        nil ->
-          socket
-
-        "m" <> id ->
-          case Repo.get(LL.MultiSeries, id) do
-            nil ->
-              socket
-
-            multi ->
-              socket
-              |> assign(is_multi: true)
-              |> assign(series_id: multi.id)
-          end
-
-        id ->
-          case Repo.get(Series, id) do
-            nil ->
-              socket
-
-            series ->
-              socket
-              |> assign(is_multi: false)
-              |> assign(series_id: series.id)
-          end
-      end
-
-    {:noreply, socket}
+  def handle_event("select_series", params, socket) do
+    {:noreply, assign_series(params, socket)}
   end
 
   def handle_event("close_series", _, socket) do
     {:noreply, push_patch(socket, to: ~p"/")}
-  end
-
-  def handle_event("filter-categories", params, socket) do
-    categories =
-      Enum.reduce(params, [], fn {param, _}, acc ->
-        case param do
-          "category:" <> id -> acc ++ [Integer.parse(id) |> elem(0)]
-          _ -> acc
-        end
-      end)
-
-    {:noreply, socket |> assign(filter_categories: categories)}
   end
 end

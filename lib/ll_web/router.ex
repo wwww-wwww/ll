@@ -17,6 +17,10 @@ defmodule LLWeb.Router do
     pipe_through :browser
 
     live "/", LibraryLive
+    live "/library/c/:category/:m/:id", LibraryLive, :multi
+    live "/library/c/:category/:id", LibraryLive
+    live "/library/c/:category", LibraryLive
+    live "/library/:m/:id", LibraryLive, :multi
     live "/library/:id", LibraryLive
     live "/updates", UpdatesLive
     live "/search", SearchLive
