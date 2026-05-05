@@ -6,7 +6,33 @@ defmodule LLWeb.CategoriesLive do
   def title(), do: "Categories"
 
   def render(assigns) do
-    LLWeb.PageView.render("categories.html", assigns)
+    ~H"""
+    <h1>Categories</h1>
+
+    <.form for={@form} phx-submit="create">
+      <div>
+        <input
+          type="text"
+          id={@form[:name].id}
+          name={@form[:name].name}
+          value={@form[:name].value}
+        />
+
+        {submit("Create")}
+      </div>
+    </.form>
+
+    <div>
+      <span :for={c <- @categories}>
+        {c.name}
+        <span class="check" phx-click="toggle_autoupdate" phx-value-id={c.id}>
+          <input type="checkbox" id={"chk-autoupdate-#{c.id}"} checked={c.autoupdate} />
+          <label for={"chk-autoupdate-#{c.id}"}>Auto update</label>
+        </span>
+        <button phx-click="delete" phx-value-id={c.id}>Delete</button>
+      </span>
+    </div>
+    """
   end
 
   def mount(_, _session, socket) do
@@ -14,12 +40,11 @@ defmodule LLWeb.CategoriesLive do
       Endpoint.subscribe("categories")
     end
 
-    form = to_form(%{"name" => ""})
-    categories = Repo.all(Category)
+    categories = Repo.all(Category) |> Enum.sort_by(& &1.id)
 
     socket =
       socket
-      |> assign(form: form)
+      |> assign(form: to_form(%{"name" => ""}))
       |> assign(categories: categories)
 
     {:ok, socket}
@@ -33,8 +58,7 @@ defmodule LLWeb.CategoriesLive do
     Repo.get(Category, id)
     |> Repo.delete()
 
-    categories = Repo.all(Category)
-    Endpoint.broadcast("categories", "update", categories)
+    update()
     {:noreply, socket}
   end
 
@@ -46,12 +70,8 @@ defmodule LLWeb.CategoriesLive do
       |> Ecto.Changeset.change(%{name: name})
       |> Repo.insert()
       |> case do
-        {:ok, _} ->
-          categories = Repo.all(Category)
-          Endpoint.broadcast("categories", "update", categories)
-
-        err ->
-          Message.error(err)
+        {:ok, _} -> update()
+        err -> Message.error(err)
       end
     end
 
@@ -66,14 +86,15 @@ defmodule LLWeb.CategoriesLive do
       |> Repo.update()
     end)
     |> case do
-      {:ok, _} ->
-        categories = Repo.all(Category)
-        Endpoint.broadcast("categories", "update", categories)
-
-      err ->
-        Message.error(err)
+      {:ok, _} -> update()
+      err -> Message.error(err)
     end
 
     {:noreply, socket}
+  end
+
+  def update() do
+    categories = Repo.all(Category) |> Enum.sort_by(& &1.id)
+    Endpoint.broadcast("categories", "update", categories)
   end
 end
