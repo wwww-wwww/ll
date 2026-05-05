@@ -42,7 +42,7 @@ defmodule LLWeb.LibraryLive do
     |> Repo.get(Map.get(params, "id", -1))
     |> case do
       nil ->
-        socket
+        assign(socket, series_id: nil)
 
       series ->
         socket
