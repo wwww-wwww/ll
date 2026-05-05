@@ -300,50 +300,105 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let ty = 0
         let tz = 1
 
+        let mx = 0
+        let my = 0
+
         let tx0 = 0
         let ty0 = 0
         let tz0 = 1
 
         let end_time = 0
+        let duration = 100
 
-        const render = () => {
+        const animate_zoom = () => {
             const t = performance.now()
-            const m = Math.pow(Math.max(end_time - t, 0) / 200, 2)
+            const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
 
-            uniformData[0] = tx + (tx0 - tx) * m
-            uniformData[1] = ty + (ty0 - ty) * m
-            uniformData[2] = tz + (tz0 - tz) * m
+            const ratiox = canvas.width / im.width
+            const ratioy = canvas.height / im.height
+
+            const new_zoom = tz + (tz0 - tz) * m
+            const diff = 1 / new_zoom - 1 / tz0
+
+            uniformData[0] = tx0 + (mx - 0.5) * diff * ratiox
+            uniformData[1] = ty0 + (my - 0.5) * diff * ratioy
+            uniformData[2] = new_zoom
 
             device.queue.writeBuffer(uniform_buffer, 0, uniformData)
             this.draw_image!()
 
             if (t < end_time) {
-                requestAnimationFrame(render)
+                requestAnimationFrame(animate_zoom)
             }
         }
 
-        const move = (x: number, y: number, zoom: number, animate: boolean = false) => {
-            if (animate) {
+        const animate_pan = () => {
+            const t = performance.now()
+            const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
+            console.log("animate")
+            uniformData[0] = tx + (tx0 - tx) * m
+            uniformData[1] = ty + (ty0 - ty) * m
+
+            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+            this.draw_image!()
+
+            if (t < end_time) {
+                requestAnimationFrame(animate_pan)
+            }
+        }
+
+        const move = (x: number, y: number, zoom: number, _duration = 0) => {
+            end_time = performance.now()
+
+            if (_duration > 0) {
+                duration = _duration
                 tx0 = tx
                 ty0 = ty
-                tz0 = tz
-
-                end_time = performance.now() + 200
-                requestAnimationFrame(render)
+                end_time = performance.now() + duration
+                requestAnimationFrame(animate_pan)
             }
 
             tx = x
             ty = y
             tz = Math.min(Math.max(0.01, zoom || 1), 1000)
 
-            if (!animate) {
-                end_time = performance.now()
-                uniformData[0] = x
-                uniformData[1] = y
-                uniformData[2] = zoom
+            console.log(tx, ty)
+
+            uniformData[0] = x
+            uniformData[1] = y
+            uniformData[2] = zoom
+
+            if (_duration == 0) {
                 device.queue.writeBuffer(uniform_buffer, 0, uniformData)
                 this.draw_image!()
             }
+
+            e_zoom.textContent = `${(zoom * 100).toFixed(2)}%`
+        }
+
+        const zoom = (x: number, y: number, zoom: number, _duration = 1000) => {
+            duration = _duration
+
+            tx0 = tx
+            ty0 = ty
+            tz0 = tz
+
+            mx = x
+            my = y
+
+            const ratiox = canvas.width / im.width
+            const ratioy = canvas.height / im.height
+
+            const new_zoom = Math.min(Math.max(0.01, zoom || 1), 1000)
+            const diff = 1 / new_zoom - 1 / tz
+
+            tx = tx + (x - 0.5) * diff * ratiox
+            ty = ty + (y - 0.5) * diff * ratioy
+            tz = new_zoom
+            console.log(x, y, tx, ty)
+
+            end_time = performance.now() + duration
+            requestAnimationFrame(animate_zoom)
 
             e_zoom.textContent = `${(zoom * 100).toFixed(2)}%`
         }
@@ -390,14 +445,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (e.clientX - rect.x) / rect.width
             const y = (e.clientY - rect.y) / rect.height
 
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
             const off = e.deltaY > 0 ? -0.05 : +0.05
             const new_zoom = Math.pow(10, Math.log10(tz) + off)
-            const diff = 1 / new_zoom - 1 / tz
 
-            move(tx + (x - 0.5) * diff * ratiox, ty + (y - 0.5) * diff * ratioy, new_zoom)
+            zoom(x, y, new_zoom, 100)
 
             this.draw_image!()
         })
@@ -529,8 +580,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (!fit) {
                 // scale to fit
                 fit = true
-                const zoom = Math.min(ratiox, ratioy)
-                move(0, 0, zoom, true)
+                const new_zoom = Math.min(Math.max(0.01, Math.min(ratiox, ratioy)), 1000)
+                if (tz == new_zoom) {
+                    console.log("pan")
+                    move(0, 0, new_zoom, 200)
+                } else {
+                    const diff = 1 / new_zoom - 1 / tz
+                    zoom(-tx / (diff * ratiox) + 0.5, -ty / (diff * ratioy) + 0.5, new_zoom, 200)
+                }
             } else {
                 // 100%
                 fit = false
@@ -546,7 +603,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 if (ratioy > 1) {
                     offy = 0
                 }
-                move(offx, offy, 1, true)
+                zoom(x, y, 1, 200)
             }
             this.draw_image!()
         }
