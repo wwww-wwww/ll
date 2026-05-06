@@ -98,7 +98,7 @@ defmodule LLWeb.ReaderLive do
     {:noreply, socket}
   end
 
-  def handle_info(params, socket) do
+  def handle_info(_params, socket) do
     socket = push_event(socket, "files", %{files: socket.assigns.files})
     {:noreply, socket}
   end

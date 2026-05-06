@@ -7,7 +7,69 @@ defmodule LLWeb.SearchLive do
   def title(), do: "Search"
 
   def render(assigns) do
-    LLWeb.PageView.render("search.html", assigns)
+    ~H"""
+    <div class="left">
+      <h1>Search</h1>
+
+      <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
+
+      <.form for={@search_form} phx-submit="search">
+        <div>
+          <input
+            type="text"
+            id={@search_form[:query].id}
+            name={@search_form[:query].name}
+            value={@search_form[:query].value}
+          />
+          {submit("Search")}
+        </div>
+
+        <div class="sources">
+          <%= for source <- @sources do %>
+            <% field = @search_form["enable_#{source.id}"] %>
+            <div>
+              <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
+              <.link navigate={~p"/search/#{source.id}"}>
+                <img
+                  loading="lazy"
+                  src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"}
+                />
+                <span>{source.name}</span>
+                <span>{source.lang}</span>
+              </.link>
+            </div>
+          <% end %>
+        </div>
+      </.form>
+
+      <%= for {source_id, results} <- @results do %>
+        <div>
+          <h4>
+            {@sources |> Enum.filter(&(&1.source_id == source_id)) |> Enum.at(0) |> Map.get(:name)}
+          </h4>
+          <div class="library">
+            <%= for series <- results do %>
+              <.live_component
+                module={LLWeb.SeriesComponent}
+                id={LLWeb.SeriesComponent.id(series.id)}
+                series={series}
+                href={~p"/series/#{series.id}"}
+                select={true}
+              />
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+
+    <%= if assigns[:series_id] do %>
+      <.live_component
+        module={LLWeb.SeriesPageComponent}
+        id={LLWeb.SeriesPageComponent.id(@series_id)}
+        series_id={@series_id}
+      />
+    <% end %>
+    """
   end
 
   def mount(_, _session, socket) do
@@ -15,7 +77,9 @@ defmodule LLWeb.SearchLive do
       Endpoint.subscribe("sources")
     end
 
-    sources = LL.SourceManager.get().sources
+    sources =
+      LL.SourceManager.get().sources
+      |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
 
     form =
       sources
@@ -37,6 +101,7 @@ defmodule LLWeb.SearchLive do
   end
 
   def handle_info(%{topic: "sources", payload: sources}, socket) do
+    sources = sources |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
     {:noreply, assign(socket, sources: sources)}
   end
 

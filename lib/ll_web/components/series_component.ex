@@ -5,7 +5,7 @@ defmodule LLWeb.SeriesComponent do
     ~H"""
     <div class={"SeriesComponent #{if assigns[:is_multi], do: "multi"}"}>
       <%= if assigns[:select] do %>
-        <.link id={@id} href={~p"/#{@href}"} phx-value-id={@series.id} phx-hook="select_series">
+        <.link id={@id} href={@href} phx-value-id={@series.id} phx-hook="select_series">
           <img
             :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
             src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")}
@@ -31,16 +31,16 @@ defmodule LLWeb.SeriesComponent do
 
     case assigns do
       %{category: category, is_multi: true} when not is_nil(category) ->
-        ~p"/#{r}/c/#{category.name}/m/#{series.id}"
+        "/#{r}/c/#{category.name}/m/#{series.id}"
 
       %{category: category} when not is_nil(category) ->
-        ~p"/#{r}/c/#{category.name}/#{series.id}"
+        "/#{r}/c/#{category.name}/#{series.id}"
 
       %{is_multi: true} ->
-        ~p"/#{r}/m/#{series.id}"
+        "/#{r}/m/#{series.id}"
 
       %{} ->
-        ~p"/#{r}/#{series.id}"
+        "/#{r}/#{series.id}"
     end
   end
 

@@ -3,14 +3,17 @@ defmodule LL.ExtensionManager do
 
   require Logger
   require LL.Downloader
+
+  import Ecto.Query, only: [from: 2]
+
   alias LL.{Downloader, Repo, Extension, Source, Series, Chapter, Message, MultiSeries}
   alias LLWeb.Endpoint
 
   @extensions_path "extensions"
   @manager_api "http://localhost:8000/"
 
-  defstruct remote: [],
-            local: []
+  defstruct remote: %{},
+            local: %{}
 
   def start_link(_opts) do
     Agent.start_link(fn -> %__MODULE__{} end, name: __MODULE__)
@@ -27,7 +30,11 @@ defmodule LL.ExtensionManager do
       {:ok, body, _headers} ->
         case Jason.decode(body, keys: :atoms) do
           {:ok, arr} ->
-            Agent.update(__MODULE__, &Map.put(&1, :remote, arr))
+            arr =
+              Enum.map(arr, &{&1.pkg, &1})
+              |> Map.new()
+
+            Agent.update(__MODULE__, &%{&1 | remote: arr})
 
             Endpoint.broadcast("extensions", "remote", arr)
 
@@ -41,7 +48,11 @@ defmodule LL.ExtensionManager do
   end
 
   def update_local() do
-    arr = Repo.all(Extension) |> Repo.preload(:sources)
+    arr =
+      Repo.all(Extension)
+      |> Repo.preload(:sources)
+      |> Enum.map(&{&1.pkg, &1})
+      |> Map.new()
 
     Agent.update(__MODULE__, &Map.put(&1, :local, arr))
 
@@ -50,9 +61,9 @@ defmodule LL.ExtensionManager do
 
   def install(pkg) do
     get().remote
-    |> Enum.filter(&(&1.pkg == pkg))
+    |> Enum.filter(&(elem(&1, 0) == pkg))
     |> case do
-      [%{apk: apk, name: ext_name, version: ext_version}] ->
+      [{_, %{apk: apk, name: ext_name, version: ext_version}}] ->
         Downloader.get extension_repo() <> "apk/" <> apk do
           {:ok, body, _headers} ->
             path = Path.expand(@extensions_path <> "/" <> apk)
@@ -64,25 +75,44 @@ defmodule LL.ExtensionManager do
               {:ok, sources} ->
                 Repo.transact(fn ->
                   extension =
-                    Ecto.Changeset.change(%Extension{}, %{
+                    case Repo.get_by(Extension, pkg: pkg) do
+                      nil ->
+                        %Extension{}
+
+                      ext ->
+                        if ext.path != path do
+                          File.rm(ext.path <> ".jar")
+                          File.rm(ext.path)
+                        end
+
+                        ext
+                    end
+                    |> Ecto.Changeset.change(%{
                       name: ext_name,
                       pkg: pkg,
                       version: ext_version,
                       path: path
                     })
-                    |> Repo.insert!()
+                    |> Repo.insert_or_update!()
 
                   sources =
                     Enum.map(sources, fn source ->
-                      Ecto.Changeset.change(%Source{}, %{
+                      from(s in Source,
+                        where: s.source_id == ^source.id and s.lang == ^source.lang
+                      )
+                      |> Repo.one()
+                      |> case do
+                        nil -> %Source{}
+                        s -> s
+                      end
+                      |> Ecto.Changeset.change(%{
                         extension_id: extension.id,
                         source_id: source.id,
                         name: source.name,
                         lang: source.lang,
                         base_url: source.base_url
                       })
-                      |> Repo.insert()
-                      |> elem(1)
+                      |> Repo.insert_or_update!()
                     end)
 
                   {:ok, sources}

@@ -87,11 +87,8 @@ defmodule LLWeb.ChapterComponent do
     |> Ecto.Changeset.change(%{hidden: true})
     |> Repo.update()
     |> case do
-      {:ok, chapter} ->
-        Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
-
-      err ->
-        nil
+      {:ok, chapter} -> Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
+      _ -> nil
     end
 
     {:noreply, socket}
@@ -102,11 +99,8 @@ defmodule LLWeb.ChapterComponent do
     |> Ecto.Changeset.change(%{hidden: false})
     |> Repo.update()
     |> case do
-      {:ok, chapter} ->
-        Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
-
-      err ->
-        nil
+      {:ok, chapter} -> Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
+      _ -> nil
     end
 
     {:noreply, socket}

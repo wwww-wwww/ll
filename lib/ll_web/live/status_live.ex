@@ -6,7 +6,31 @@ defmodule LLWeb.StatusLive do
   def title(), do: "Status"
 
   def render(assigns) do
-    LLWeb.PageView.render("status.html", assigns)
+    ~H"""
+    <h1>Status</h1>
+
+    <table>
+      <tr :for={{key, value} <- @status}>
+        <td>{key_string(key)}</td>
+        <td>{value}</td>
+      </tr>
+    </table>
+    """
+  end
+
+  def key_string(key) do
+    case key do
+      {a, b} ->
+        key =
+          to_string(a)
+          |> String.split(".")
+          |> Enum.at(-1)
+
+        "{#{key}, #{b}}"
+
+      a ->
+        a
+    end
   end
 
   def status() do

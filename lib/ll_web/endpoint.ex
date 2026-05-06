@@ -20,7 +20,7 @@ defmodule LLWeb.Endpoint do
     at: "/",
     from: :ll,
     gzip: false,
-    only: ~w(assets fonts images favicon.ico robots.txt)
+    only: LLWeb.static_paths()
 
   plug Plug.Static, at: "/thumbnail", from: "thumbnails"
 

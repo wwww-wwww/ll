@@ -17,6 +17,8 @@ defmodule LLWeb do
   and import those modules here.
   """
 
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+
   def controller do
     quote do
       use Phoenix.Controller, formats: [html: "View", json: "View"]
@@ -122,7 +124,7 @@ defmodule LLWeb do
       use Phoenix.VerifiedRoutes,
         router: LLWeb.Router,
         endpoint: LLWeb.Endpoint,
-        statics: ~w(images)
+        statics: LLWeb.static_paths()
 
       alias LLWeb.Endpoint
       alias Phoenix.LiveView.JS

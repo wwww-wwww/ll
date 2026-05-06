@@ -2,8 +2,6 @@ defmodule LLWeb.ReaderLiveS do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  alias LL.{Repo, Chapter}
-
   def title(), do: "Reader"
 
   def render(assigns) do

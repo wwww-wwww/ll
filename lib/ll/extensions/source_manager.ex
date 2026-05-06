@@ -8,10 +8,7 @@ defmodule LL.SourceManager do
   def start_link(_opts) do
     Agent.start_link(
       fn ->
-        sources =
-          Repo.all(Source)
-          |> Repo.preload(:extension)
-          |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
+        sources = Repo.all(Source) |> Repo.preload(:extension)
 
         %__MODULE__{sources: sources}
       end,
@@ -24,10 +21,7 @@ defmodule LL.SourceManager do
   end
 
   def update_sources() do
-    sources =
-      Repo.all(Source)
-      |> Repo.preload(:extension)
-      |> Enum.filter(&(&1.lang == "all" or &1.lang == "en"))
+    sources = Repo.all(Source) |> Repo.preload(:extension)
 
     Agent.update(__MODULE__, &%{&1 | sources: sources})
 

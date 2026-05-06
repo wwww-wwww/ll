@@ -2,16 +2,6 @@ defmodule LLWeb.PageView do
   use LLWeb, :view
   use Phoenix.Component
 
-  alias LL.{Category, Repo, Series, Chapter}
-
-  @tag_types %{
-    0 => "",
-    1 => "Series",
-    2 => "Author",
-    3 => "Group",
-    4 => "Category"
-  }
-
   @status %{
     0 => "Unknown",
     1 => "Ongoing",
@@ -23,102 +13,4 @@ defmodule LLWeb.PageView do
   }
 
   def status(series), do: @status[series.status]
-
-  def replace_links(body) do
-    Regex.scan(~r/{(.+)?}/, body)
-    |> Enum.reduce(body, fn [match, group], acc ->
-      replace =
-        group
-        |> String.split(",")
-        |> case do
-          [":library", id] ->
-            series = Repo.get(Series, id) |> Repo.preload(:source)
-
-            assigns = %{series: series}
-
-            ~H"""
-            <.link navigate={~p"/library/#{@series.id}"}>{@series.title} ({@series.source.name})</.link>
-            """
-            |> Phoenix.HTML.Safe.to_iodata()
-            |> IO.iodata_to_binary()
-
-          [":chapter", id] ->
-            chapter = Repo.get(Chapter, id)
-
-            assigns = %{chapter: chapter}
-
-            ~H"""
-            <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>{@chapter.title}</.link>
-            """
-            |> Phoenix.HTML.Safe.to_iodata()
-            |> IO.iodata_to_binary()
-
-          _ ->
-            group
-        end
-
-      String.replace(acc, match, replace)
-    end)
-    |> raw
-  end
-
-  def key_string(key) do
-    case key do
-      {a, b} ->
-        key =
-          to_string(a)
-          |> String.split(".")
-          |> Enum.at(-1)
-
-        "{#{key}, #{b}}"
-
-      a ->
-        a
-    end
-  end
-
-  def tag_text(tag) do
-    case @tag_types[tag.type] do
-      "" -> tag.name
-      label -> "#{label}: #{tag.name}"
-    end
-  end
-
-  def categories() do
-    Repo.all(Category)
-  end
-
-  def authors(tags) do
-    tags
-    |> Enum.filter(&(&1.type == 2))
-  end
-
-  def sort_tags(tags) do
-    Enum.sort_by(tags, &{-&1.type, &1.id})
-  end
-
-  def tag_type(tag) do
-    case @tag_types[tag.type] do
-      "" -> "Normal"
-      type -> type
-    end
-  end
-
-  def percent(n), do: round(n * 10000) / 100
-
-  def percentile(list, n) do
-    s = Enum.sort(list)
-    r = n / 100.0 * (length(list) - 1)
-    f = :erlang.trunc(r)
-    lower = Enum.at(s, f)
-    upper = Enum.at(s, f + 1)
-    lower + (upper - lower) * (r - f)
-  end
-
-  def mean(list), do: Enum.sum(list) / length(list)
-
-  def var(list) do
-    list_mean = mean(list)
-    list |> Enum.map(fn x -> (list_mean - x) * (list_mean - x) end) |> mean
-  end
 end
