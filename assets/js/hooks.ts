@@ -83,6 +83,7 @@ fn to_linear_fast(srgb: vec4<f32>) -> vec4<f32> {
 fn to_srgb_fast(linear: vec4<f32>) -> vec4<f32> {
     return vec4(pow(max(linear.rgb, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2)), linear.a);
 }
+
 fn catmull_rom_weights(t: f32) -> array<f32, 4> {
     let t2 = t * t;
     let t3 = t2 * t;
@@ -99,48 +100,41 @@ fn catmull_rom_weights(t: f32) -> array<f32, 4> {
 fn textureSampleCatmullRom(uv: vec2<f32>) -> vec4<f32> {
     let tex_size_u = textureDimensions(src_tex, 0);
     let tex_size = vec2<f32>(tex_size_u);
-    
+
     let pixel_coord = uv * tex_size - vec2<f32>(0.5);
     let base_coord = vec2<i32>(floor(pixel_coord));
     let f = fract(pixel_coord);
-    
+
     let wx = catmull_rom_weights(f.x);
     let wy = catmull_rom_weights(f.y);
-    
+
     let max_coord = vec2<i32>(tex_size_u) - vec2<i32>(1, 1);
-    
+
     var final_color = vec4<f32>(0.0);
-    
+
     for (var y: i32 = 0; y < 4; y++) {
         var row_color = vec4<f32>(0.0);
-        
-        // Let the Y coordinate go outside the image bounds naturally
+
         let current_y = base_coord.y - 1 + y;
-        
+
         for (var x: i32 = 0; x < 4; x++) {
-            
-            // Let the X coordinate go outside bounds
             let current_x = base_coord.x - 1 + x;
-            
-            var texel = vec4<f32>(0.0); // Default to fully transparent
-            
-            // Only read the texture if we are strictly inside the image!
-            if (current_x >= 0 && current_x <= max_coord.x && 
+
+            var texel = vec4<f32>(0.0);
+
+            if (current_x >= 0 && current_x <= max_coord.x &&
                 current_y >= 0 && current_y <= max_coord.y) {
-                
                 texel = textureLoad(src_tex, vec2<i32>(current_x, current_y), 0);
+                texel = to_linear_exact(texel);
             }
-            
+
             row_color += texel * wx[x];
         }
-        
+
         final_color += row_color * wy[y];
     }
-    
-    // ⚠️ CRUCIAL: Clamp the final color to prevent negative alpha!
-    // Because Catmull-Rom has negative curve weights, interpolating between
-    // a bright edge pixel (1.0) and a transparent out-of-bounds pixel (0.0) 
-    // can cause the alpha to dip to -0.1, which causes weird blending bugs.
+
+    final_color = to_srgb_exact(final_color);
     return clamp(final_color, vec4<f32>(0.0), vec4<f32>(1.0));
 }
 
@@ -486,7 +480,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
                 last_dist = Math.sqrt(
                     Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) +
-                        Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
+                    Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
                 )
             }
         })
@@ -508,7 +502,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 pan(clientX, clientY)
                 const dist = Math.sqrt(
                     Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) +
-                        Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
+                    Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2),
                 )
                 const rect = canvas.getBoundingClientRect()
                 const x = (clientX - rect.x) / rect.width
