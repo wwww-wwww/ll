@@ -48,6 +48,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(page_title: multi.series.title)
       |> assign(series: multi.series)
       |> assign(chapters: chapters)
+      |> assign(show_hidden: false)
 
     {:ok, socket}
   end
@@ -80,6 +81,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(series: series)
       |> assign(source: source)
       |> assign(chapters: chapters)
+      |> assign(show_hidden: false)
 
     if series.details_updated == nil do
       ExtensionManager.series_details(series)
@@ -362,6 +364,10 @@ defmodule LLWeb.SeriesLive do
     end
 
     {:noreply, socket}
+  end
+
+  def handle_event("show_hidden", %{"show" => b}, socket) do
+    {:noreply, assign(socket, show_hidden: b == "1")}
   end
 
   def handle_info(%{topic: "series:" <> _id, event: "update", payload: series}, socket) do

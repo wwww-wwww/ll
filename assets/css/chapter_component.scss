@@ -8,6 +8,10 @@
         background: rgba(0, 0, 0, 0.04);
     }
 
+    &.hidden {
+        background: rgba(255, 200, 200, 0.5);
+    }
+
     >.extra {
         display: flex;
         gap: 0.5em;

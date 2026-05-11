@@ -151,24 +151,38 @@
   <div class="actions">
     <button phx-click="refresh_chapters">Refresh chapters</button>
     <button phx-click="download_all">Download all</button>
+    <button phx-click="show_hidden" phx-value-show={if @show_hidden, do: 0, else: 1}>
+      <%= if @show_hidden do %>
+        Hide
+      <% else %>
+        Show
+      <% end %>
+      hidden ({@chapters
+      |> Enum.filter(&if @is_multi, do: elem(&1, 1).hidden, else: &1.hidden)
+      |> length})
+    </button>
   </div>
   <div class="chapterlist">
     <%= if @is_multi do %>
       <.live_component
         :for={{s, c} <- @chapters}
+        :if={@show_hidden or c.hidden != true}
         module={LLWeb.ChapterComponent}
         id={LLWeb.ChapterComponent.id(c.id)}
         chapter={c}
         source={s.source}
         show_source={true}
+        show_hide={@show_hidden}
       />
     <% else %>
       <.live_component
         :for={c <- @chapters}
+        :if={@show_hidden or c.hidden != true}
         module={LLWeb.ChapterComponent}
         id={LLWeb.ChapterComponent.id(c.id)}
         chapter={c}
         source={@source}
+        show_hide={@show_hidden}
       />
     <% end %>
   </div>
