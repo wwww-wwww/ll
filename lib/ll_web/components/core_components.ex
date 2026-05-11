@@ -496,15 +496,8 @@ defmodule LLWeb.CoreComponents do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end
 
-  def nav(assigns) do
-    ~H"""
-    <.link
-      navigate={@to}
-      class={if(@socket.private.root_view == @view, do: ["active"], else: []) ++ [assigns[:class]]}
-    >
-      <span>{@view.title()}{if assigns[:suffix], do: @suffix}</span>
-    </.link>
-    """
+  def current_page?(socket, view) do
+    if socket.private.root_view == view, do: ["active"], else: []
   end
 
   def relative_time(nil), do: nil

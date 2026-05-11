@@ -87,7 +87,7 @@ defmodule LLWeb.LibraryLive do
         navigate={~p"/library/c/#{c.name}"}
         class={if(@category && @category.id == c.id, do: ["active"], else: [])}
       >
-        <span>{c.name}</span>
+        {c.name}
       </.link>
     </div>
     """

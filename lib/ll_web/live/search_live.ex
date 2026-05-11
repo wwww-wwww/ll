@@ -11,7 +11,7 @@ defmodule LLWeb.SearchLive do
     <div class="left">
       <h1>Search</h1>
 
-      <.nav socket={@socket} to={~p"/extensions"} view={LLWeb.ExtensionsLive} />
+      <.link navigate={~p"/extensions"}>Extensions</.link>
 
       <.form for={@search_form} phx-submit="search">
         <div>

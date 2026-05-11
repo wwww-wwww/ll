@@ -4,6 +4,8 @@ defmodule LLWeb.UserLive.Registration do
   alias LL.Accounts
   alias LL.User
 
+  def title(), do: "Register"
+
   @impl true
   def render(assigns) do
     ~H"""

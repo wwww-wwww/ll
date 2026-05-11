@@ -4,14 +4,32 @@
 
 <header>
   <nav>
-    <.nav socket={@socket} to={~p"/"} view={LLWeb.LibraryLive} />
+    <.link navigate={~p"/"} class={current_page?(@socket, LLWeb.LibraryLive)}>Library</.link>
     <%= if assigns[:library_nav] do %>
       {@library_nav}
     <% end %>
     {live_render(@socket, LLWeb.UpdatesNavLive, id: LLWeb.UpdatesNavLive)}
-    <.nav socket={@socket} to={~p"/search"} view={LLWeb.SearchLive} />
-    <.nav socket={@socket} to={~p"/categories"} view={LLWeb.CategoriesLive} class="only-wide" />
-    <.nav socket={@socket} to={~p"/status"} view={LLWeb.StatusLive} class="only-wide" />
+    <.link navigate={~p"/search"} class={current_page?(@socket, LLWeb.SearchLive)}>Search</.link>
+    <.link navigate={~p"/categories"} class={current_page?(@socket, LLWeb.CategoriesLive)}>
+      Categories
+    </.link>
+    <.link navigate={~p"/status"} class={current_page?(@socket, LLWeb.StatusLive)}>Status</.link>
+    <%= if @current_scope.user != nil do %>
+      <.link navigate={~p"/user/settings"} class={current_page?(@socket, LLWeb.UserLive.Settings)}>
+        Settings
+      </.link>
+      <.link href={~p"/user/log-out"} method="delete">Log out</.link>
+    <% else %>
+      <.link
+        navigate={~p"/user/register"}
+        class={current_page?(@socket, LLWeb.UserLive.Registration)}
+      >
+        Register
+      </.link>
+      <.link navigate={~p"/user/log-in"} class={current_page?(@socket, LLWeb.UserLive.Login)}>
+        Log in
+      </.link>
+    <% end %>
   </nav>
 </header>
 

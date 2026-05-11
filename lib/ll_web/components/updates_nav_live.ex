@@ -5,12 +5,12 @@ defmodule LLWeb.UpdatesNavLive do
 
   def render(assigns) do
     ~H"""
-    <.nav
-      socket={@socket}
-      to={~p"/status"}
-      view={LLWeb.UpdatesLive}
-      suffix={if @count > 0, do: " (#{@count})"}
-    />
+    <.link navigate={~p"/updates"} class={current_page?(@socket, LLWeb.UpdatesLive)}>
+      Updates
+      <%= if @count > 0 do %>
+        ({@count})
+      <% end %>
+    </.link>
     """
   end
 

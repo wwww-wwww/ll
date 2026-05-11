@@ -1,6 +1,8 @@
 defmodule LLWeb.UserLive.Login do
   use LLWeb, :live_view
 
+  def title(), do: "Log in"
+
   @impl true
   def render(assigns) do
     ~H"""

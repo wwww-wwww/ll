@@ -3,6 +3,8 @@ defmodule LLWeb.UserLive.Settings do
 
   alias LL.Accounts
 
+  def title(), do: "Settings"
+
   @impl true
   def render(assigns) do
     ~H"""

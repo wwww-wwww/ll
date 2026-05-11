@@ -6,6 +6,7 @@ defmodule LLWeb.Router do
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
+    plug :fetch_live_flash
     plug :put_root_layout, {LLWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
@@ -56,17 +57,20 @@ defmodule LLWeb.Router do
       live "/library/c/:category", LibraryLive
       live "/library/:m/:id", LibraryLive, :multi
       live "/library/:id", LibraryLive
-      live "/updates", UpdatesLive
-      live "/search", SearchLive
-      live "/search/:source", SourceLive
-      live "/extensions", ExtensionsLive
-      live "/categories", CategoriesLive
+
+      live "/series/:series_id", SeriesLive
+      live "/series/:series_id/:chapter_id", ReaderLive
 
       live "/reader", ReaderLiveS
 
-      live "/series/:series_id", SeriesLive
+      live "/updates", UpdatesLive
 
-      live "/series/:series_id/:chapter_id", ReaderLive
+      live "/search", SearchLive
+      live "/search/:source", SourceLive
+
+      live "/extensions", ExtensionsLive
+
+      live "/categories", CategoriesLive
 
       live "/routes", RoutesLive
       live "/status", StatusLive
