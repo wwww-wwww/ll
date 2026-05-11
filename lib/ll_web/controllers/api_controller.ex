@@ -62,7 +62,7 @@ defmodule LLWeb.ApiController do
       multi ->
         chapters =
           MultiSeries.get_chapters(multi)
-          |> Enum.filter(&Chapter.downloaded?(elem(&1, 1)))
+          |> Enum.filter(&(Chapter.downloaded?(elem(&1, 1)) and elem(&1, 1).hidden != true))
           |> Enum.map(fn {series, chapter} ->
             scanlator =
               if chapter.scanlator == nil,
@@ -107,7 +107,7 @@ defmodule LLWeb.ApiController do
       series ->
         chapters =
           series.chapters
-          |> Enum.filter(&Chapter.downloaded?/1)
+          |> Enum.filter(&(Chapter.downloaded?(&1) and &1.hidden != true))
           |> Enum.sort_by(
             fn c ->
               {c.number,
