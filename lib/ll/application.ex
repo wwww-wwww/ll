@@ -15,10 +15,6 @@ defmodule LL.Application do
       LL.ExtensionManager,
       LL.SourceManager,
       LL.Status,
-      # Supervisor.child_spec({LL.WorkerManager, name: LL.CriticalQueue},
-      #  id: LL.CriticalQueue
-      # ),
-      # LL.CriticalWriter,
       Supervisor.child_spec({LL.WorkerManager, name: :downloader},
         id: :downloader
       ),
@@ -32,13 +28,6 @@ defmodule LL.Application do
          interval: Application.fetch_env!(:ll, :sync_interval)},
         id: LL.TimerSync
       )
-      # Supervisor.child_spec(
-      #  {LL.Timer,
-      #   id: :encode,
-      #   fun: &LL.encode_missing/0,
-      #   interval: Application.fetch_env!(:ll, :encode_interval)},
-      #  id: LL.TimerEncoode
-      # )
     ]
 
     downloaders =
@@ -57,10 +46,6 @@ defmodule LL.Application do
         )
       )
 
-    # encoders =
-    #   1..Application.fetch_env!(:ll, :n_encoders)
-    #   |> Enum.map(&Supervisor.child_spec({LL.Encoder, id: &1}, id: "LL.Encoder#{&1}"))
-
     children = children ++ downloaders ++ downloaders2
 
     LL.Source.start_bucket()
@@ -75,48 +60,5 @@ defmodule LL.Application do
   def config_change(changed, _new, removed) do
     LLWeb.Endpoint.config_change(changed, removed)
     :ok
-  end
-end
-
-defmodule LL.CriticalWriter do
-  use GenServer
-
-  alias LL.{WorkerManager, CriticalQueue}
-
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  def init(_opts) do
-    send(self(), :startup)
-    {:ok, %{}}
-  end
-
-  def handle_info(:startup, state) do
-    GenServer.call(CriticalQueue, {:register, self()})
-
-    {:noreply, state}
-  end
-
-  def handle_cast(:loop, state) do
-    case WorkerManager.pop(CriticalQueue, false) do
-      :empty ->
-        nil
-
-      cb ->
-        cb.()
-
-        GenServer.cast(self(), :loop)
-    end
-
-    {:noreply, state}
-  end
-
-  def get() do
-    WorkerManager.get(CriticalQueue)
-  end
-
-  def add(cb) do
-    WorkerManager.add(CriticalQueue, cb, false)
   end
 end

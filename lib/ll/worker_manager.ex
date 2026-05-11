@@ -28,6 +28,9 @@ defmodule LL.WorkerManager do
           end
 
         Status.put(state.name, "#{:queue.len(queue)} items in queue, #{length(working)} working")
+
+        LLWeb.StatusLive.update_queue(state.name, queue, working)
+
         {:reply, head, %{state | queue: queue, working: working}}
 
       {:empty, _queue} ->
@@ -47,6 +50,8 @@ defmodule LL.WorkerManager do
       "#{:queue.len(state.queue)} items in queue, #{length(working)} working"
     )
 
+    LLWeb.StatusLive.update_queue(state.name, state.queue, working)
+
     {:reply, :ok, %{state | working: working}}
   end
 
@@ -61,6 +66,8 @@ defmodule LL.WorkerManager do
         state.name,
         "#{:queue.len(queue)} items in queue, #{length(state.working)} working"
       )
+
+      LLWeb.StatusLive.update_queue(state.name, queue, state.working)
 
       {:noreply, %{state | queue: queue}}
     else

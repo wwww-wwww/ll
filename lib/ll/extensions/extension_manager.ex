@@ -288,13 +288,15 @@ defmodule LL.ExtensionManager do
   def series_chapters(series) do
     source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
 
-    %{
-      extension: source.extension.path,
-      source: source.source_id,
-      url: series.url
-    }
-    |> Jason.encode!()
-    |> Downloader.post @manager_api <> "series_chapters", :local do
+    data =
+      %{
+        extension: source.extension.path,
+        source: source.source_id,
+        url: series.url
+      }
+      |> Jason.encode!()
+
+    Downloader.post data, @manager_api <> "series_chapters", :local do
       {:ok, j} ->
         Repo.transact(fn ->
           chapters =
@@ -422,7 +424,7 @@ defmodule LL.ExtensionManager do
         end
 
       err ->
-        Message.error(err)
+        Message.error({err, data})
     end
   end
 

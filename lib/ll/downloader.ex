@@ -7,6 +7,10 @@ defmodule LL.Downloader do
             active: false,
             queue: nil
 
+  defmodule Task do
+    defstruct url: "", type: :get, body: nil, cb: nil, guard: nil, time: nil
+  end
+
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts,
       name: String.to_atom("#{__MODULE__}.#{opts[:queue]}.#{opts[:id]}")
@@ -35,33 +39,30 @@ defmodule LL.Downloader do
 
         {:noreply, %{state | active: false}}
 
-      {url, type, body, cb, guard} = job ->
-        if guard == nil or guard.() do
-          Status.put(state.id, "Downloading #{url}")
+      %Task{} = task ->
+        if task.guard == nil or task.guard.() do
+          Status.put(state.id, "Downloading #{task.url}")
 
-          body = if is_function(body), do: body.(), else: body
+          body = if is_function(task.body), do: task.body.(), else: task.body
 
           HTTPoison.request(%HTTPoison.Request{
-            method: type,
-            url: url,
+            method: task.type,
+            url: task.url,
             body: body,
             options: [recv_timeout: 30000]
           })
           |> case do
             {:ok, %HTTPoison.Response{body: body, headers: headers}} ->
-              cb.({:ok, body, headers})
+              task.cb.({:ok, body, headers})
 
             err ->
-              cb.({:err, url, err})
+              task.cb.({:err, task.url, err})
           end
         else
-          Status.put(state.id, "Failed guard for #{url}")
+          Status.put(state.id, "Failed guard for #{task.url}")
         end
 
-        WorkerManager.finish(state.queue, job)
-
-        Status.put(state.id, "Waiting 1 second")
-        :ok = :timer.sleep(500)
+        WorkerManager.finish(state.queue, task)
 
         GenServer.cast(self(), :loop)
 
@@ -74,7 +75,14 @@ defmodule LL.Downloader do
   end
 
   def add(queue, url, type, body, cb, guard \\ nil) do
-    WorkerManager.add(queue, {url, type, body, cb, guard})
+    WorkerManager.add(queue, %Task{
+      url: url,
+      type: type,
+      body: body,
+      cb: cb,
+      guard: guard,
+      time: DateTime.utc_now()
+    })
   end
 
   defmacro get(url, queue \\ :downloader, do: clauses) do
