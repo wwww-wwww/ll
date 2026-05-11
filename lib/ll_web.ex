@@ -17,38 +17,44 @@ defmodule LLWeb do
   and import those modules here.
   """
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
+  def static_paths, do: ~w(assets thumbnail fonts images favicon.ico robots.txt)
 
-  def controller do
+  def router do
     quote do
-      use Phoenix.Controller, formats: [html: "View", json: "View"]
+      use Phoenix.Router, helpers: false
 
+      # Import common connection and controller functions to use in pipelines
       import Plug.Conn
-      import LLWeb.Gettext
-      alias LLWeb.Router.Helpers, as: Routes
+      import Phoenix.Controller
+      import Phoenix.LiveView.Router
     end
   end
 
-  def view do
+  def channel do
     quote do
-      use Phoenix.View, root: "lib/ll_web/templates"
+      use Phoenix.Channel
+    end
+  end
 
-      # Import convenience functions from controllers
-      import Phoenix.Controller,
-        only: [get_flash: 1, get_flash: 2, view_module: 1, view_template: 1]
+  def controller do
+    quote do
+      use Phoenix.Controller, formats: [:html, :json]
 
-      # Include shared imports and aliases for views
-      unquote(view_helpers())
+      use Gettext, backend: LLWeb.Gettext
+
+      import Plug.Conn
+
+      unquote(verified_routes())
     end
   end
 
   def live_view do
     quote do
       use Phoenix.LiveView,
-        layout: {LLWeb.LayoutView, :live},
+        layout: {LLWeb.Layouts, :live},
         container: {:div, class: __MODULE__ |> to_string() |> String.split(".") |> Enum.at(-1)}
 
-      unquote(view_helpers())
+      unquote(html_helpers())
     end
   end
 
@@ -75,66 +81,55 @@ defmodule LLWeb do
         end
       end
 
-      unquote(view_helpers())
+      unquote(html_helpers())
     end
   end
 
-  def component do
+  def html do
     quote do
       use Phoenix.Component
 
-      unquote(view_helpers())
+      # Import convenience functions from controllers
+      import Phoenix.Controller,
+        only: [get_csrf_token: 0, view_module: 1, view_template: 1]
+
+      # Include general helpers for rendering HTML
+      unquote(html_helpers())
     end
   end
 
-  def router do
+  defp html_helpers do
     quote do
-      use Phoenix.Router
+      # Translation
+      use Gettext, backend: LLWeb.Gettext
 
-      import Plug.Conn
-      import Phoenix.Controller
-      import Phoenix.LiveView.Router
-    end
-  end
-
-  def channel do
-    quote do
-      use Phoenix.Channel
-      import LLWeb.Gettext
-    end
-  end
-
-  defp view_helpers do
-    quote do
-      # Use all HTML functionality (forms, tags, etc)
+      # HTML escaping functionality
       import Phoenix.HTML
-      import Phoenix.HTML.Form
-      use PhoenixHTMLHelpers
-      use Phoenix.Component
+      # Core UI components
+      import LLWeb.CoreComponents
 
-      # Import LiveView and .heex helpers (live_render, live_patch, <.form>, etc)
-      import Phoenix.LiveView.Helpers
-
-      # Import basic rendering functionality (render, render_layout, etc)
-      import Phoenix.View
-
-      import LLWeb.Gettext
-      alias LLWeb.Router.Helpers, as: Routes
-
-      use Phoenix.VerifiedRoutes,
-        router: LLWeb.Router,
-        endpoint: LLWeb.Endpoint,
-        statics: LLWeb.static_paths()
+      # Common modules used in templates
+      alias Phoenix.LiveView.JS
+      alias LLWeb.Layouts
 
       alias LLWeb.Endpoint
-      alias Phoenix.LiveView.JS
 
-      import LLWeb.CoreComponents
+      # Routes generation with the ~p sigil
+      unquote(verified_routes())
+    end
+  end
+
+  def verified_routes do
+    quote do
+      use Phoenix.VerifiedRoutes,
+        endpoint: LLWeb.Endpoint,
+        router: LLWeb.Router,
+        statics: LLWeb.static_paths()
     end
   end
 
   @doc """
-  When used, dispatch to the appropriate controller/view/etc.
+  When used, dispatch to the appropriate controller/live_view/etc.
   """
   defmacro __using__(which) when is_atom(which) do
     apply(__MODULE__, which, [])

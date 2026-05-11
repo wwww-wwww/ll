@@ -34,6 +34,7 @@ defmodule LL.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:argon2_elixir, "~> 4.0"},
       {:phoenix, "~> 1.8.5"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.6"},
@@ -56,7 +57,8 @@ defmodule LL.MixProject do
       {:dart_sass, "~> 0.7", runtime: Mix.env() == :dev},
       {:size, "~> 0.1.0"},
       {:unzip, "~> 0.11"},
-      {:timex, "~> 3.7"}
+      {:timex, "~> 3.7"},
+      {:wax_, "~> 0.7.0"}
     ]
   end
 

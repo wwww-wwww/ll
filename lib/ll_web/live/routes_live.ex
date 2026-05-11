@@ -25,7 +25,7 @@ defmodule LLWeb.RoutesLive do
     </ul>
 
     <%= if function_exported?(Routes, :live_dashboard_path, 2) do %>
-      <.link navigate={Routes.live_dashboard_path(@socket, :home)}>LiveDashboard</.link>
+      <.link navigate={~p"/dashboard"}>LiveDashboard</.link>
     <% end %>
     """
   end

@@ -20,7 +20,7 @@ defmodule LLWeb.SourceLive do
             name={@search_form[:query].name}
             value={@search_form[:query].value}
           />
-          {submit("Search")}
+          <input type="submit" value="Search" />
         </div>
 
         <div class="filters">

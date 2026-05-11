@@ -8,7 +8,7 @@ defmodule LLWeb.SeriesComponent do
         <.link id={@id} href={@href} phx-value-id={@series.id} phx-hook="select_series">
           <img
             :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
-            src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(@series.thumbnail_path)}")}
+            src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
           />
           <span class="title">{@series.title}</span>
         </.link>
@@ -17,7 +17,7 @@ defmodule LLWeb.SeriesComponent do
           <% series = if assigns[:is_multi], do: @series.series, else: @series %>
           <img
             :if={series.thumbnail_path != nil and File.exists?(series.thumbnail_path)}
-            src={Routes.static_path(@socket, "/thumbnail/#{Path.basename(series.thumbnail_path)}")}
+            src={~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"}
           />
           <span class="title">{series.title}</span>
         </.link>

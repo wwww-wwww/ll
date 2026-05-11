@@ -1,0 +1,18 @@
+<head>
+  <title>{assigns[:page_title] || @socket.view.title()}</title>
+</head>
+
+<header>
+  <nav>
+    <.nav socket={@socket} to={~p"/"} view={LLWeb.LibraryLive} />
+    <%= if assigns[:library_nav] do %>
+      {@library_nav}
+    <% end %>
+    {live_render(@socket, LLWeb.UpdatesNavLive, id: LLWeb.UpdatesNavLive)}
+    <.nav socket={@socket} to={~p"/search"} view={LLWeb.SearchLive} />
+    <.nav socket={@socket} to={~p"/categories"} view={LLWeb.CategoriesLive} class="only-wide" />
+    <.nav socket={@socket} to={~p"/status"} view={LLWeb.StatusLive} class="only-wide" />
+  </nav>
+</header>
+
+<main class="container">{@inner_content}</main>

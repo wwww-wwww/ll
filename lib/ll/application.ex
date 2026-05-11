@@ -11,6 +11,8 @@ defmodule LL.Application do
       LL.Repo,
       LLWeb.Telemetry,
       {Phoenix.PubSub, name: LL.PubSub},
+      LL.Counter,
+      LL.Presence,
       LLWeb.Endpoint,
       LL.ExtensionManager,
       LL.SourceManager,

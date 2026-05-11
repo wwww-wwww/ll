@@ -18,7 +18,7 @@ defmodule LLWeb.CategoriesLive do
           value={@form[:name].value}
         />
 
-        {submit("Create")}
+        <input type="submit" value="Create" />
       </div>
     </.form>
 

@@ -11,7 +11,7 @@ defmodule LLWeb.SearchLive do
     <div class="left">
       <h1>Search</h1>
 
-      <.nav socket={@socket} view={LLWeb.ExtensionsLive} />
+      <.nav socket={@socket} to={~p"/extensions"} view={LLWeb.ExtensionsLive} />
 
       <.form for={@search_form} phx-submit="search">
         <div>
@@ -21,7 +21,7 @@ defmodule LLWeb.SearchLive do
             name={@search_form[:query].name}
             value={@search_form[:query].value}
           />
-          {submit("Search")}
+          <input type="submit" value="Search" />
         </div>
 
         <div class="sources">

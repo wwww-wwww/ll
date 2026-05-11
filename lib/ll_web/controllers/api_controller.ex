@@ -10,14 +10,13 @@ defmodule LLWeb.ApiController do
       |> Repo.all()
       |> Enum.map(fn series ->
         %{
-          url: Routes.live_path(conn, LLWeb.SeriesLive, series.id),
+          url: ~p"/series/#{series.id}",
           title: series.title,
           artist: series.artist,
           author: series.author,
           genre: series.genre,
           status: series.status,
-          thumbnail_url:
-            Routes.static_path(conn, "/thumbnail/#{Path.basename(series.thumbnail_path)}")
+          thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
         }
       end)
 
@@ -26,14 +25,13 @@ defmodule LLWeb.ApiController do
       |> Repo.preload(:series)
       |> Enum.map(fn multi ->
         %{
-          url: Routes.live_path(conn, LLWeb.SeriesLive, "m#{multi.id}"),
+          url: ~p"/series/#{"m" <> multi.id}",
           title: multi.series.title <> " (Multi)",
           artist: multi.series.artist,
           author: multi.series.author,
           genre: multi.series.genre,
           status: multi.series.status,
-          thumbnail_url:
-            Routes.static_path(conn, "/thumbnail/#{Path.basename(multi.series.thumbnail_path)}"),
+          thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.series.thumbnail_path)}",
           multi: true
         }
       end)
@@ -70,7 +68,7 @@ defmodule LLWeb.ApiController do
                 else: "#{series.source.name} - #{chapter.scanlator}"
 
             %{
-              url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
+              url: ~p"/series/#{series.id}/#{chapter.id}",
               title: chapter.title,
               number: chapter.number,
               date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
@@ -82,15 +80,14 @@ defmodule LLWeb.ApiController do
         conn
         |> json(%{
           success: 1,
-          url: Routes.live_path(conn, LLWeb.SeriesLive, "m#{multi.id}"),
+          url: ~p"/series/#{"m" <> multi.id}",
           title: multi.series.title <> " (Multi)",
           artist: multi.series.artist || "",
           author: multi.series.author || "",
           description: multi.series.description,
           genre: multi.series.genre,
           status: multi.series.status,
-          thumbnail_url:
-            Routes.static_path(conn, "/thumbnail/#{Path.basename(multi.series.thumbnail_path)}"),
+          thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.series.thumbnail_path)}",
           chapters: chapters,
           multi: true
         })
@@ -119,7 +116,7 @@ defmodule LLWeb.ApiController do
           )
           |> Enum.map(fn chapter ->
             %{
-              url: Routes.live_path(conn, LLWeb.ReaderLive, series.id, chapter.id),
+              url: ~p"/series/#{series.id}/#{chapter.id}",
               title: chapter.title,
               number: chapter.number,
               date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
@@ -130,15 +127,14 @@ defmodule LLWeb.ApiController do
         conn
         |> json(%{
           success: 1,
-          url: Routes.live_path(conn, LLWeb.SeriesLive, series.id),
+          url: ~p"/series/#{series.id}",
           title: series.title,
           artist: series.artist || "",
           author: series.author || "",
           description: series.description,
           genre: series.genre,
           status: series.status,
-          thumbnail_url:
-            Routes.static_path(conn, "/thumbnail/#{Path.basename(series.thumbnail_path)}"),
+          thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
           chapters: chapters
         })
     end
@@ -153,13 +149,13 @@ defmodule LLWeb.ApiController do
         files =
           Enum.with_index(chapter.files)
           |> Enum.map(fn {_, i} ->
-            Routes.page_path(conn, :page, chapter.id, i + 1)
+            ~p"/page/#{chapter.id}/#{i + 1}"
           end)
 
         conn
         |> json(%{
           success: 1,
-          url: Routes.live_path(conn, LLWeb.ReaderLive, chapter.series_id, chapter.id),
+          url: ~p"/series/#{chapter.series_id}/#{chapter.id}",
           title: chapter.title,
           number: chapter.number,
           date: chapter.date |> DateTime.to_unix(),
