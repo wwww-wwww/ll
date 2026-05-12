@@ -2,7 +2,7 @@ defmodule LLWeb.ReaderLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  alias LL.{Repo, Chapter}
+  alias LL.{Repo, Chapter, MultiSeries}
 
   def render(assigns) do
     ~H"""
@@ -10,21 +10,40 @@ defmodule LLWeb.ReaderLive do
     <div class="series_details">
       <div class="inner">
         <div class="details">
-          <h1><.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link></h1>
-          <.link target="_blank" href={Path.join(@source.base_url, @chapter.url)}>
-            Read at source
-          </.link>
+          <h2>
+            <%= if assigns[:multi] do %>
+              <.link navigate={~p"/multi/#{@multi.id}"}>{@multi.series.title} (Multi)</.link>
+            <% else %>
+              <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
+            <% end %>
+          </h2>
         </div>
 
         <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
-          <.live_component
-            :for={c <- @chapters}
-            module={LLWeb.ChapterComponent}
-            id={LLWeb.ChapterComponent.id(c.id)}
-            chapter={c}
-            source={@source}
-            selected={c.id == @chapter.id}
-          />
+          <%= if assigns[:multi] do %>
+            <.live_component
+              :for={{s, c} <- @chapters}
+              :if={c.hidden != true}
+              module={LLWeb.ChapterComponent}
+              id={LLWeb.ChapterComponent.id(c.id)}
+              href={~p"/multi/#{@multi.id}/#{c.id}"}
+              chapter={c}
+              source={s.source}
+              show_source={true}
+              selected={c.id == @chapter.id}
+            />
+          <% else %>
+            <.live_component
+              :for={c <- @chapters}
+              :if={c.hidden != true}
+              module={LLWeb.ChapterComponent}
+              id={LLWeb.ChapterComponent.id(c.id)}
+              href={~p"/series/#{c.series_id}/#{c.id}"}
+              chapter={c}
+              source={@source}
+              selected={c.id == @chapter.id}
+            />
+          <% end %>
         </div>
       </div>
 
@@ -56,6 +75,19 @@ defmodule LLWeb.ReaderLive do
     """
   end
 
+  def mount(%{"multi_id" => multi_id, "chapter_id" => chapter_id}, session, socket) do
+    multi = Repo.get(MultiSeries, multi_id) |> Repo.preload(:series)
+
+    chapters = MultiSeries.get_chapters(multi)
+
+    socket =
+      socket
+      |> assign(multi: multi)
+      |> assign(chapters: chapters)
+
+    mount(%{"chapter_id" => chapter_id}, session, socket)
+  end
+
   def mount(%{"chapter_id" => chapter_id}, _session, socket) do
     Repo.get(Chapter, chapter_id)
     |> Repo.preload([:series, :source])
@@ -69,9 +101,7 @@ defmodule LLWeb.ReaderLive do
         {:ok, socket}
 
       chapter ->
-        chapters = Chapter.list(chapter.series)
-
-        series = chapter.series |> Map.put(:description, "")
+        series = Map.put(chapter.series, :description, "")
 
         chapter = Map.put(chapter, :series, nil)
 
@@ -83,7 +113,7 @@ defmodule LLWeb.ReaderLive do
           socket
           |> assign(page_title: chapter.title)
           |> assign(series: series)
-          |> assign(chapters: chapters)
+          |> assign_new(:chapters, fn -> Chapter.list(series) end)
           |> assign(chapter: chapter)
           |> assign(source: chapter.source)
           |> assign(files: files)

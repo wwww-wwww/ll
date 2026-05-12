@@ -24,15 +24,7 @@ defmodule LL.Chapter do
   def list(series) do
     from(c in Chapter, where: c.series_id == ^series.id)
     |> Repo.all()
-    |> Enum.sort_by(
-      fn c ->
-        {c.number,
-         Regex.scan(~r/\d+\.?\d*/, c.title)
-         |> List.flatten()
-         |> Enum.map(&(Float.parse(&1) |> elem(0)))}
-      end,
-      :desc
-    )
+    |> Enum.sort_by(&{&1.number, &1.scanlator, &1.date}, :desc)
   end
 
   def downloaded?(chapter),

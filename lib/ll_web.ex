@@ -54,6 +54,8 @@ defmodule LLWeb do
         layout: {LLWeb.Layouts, :live},
         container: {:div, class: __MODULE__ |> to_string() |> String.split(".") |> Enum.at(-1)}
 
+      import Phoenix.Component
+
       unquote(html_helpers())
     end
   end

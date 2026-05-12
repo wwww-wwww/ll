@@ -12,6 +12,10 @@
         box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
         z-index: 1;
 
+        h2 {
+            margin: 0;
+        }
+
         > .inner {
             flex: 1;
             display: flex;

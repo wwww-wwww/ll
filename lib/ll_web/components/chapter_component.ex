@@ -35,7 +35,7 @@ defmodule LLWeb.ChapterComponent do
       <% end %>
       <div class="body">
         <%= if downloaded do %>
-          <.link patch={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>
+          <.link patch={@href}>
             <div>
               <span class="title">{@chapter.title}</span>
             </div>

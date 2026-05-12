@@ -4,7 +4,9 @@
 
 <header>
   <nav>
-    <.link navigate={~p"/library"} class={current_page?(@socket, LLWeb.LibraryLive)}>Library</.link>
+    <.link navigate={~p"/library"} class={current_page?(@socket, LLWeb.LibraryLive)}>
+      Library
+    </.link>
     <%= if assigns[:library_nav] do %>
       {@library_nav}
     <% end %>

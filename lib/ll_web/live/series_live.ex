@@ -29,9 +29,7 @@ defmodule LLWeb.SeriesLive do
         <% end %>
         <div class="info">
           <h1>
-            <.link :if={@is_multi} navigate={~p"/multi/#{@multi.id}"}>
-              {@series.title} (Multi)
-            </.link>
+            <.link :if={@is_multi} navigate={~p"/multi/#{@multi.id}"}>{@series.title} (Multi)</.link>
             <.link :if={not @is_multi} navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
           </h1>
           <div>
@@ -189,6 +187,7 @@ defmodule LLWeb.SeriesLive do
             :if={@show_hidden or c.hidden != true}
             module={LLWeb.ChapterComponent}
             id={LLWeb.ChapterComponent.id(c.id)}
+            href={~p"/multi/#{@multi.id}/#{c.id}"}
             chapter={c}
             source={s.source}
             show_source={true}
@@ -200,6 +199,7 @@ defmodule LLWeb.SeriesLive do
             :if={@show_hidden or c.hidden != true}
             module={LLWeb.ChapterComponent}
             id={LLWeb.ChapterComponent.id(c.id)}
+            href={~p"/series/#{c.series_id}/#{c.id}"}
             chapter={c}
             source={@source}
             show_hide={@show_hidden}
