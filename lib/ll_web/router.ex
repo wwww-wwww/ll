@@ -52,11 +52,15 @@ defmodule LLWeb.Router do
       live "/user/log-in", UserLive.Login, :new
 
       live "/", LibraryLive
-      live "/library/c/:category/:m/:id", LibraryLive, :multi
-      live "/library/c/:category/:id", LibraryLive
-      live "/library/c/:category", LibraryLive
-      live "/library/:m/:id", LibraryLive, :multi
-      live "/library/:id", LibraryLive
+      live "/library", LibraryLive
+      live "/library/category/:category/multi/:multi_id", LibraryLive
+      live "/library/category/:category/series/:series_id", LibraryLive
+      live "/library/category/:category", LibraryLive
+      live "/library/multi/:multi_id", LibraryLive
+      live "/library/series/:series_id", LibraryLive
+
+      live "/multi/:multi_id", SeriesLive
+      live "/multi/:multi_id/:chapter_id", ReaderLive
 
       live "/series/:series_id", SeriesLive
       live "/series/:series_id/:chapter_id", ReaderLive

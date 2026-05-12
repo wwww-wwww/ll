@@ -27,20 +27,28 @@ defmodule LLWeb.SeriesComponent do
   end
 
   def create_path(%{series: series} = assigns) do
-    r = if assigns[:library], do: "library", else: "series"
+    if assigns[:library] do
+      case assigns do
+        %{library: _, category: category, is_multi: true} when not is_nil(category) ->
+          "/library/category/#{category.name}/multi/#{series.id}"
 
-    case assigns do
-      %{category: category, is_multi: true} when not is_nil(category) ->
-        "/#{r}/c/#{category.name}/m/#{series.id}"
+        %{library: _, category: category} when not is_nil(category) ->
+          "/library/category/#{category.name}/series/#{series.id}"
 
-      %{category: category} when not is_nil(category) ->
-        "/#{r}/c/#{category.name}/#{series.id}"
+        %{library: _, is_multi: true} ->
+          "/library/multi/#{series.id}"
 
-      %{is_multi: true} ->
-        "/#{r}/m/#{series.id}"
+        %{library: _} ->
+          "/library/series/#{series.id}"
+      end
+    else
+      case assigns do
+        %{s_multi: true} ->
+          "/series/multi/#{series.id}"
 
-      %{} ->
-        "/#{r}/#{series.id}"
+        %{} ->
+          "/series/series/#{series.id}"
+      end
     end
   end
 

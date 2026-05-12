@@ -29,7 +29,7 @@ defmodule LLWeb.SeriesLive do
         <% end %>
         <div class="info">
           <h1>
-            <.link :if={@is_multi} navigate={~p"/series/m#{@multi.id}"}>
+            <.link :if={@is_multi} navigate={~p"/multi/#{@multi.id}"}>
               {@series.title} (Multi)
             </.link>
             <.link :if={not @is_multi} navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
@@ -78,10 +78,10 @@ defmodule LLWeb.SeriesLive do
 
                   <%= if not @is_multi do %>
                     <%= if @multi != nil do %>
-                      <.link navigate={~p"/series/m#{@multi.id}"}>{@series.title}</.link>
+                      <.link navigate={~p"/multi/#{@multi.id}"}>{@series.title}</.link>
                     <% end %>
                     <%= if @series.multiseries != nil do %>
-                      <.link navigate={~p"/series/m#{@series.multiseries.id}"}>
+                      <.link navigate={~p"/multi/#{@series.multiseries.id}"}>
                         {@series.multiseries.series.title}
                       </.link>
                     <% end %>
@@ -226,7 +226,7 @@ defmodule LLWeb.SeriesLive do
     mount(params, nil, socket)
   end
 
-  def mount(%{"series_id" => multi_id, "is_multi" => true}, _session, socket) do
+  def mount(%{"multi_id" => multi_id}, _session, socket) do
     if connected?(socket) do
       Endpoint.subscribe("multi:#{multi_id}")
     end
@@ -251,10 +251,6 @@ defmodule LLWeb.SeriesLive do
       |> assign(show_hidden: false)
 
     {:ok, socket}
-  end
-
-  def mount(%{"series_id" => "m" <> multi_id}, session, socket) do
-    mount(%{"series_id" => multi_id, "is_multi" => true}, session, socket)
   end
 
   def mount(%{"series_id" => series_id}, _session, socket) do

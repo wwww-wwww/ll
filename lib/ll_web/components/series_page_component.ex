@@ -3,15 +3,22 @@ defmodule LLWeb.SeriesPageComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="SeriesPageComponent" }>
+    <div class="SeriesPageComponent">
       <div class="header">
         <button phx-click="close_series" class="material-symbols-rounded">close</button>
       </div>
       <div class="body" phx-value-sid={@series_id}>
-        {live_render(@socket, LLWeb.SeriesLive,
-          id: "#{LLWeb.SeriesLive}:#{@series_id}#{if assigns[:is_multi], do: ":multi"}",
-          session: %{"series_id" => @series_id, "is_multi" => assigns[:is_multi]}
-        )}
+        <%= if assigns[:is_multi] do %>
+          {live_render(@socket, LLWeb.SeriesLive,
+            id: "#{LLWeb.SeriesLive}:#{@series_id}-multi",
+            session: %{"multi_id" => @series_id}
+          )}
+        <% else %>
+          {live_render(@socket, LLWeb.SeriesLive,
+            id: "#{LLWeb.SeriesLive}:#{@series_id}",
+            session: %{"series_id" => @series_id}
+          )}
+        <% end %>
       </div>
     </div>
     """

@@ -5,7 +5,7 @@ defmodule LLWeb.LibraryLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Series, Category}
+  alias LL.{Repo, MultiSeries, Series, Category}
 
   def title(), do: "Library"
 
@@ -33,22 +33,14 @@ defmodule LLWeb.LibraryLive do
     """
   end
 
-  def assign_series(params, socket) do
-    if socket.assigns.live_action == :multi do
-      LL.MultiSeries
-    else
-      Series
-    end
-    |> Repo.get(Map.get(params, "id", -1))
-    |> case do
-      nil ->
-        assign(socket, series_id: nil)
+  def mount(%{"category" => category} = params, session, socket) do
+    socket =
+      case Repo.get_by(Category, name: category) do
+        nil -> socket
+        category -> assign(socket, category: category)
+      end
 
-      series ->
-        socket
-        |> assign(is_multi: socket.assigns.live_action == :multi)
-        |> assign(series_id: series.id)
-    end
+    mount(Map.delete(params, "category"), session, socket)
   end
 
   def mount(params, _session, socket) do
@@ -57,9 +49,7 @@ defmodule LLWeb.LibraryLive do
       Endpoint.subscribe("categories")
     end
 
-    socket = assign_series(params, socket)
-
-    category = Repo.get_by(Category, name: Map.get(params, "category", ""))
+    {:noreply, socket} = handle_params(params, "", socket)
 
     library =
       from(s in Series, where: s.in_library == true)
@@ -72,19 +62,20 @@ defmodule LLWeb.LibraryLive do
     library =
       (library ++ multis)
       |> Enum.filter(fn series ->
-        category == nil or Enum.any?(series.categories, &(&1.id == category.id))
+        socket.assigns[:category] == nil or
+          Enum.any?(series.categories, &(&1.id == socket.assigns.category.id))
       end)
       |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
 
     categories = Repo.all(Category)
 
-    assigns = %{socket: socket, categories: categories, category: category}
+    assigns = %{socket: socket, categories: categories, category: socket.assigns[:category]}
 
     library_nav = ~H"""
     <div class="sub">
       <.link
         :for={c <- @categories}
-        navigate={~p"/library/c/#{c.name}"}
+        navigate={~p"/library/category/#{c.name}"}
         class={if(@category && @category.id == c.id, do: ["active"], else: [])}
       >
         {c.name}
@@ -94,7 +85,6 @@ defmodule LLWeb.LibraryLive do
 
     socket =
       socket
-      |> assign(category: category)
       |> assign(library_nav: library_nav)
       |> assign(library: library)
       |> assign(categories: categories)
@@ -102,8 +92,38 @@ defmodule LLWeb.LibraryLive do
     {:ok, socket}
   end
 
-  def handle_params(params, _path, socket) do
-    {:noreply, assign_series(params, socket)}
+  def handle_params(%{"multi_id" => series_id}, _path, socket) do
+    socket =
+      case Repo.get(MultiSeries, series_id) do
+        nil ->
+          assign(socket, series_id: nil)
+
+        series ->
+          socket
+          |> assign(is_multi: true)
+          |> assign(series_id: series.id)
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_params(%{"series_id" => series_id}, _path, socket) do
+    socket =
+      case Repo.get(Series, series_id) do
+        nil ->
+          assign(socket, series_id: nil)
+
+        series ->
+          socket
+          |> assign(is_multi: false)
+          |> assign(series_id: series.id)
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_params(_params, _path, socket) do
+    {:noreply, assign(socket, series_id: nil)}
   end
 
   def update() do
@@ -137,7 +157,7 @@ defmodule LLWeb.LibraryLive do
   end
 
   def handle_event("select_series", params, socket) do
-    {:noreply, assign_series(params, socket)}
+    handle_params(params, "", socket)
   end
 
   def handle_event("close_series", _, socket) do

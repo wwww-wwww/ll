@@ -56,7 +56,9 @@ defmodule LLWeb.UpdatesLive do
             assigns = %{series: series}
 
             ~H"""
-            <.link navigate={~p"/library/#{@series.id}"}>{@series.title} ({@series.source.name})</.link>
+            <.link navigate={~p"/library/series/#{@series.id}"}>
+              {@series.title} ({@series.source.name})
+            </.link>
             """
             |> Phoenix.HTML.Safe.to_iodata()
             |> IO.iodata_to_binary()
