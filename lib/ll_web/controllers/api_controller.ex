@@ -25,7 +25,7 @@ defmodule LLWeb.ApiController do
       |> Repo.preload(:series)
       |> Enum.map(fn multi ->
         %{
-          url: ~p"/series/#{"m" <> multi.id}",
+          url: ~p"/series/#{"m#{multi.id}"}",
           title: multi.series.title <> " (Multi)",
           artist: multi.series.artist,
           author: multi.series.author,
@@ -80,7 +80,7 @@ defmodule LLWeb.ApiController do
         conn
         |> json(%{
           success: 1,
-          url: ~p"/series/#{"m" <> multi.id}",
+          url: ~p"/series/#{"m#{multi.id}"}",
           title: multi.series.title <> " (Multi)",
           artist: multi.series.artist || "",
           author: multi.series.author || "",
