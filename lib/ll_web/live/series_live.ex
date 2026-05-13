@@ -2,6 +2,8 @@ defmodule LLWeb.SeriesLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
+  import Ecto.Query
+
   require Logger
 
   alias LL.{
@@ -9,6 +11,9 @@ defmodule LLWeb.SeriesLive do
     Series,
     Chapter,
     ExtensionManager,
+    Library,
+    LibraryMulti,
+    LibrarySeries,
     MultiSeries,
     Message,
     Category,
@@ -42,8 +47,8 @@ defmodule LLWeb.SeriesLive do
                   Source:
                   <span class="source">
                     <span :if={@is_multi}>Multi</span>
-                    <.link :if={not @is_multi} href={Path.join(@source.base_url, @series.url)}>
-                      {@source.name} ({@source.lang})
+                    <.link :if={not @is_multi} href={Path.join(@series.source.base_url, @series.url)}>
+                      {@series.source.name} ({@series.source.lang})
                     </.link>
                   </span>
                 </span>
@@ -69,7 +74,7 @@ defmodule LLWeb.SeriesLive do
               <div class="multis">
                 <div>
                   Multi: <button :if={@is_multi} phx-click="multi_delete">Delete multi</button>
-                  <%= if not @is_multi and @series.multiseries_id == nil and assigns[:multi] == nil do %>
+                  <%= if not @is_multi and @series.multi_series_id == nil and assigns[:multi] == nil do %>
                     <button phx-click="multi_create">Create multi</button>
                     <button phx-click="multi_get">Add to multi</button>
                   <% end %>
@@ -78,9 +83,9 @@ defmodule LLWeb.SeriesLive do
                     <%= if @multi != nil do %>
                       <.link navigate={~p"/multi/#{@multi.id}"}>{@series.title}</.link>
                     <% end %>
-                    <%= if @series.multiseries != nil do %>
-                      <.link navigate={~p"/multi/#{@series.multiseries.id}"}>
-                        {@series.multiseries.series.title}
+                    <%= if @series.multi_series != nil do %>
+                      <.link navigate={~p"/multi/#{@series.multi_series.id}"}>
+                        {@series.multi_series.series.title}
                       </.link>
                     <% end %>
                   <% end %>
@@ -111,7 +116,7 @@ defmodule LLWeb.SeriesLive do
                 </div>
 
                 <div :if={assigns[:multis]}>
-                  <span :for={m <- @multis |> Enum.filter(&(@series.multiseries_id != &1.id))}>
+                  <span :for={m <- @multis |> Enum.filter(&(@series.multi_series_id != &1.id))}>
                     <span>{m.series.title}</span>
                     <button
                       phx-click="multi_add"
@@ -126,6 +131,34 @@ defmodule LLWeb.SeriesLive do
             </div>
 
             <div>
+              <div
+                :if={@current_scope.user}
+                class="libraries"
+              >
+                <span>Libraries:</span>
+                <div>
+                  <span :for={l <- @libraries}>
+                    <span>{l.name}</span>
+                    <button
+                      :if={in_library?(l, assigns[:multi] || @series)}
+                      phx-click="library-remove"
+                      phx-value-id={l.id}
+                      class="material-symbols-rounded"
+                    >
+                      close
+                    </button>
+                    <button
+                      :if={!in_library?(l, assigns[:multi] || @series)}
+                      phx-click="library-add"
+                      phx-value-id={l.id}
+                      class="material-symbols-rounded"
+                    >
+                      add
+                    </button>
+                  </span>
+                </div>
+              </div>
+
               <div class="categories">
                 <span>Categories:</span>
                 <div>
@@ -201,7 +234,7 @@ defmodule LLWeb.SeriesLive do
             id={LLWeb.ChapterComponent.id(c.id)}
             href={~p"/series/#{c.series_id}/#{c.id}"}
             chapter={c}
-            source={@source}
+            source={@series.source}
             show_hide={@show_hidden}
           />
         <% end %>
@@ -222,8 +255,15 @@ defmodule LLWeb.SeriesLive do
 
   def status(series), do: @status[series.status]
 
-  def mount(:not_mounted_at_router, params, socket) do
-    mount(params, nil, socket)
+  def in_library?(library, %MultiSeries{} = multi),
+    do: Enum.any?(library.multi_series, &(&1.id == multi.id))
+
+  def in_library?(library, %Series{} = series),
+    do: Enum.any?(library.series, &(&1.id == series.id))
+
+  def mount(:not_mounted_at_router, session, socket) do
+    socket = LLWeb.UserAuth.mount_current_scope(socket, session)
+    mount(session, nil, socket)
   end
 
   def mount(%{"multi_id" => multi_id}, _session, socket) do
@@ -240,6 +280,13 @@ defmodule LLWeb.SeriesLive do
       ])
 
     chapters = MultiSeries.get_chapters(multi)
+
+    socket =
+      if socket.assigns.current_scope.user do
+        assign(socket, libraries: get_libraries(socket))
+      else
+        socket
+      end
 
     socket =
       socket
@@ -261,13 +308,18 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload([[source: :extension], [multiseries: :series], :categories])
+      |> Repo.preload([[source: :extension], [multi_series: :series], :categories])
 
-    source = series.source
+    multi = Repo.get_by(MultiSeries, series_id: series.id)
 
     chapters = Chapter.list(series)
 
-    multi = Repo.get_by(MultiSeries, series_id: series.id)
+    socket =
+      if socket.assigns.current_scope.user do
+        assign(socket, libraries: get_libraries(socket))
+      else
+        socket
+      end
 
     socket =
       socket
@@ -275,7 +327,6 @@ defmodule LLWeb.SeriesLive do
       |> assign(is_multi: false)
       |> assign(page_title: series.title)
       |> assign(series: series)
-      |> assign(source: source)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
 
@@ -291,7 +342,7 @@ defmodule LLWeb.SeriesLive do
   end
 
   def update(%LL.Series{} = series) do
-    series = LL.Repo.preload(series, [[multiseries: :series], :categories])
+    series = LL.Repo.preload(series, [[multi_series: :series], :categories])
 
     Endpoint.broadcast("series:#{series.id}", "update", series)
 
@@ -311,6 +362,14 @@ defmodule LLWeb.SeriesLive do
     chapters = MultiSeries.get_chapters(multi)
 
     Endpoint.broadcast("multi:#{multi.id}", "update", {multi, chapters})
+  end
+
+  def get_libraries(socket) do
+    user = socket.assigns.current_scope.user
+
+    from(l in Library, where: l.user_id == ^user.id)
+    |> Repo.all()
+    |> Repo.preload([:multi_series, :series])
   end
 
   def handle_event("refresh_details", _, socket) do
@@ -338,7 +397,6 @@ defmodule LLWeb.SeriesLive do
       {:ok, series} ->
         LL.Message.create("Added {:library,#{series.id}} to library")
         update(series)
-        LLWeb.LibraryLive.update()
 
       err ->
         Message.error(err)
@@ -357,7 +415,6 @@ defmodule LLWeb.SeriesLive do
       {:ok, series} ->
         LL.Message.create("Removed {:library,#{series.id}} from library")
         update(series)
-        LLWeb.LibraryLive.update()
 
       err ->
         Message.error(err)
@@ -383,7 +440,6 @@ defmodule LLWeb.SeriesLive do
     |> Repo.insert()
     |> case do
       {:ok, multi} ->
-        LLWeb.LibraryLive.update()
         Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", multi)
 
       err ->
@@ -405,7 +461,7 @@ defmodule LLWeb.SeriesLive do
       series =
         socket.assigns.series
         |> Repo.reload()
-        |> Ecto.Changeset.change(%{multiseries_id: multi.id})
+        |> Ecto.Changeset.change(%{multi_series_id: multi.id})
         |> Repo.update!()
 
       {:ok, {multi, series}}
@@ -430,12 +486,12 @@ defmodule LLWeb.SeriesLive do
         |> Repo.preload(:series)
 
       multi.series
-      |> Ecto.Changeset.change(%{multiseries_id: multi.id})
+      |> Ecto.Changeset.change(%{multi_series_id: multi.id})
       |> Repo.update!()
 
       {:ok, series} =
         Repo.get(Series, id)
-        |> Ecto.Changeset.change(%{multiseries_id: nil})
+        |> Ecto.Changeset.change(%{multi_series_id: nil})
         |> Repo.update()
 
       multi
@@ -457,10 +513,10 @@ defmodule LLWeb.SeriesLive do
     Repo.transact(fn ->
       series =
         Repo.get(Series, id)
-        |> Ecto.Changeset.change(%{multiseries_id: nil})
+        |> Ecto.Changeset.change(%{multi_series_id: nil})
         |> Repo.update!()
 
-      multi = Repo.reload(socket.assigns[:multi]) || Repo.get(MultiSeries, series.multiseries_id)
+      multi = Repo.reload(socket.assigns[:multi]) || Repo.get(MultiSeries, series.multi_series_id)
 
       {:ok, {multi, series}}
     end)
@@ -482,7 +538,6 @@ defmodule LLWeb.SeriesLive do
       |> Repo.delete()
       |> case do
         {:ok, _} ->
-          LLWeb.LibraryLive.update()
           socket.assigns.multi.children |> Enum.each(&update/1)
           update(socket.assigns.multi.series)
           Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", nil)
@@ -494,6 +549,60 @@ defmodule LLWeb.SeriesLive do
       end
 
     {:noreply, socket}
+  end
+
+  def handle_event("library-add", %{"id" => id}, socket) do
+    library = Repo.get_by(Library, id: id, user_id: socket.assigns.current_scope.user.id)
+
+    Repo.transact(fn ->
+      if socket.assigns.is_multi do
+        %LibraryMulti{}
+        |> Ecto.Changeset.change(%{})
+        |> Ecto.Changeset.put_assoc(:library, library)
+        |> Ecto.Changeset.put_assoc(:multi_series, socket.assigns.multi)
+        |> Repo.insert()
+      else
+        %LibrarySeries{}
+        |> Ecto.Changeset.change(%{})
+        |> Ecto.Changeset.put_assoc(:library, library)
+        |> Ecto.Changeset.put_assoc(:series, socket.assigns.series)
+        |> Repo.insert()
+      end
+    end)
+    |> case do
+      {:ok, _} ->
+        {:noreply, assign(socket, libraries: get_libraries(socket))}
+
+      err ->
+        Message.error(err)
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("library-remove", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      if socket.assigns.is_multi do
+        Repo.get_by(LibraryMulti,
+          library_id: id,
+          multi_series_id: socket.assigns.multi.id
+        )
+        |> Repo.delete()
+      else
+        Repo.get_by(LibrarySeries,
+          library_id: id,
+          series_id: socket.assigns.series.id
+        )
+        |> Repo.delete()
+      end
+    end)
+    |> case do
+      {:ok, _} ->
+        {:noreply, assign(socket, libraries: get_libraries(socket))}
+
+      err ->
+        Message.error(err)
+        {:noreply, socket}
+    end
   end
 
   def handle_event("category_get", _, socket) do
@@ -508,7 +617,7 @@ defmodule LLWeb.SeriesLive do
       if socket.assigns.is_multi do
         %MultiSeriesCategory{}
         |> Ecto.Changeset.change(%{})
-        |> Ecto.Changeset.put_assoc(:multiseries, socket.assigns.multi)
+        |> Ecto.Changeset.put_assoc(:multi_series, socket.assigns.multi)
         |> Ecto.Changeset.put_assoc(:category, category)
         |> Repo.insert!()
 
@@ -538,7 +647,7 @@ defmodule LLWeb.SeriesLive do
     Repo.transact(fn ->
       if socket.assigns.is_multi do
         Repo.get_by(MultiSeriesCategory,
-          multiseries_id: socket.assigns.multi.id,
+          multi_series_id: socket.assigns.multi.id,
           category_id: id
         )
         |> Repo.delete!()

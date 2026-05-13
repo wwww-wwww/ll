@@ -1,14 +1,12 @@
 defmodule LL.MultiSeries do
   use Ecto.Schema
 
-  schema "multiseries" do
+  schema "multi_series" do
     belongs_to :series, LL.Series
 
-    has_many :children, LL.Series, foreign_key: :multiseries_id
+    has_many :children, LL.Series
 
-    many_to_many :categories, LL.Category,
-      join_through: LL.MultiSeriesCategory,
-      join_keys: [multiseries_id: :id, category_id: :id]
+    many_to_many :categories, LL.Category, join_through: LL.MultiSeriesCategory
   end
 
   def get_chapters(multi) do

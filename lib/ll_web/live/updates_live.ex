@@ -56,7 +56,7 @@ defmodule LLWeb.UpdatesLive do
             assigns = %{series: series}
 
             ~H"""
-            <.link navigate={~p"/library/series/#{@series.id}"}>
+            <.link navigate={~p"/series/#{@series.id}"}>
               {@series.title} ({@series.source.name})
             </.link>
             """

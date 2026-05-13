@@ -1,19 +1,19 @@
-defmodule LLWeb.LibraryLive do
+defmodule LLWeb.MainLibraryLive do
   use LLWeb, :live_view
   use LLWeb.SeriesComponent
   use LLWeb.ChapterComponent
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Library, MultiSeries, Series}
+  alias LL.{Repo, MultiSeries, Series, Category}
 
-  def title(), do: "Library"
+  def title(), do: "Library0"
 
   def render(assigns) do
     ~H"""
     <div class="library">
       <.live_component
-        :for={series <- @entries}
+        :for={series <- @library}
         module={LLWeb.SeriesComponent}
         id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
         series={series}
@@ -32,41 +32,50 @@ defmodule LLWeb.LibraryLive do
     """
   end
 
-  def create_path(%Series{id: id}, nil), do: "/library?series=#{id}"
-  def create_path(%MultiSeries{id: id}, nil), do: "/library?multi=#{id}"
-  def create_path(%Series{id: id}, %{name: name}), do: "/library/#{name}?series=#{id}"
-  def create_path(%MultiSeries{id: id}, %{name: name}), do: "/library/#{name}?multi=#{id}"
+  def create_path(%Series{id: id}, nil), do: "/home?series=#{id}"
+  def create_path(%MultiSeries{id: id}, nil), do: "/home?multi=#{id}"
+  def create_path(%Series{id: id}, %{name: name}), do: "/home/#{name}?series=#{id}"
+  def create_path(%MultiSeries{id: id}, %{name: name}), do: "/home/#{name}?multi=#{id}"
 
-  def mount(%{"library" => library} = params, session, socket) do
+  def mount(%{"category" => category} = params, session, socket) do
     socket =
-      case Repo.get_by(Library, name: library, user_id: socket.assigns.current_scope.user.id) do
+      case Repo.get_by(Category, name: category) do
         nil -> socket
-        library -> assign(socket, library: library)
+        category -> assign(socket, category: category)
       end
 
-    mount(Map.delete(params, "library"), session, socket)
+    mount(Map.delete(params, "category"), session, socket)
   end
 
   def mount(params, _session, socket) do
     {:noreply, socket} = handle_params(params, "", socket)
 
-    user = socket.assigns.current_scope.user
-
-    libraries =
-      from(l in Library, where: l.user_id == ^user.id)
+    library =
+      from(s in Series, where: s.in_library == true)
       |> Repo.all()
-      |> Repo.preload([:series, [multi_series: [:series, :children]]])
+      |> Repo.preload(:categories)
+      |> Enum.map(&Map.put(&1, :description, ""))
 
-    entries = Enum.map(libraries, & &1.series) |> List.flatten()
+    multis = Repo.all(LL.MultiSeries) |> Repo.preload([:series, :children, :categories])
 
-    assigns = %{socket: socket, libraries: libraries, library: socket.assigns[:library]}
+    library =
+      (library ++ multis)
+      |> Enum.filter(fn series ->
+        socket.assigns[:category] == nil or
+          Enum.any?(series.categories, &(&1.id == socket.assigns.category.id))
+      end)
+      |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
 
-    library_nav = ~H"""
+    categories = Repo.all(Category)
+
+    assigns = %{socket: socket, categories: categories, category: socket.assigns[:category]}
+
+    home_nav = ~H"""
     <div class="sub">
       <.link
-        :for={c <- @libraries}
-        navigate={~p"/library/#{c.name}"}
-        class={if(@library && @library.id == c.id, do: ["active"], else: [])}
+        :for={c <- @categories}
+        navigate={~p"/home/#{c.name}"}
+        class={if(@category && @category.id == c.id, do: ["active"], else: [])}
       >
         {c.name}
       </.link>
@@ -75,9 +84,9 @@ defmodule LLWeb.LibraryLive do
 
     socket =
       socket
-      |> assign(library_nav: library_nav)
-      |> assign(entries: entries)
-      |> assign(libraries: libraries)
+      |> assign(home_nav: home_nav)
+      |> assign(library: library)
+      |> assign(categories: categories)
 
     {:ok, socket}
   end
@@ -117,6 +126,6 @@ defmodule LLWeb.LibraryLive do
   end
 
   def handle_event("close_series", _, socket) do
-    {:noreply, push_patch(socket, to: ~p"/library")}
+    {:noreply, push_patch(socket, to: ~p"/")}
   end
 end

@@ -22,7 +22,7 @@ defmodule LL.Series do
 
     has_many :chapters, LL.Chapter
 
-    belongs_to :multiseries, LL.MultiSeries
+    belongs_to :multi_series, LL.MultiSeries
     field :priority, :integer
 
     many_to_many :categories, LL.Category, join_through: LL.SeriesCategory

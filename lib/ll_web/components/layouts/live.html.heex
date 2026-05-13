@@ -4,12 +4,24 @@
 
 <header>
   <nav>
+    <.link navigate={~p"/home"} class={current_page?(@socket, LLWeb.MainLibraryLive)}>
+      Home
+    </.link>
+    <%= if assigns[:home_nav] do %>
+      {@home_nav}
+    <% end %>
     <.link navigate={~p"/library"} class={current_page?(@socket, LLWeb.LibraryLive)}>
       Library
     </.link>
     <%= if assigns[:library_nav] do %>
       {@library_nav}
     <% end %>
+    <.link
+      :if={@current_scope.user != nil and current_page?(@socket, LLWeb.LibraryLive) != []}
+      navigate={~p"/libraries"}
+    >
+      Libraries
+    </.link>
     {live_render(@socket, LLWeb.UpdatesNavLive, id: LLWeb.UpdatesNavLive)}
     <.link navigate={~p"/search"} class={current_page?(@socket, LLWeb.SearchLive)}>Search</.link>
     <.link navigate={~p"/categories"} class={current_page?(@socket, LLWeb.CategoriesLive)}>

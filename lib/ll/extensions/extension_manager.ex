@@ -410,8 +410,8 @@ defmodule LL.ExtensionManager do
             Endpoint.broadcast("chapters:#{series.id}", "update", chapters)
             LLWeb.SeriesLive.update(series)
 
-            if series.multiseries_id != nil do
-              Repo.get(MultiSeries, series.multiseries_id)
+            if series.multi_series_id != nil do
+              Repo.get(MultiSeries, series.multi_series_id)
               |> LLWeb.SeriesLive.update()
             end
 

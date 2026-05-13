@@ -37,6 +37,18 @@ defmodule LLWeb.Router do
 
     live_session :require_authenticated_user,
       on_mount: [{LLWeb.UserAuth, :require_authenticated}] do
+      live "/library", LibraryLive
+      live "/library/:library", LibraryLive
+
+      live "/libraries", LibrariesLive
+
+      live "/search", SearchLive
+      live "/search/:source", SourceLive
+
+      live "/extensions", ExtensionsLive
+
+      live "/categories", CategoriesLive
+
       live "/user/settings", UserLive.Settings, :edit
     end
 
@@ -51,13 +63,9 @@ defmodule LLWeb.Router do
       live "/user/register", UserLive.Registration, :new
       live "/user/log-in", UserLive.Login, :new
 
-      live "/", LibraryLive
-      live "/library", LibraryLive
-      live "/library/category/:category/multi/:multi_id", LibraryLive
-      live "/library/category/:category/series/:series_id", LibraryLive
-      live "/library/category/:category", LibraryLive
-      live "/library/multi/:multi_id", LibraryLive
-      live "/library/series/:series_id", LibraryLive
+      live "/", MainLibraryLive
+      live "/home", MainLibraryLive
+      live "/home/:category", MainLibraryLive
 
       live "/multi/:multi_id", SeriesLive
       live "/multi/:multi_id/:chapter_id", ReaderLive
@@ -68,13 +76,6 @@ defmodule LLWeb.Router do
       live "/reader", ReaderLiveS
 
       live "/updates", UpdatesLive
-
-      live "/search", SearchLive
-      live "/search/:source", SourceLive
-
-      live "/extensions", ExtensionsLive
-
-      live "/categories", CategoriesLive
 
       live "/routes", RoutesLive
       live "/status", StatusLive
