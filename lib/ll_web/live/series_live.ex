@@ -27,11 +27,13 @@ defmodule LLWeb.SeriesLive do
     ~H"""
     <div class="inner">
       <div class="head" phx-value-sid={@series.id}>
-        <%= if @series.thumbnail_path != nil and File.exists?(@series.thumbnail_path) do %>
-          <div class="cover-image">
-            <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
-          </div>
-        <% end %>
+        <div
+          :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
+          class="cover-image"
+        >
+          <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
+        </div>
+
         <div class="info">
           <h1>
             <.link :if={@is_multi} navigate={~p"/multi/#{@multi.id}"}>{@series.title} (Multi)</.link>
@@ -55,7 +57,7 @@ defmodule LLWeb.SeriesLive do
                 <span>
                   Last details refresh:
                   <span class="updated">{relative_time(@series.details_updated)}</span>
-                  <button phx-click="refresh_details">Refresh</button>
+                  <button :if={@current_scope.user} phx-click="refresh_details">Refresh</button>
                 </span>
 
                 <span :if={not @is_multi}>
@@ -63,7 +65,7 @@ defmodule LLWeb.SeriesLive do
                   <span class="updated">{relative_time(@series.chapters_updated)}</span>
                 </span>
 
-                <span :if={not @is_multi}>
+                <span :if={not @is_multi and @current_scope.user}>
                   <button :if={@series.in_library} phx-click="library_remove">
                     Remove from library
                   </button>
@@ -75,44 +77,38 @@ defmodule LLWeb.SeriesLive do
                 <div>
                   Multi: <button :if={@is_multi} phx-click="multi_delete">Delete multi</button>
                   <%= if not @is_multi and @series.multi_series_id == nil and assigns[:multi] == nil do %>
-                    <button phx-click="multi_create">Create multi</button>
-                    <button phx-click="multi_get">Add to multi</button>
+                    <button :if={@current_scope.user} phx-click="multi_create">Create multi</button>
+                    <button :if={@current_scope.user} phx-click="multi_get">Add to multi</button>
                   <% end %>
 
                   <%= if not @is_multi do %>
-                    <%= if @multi != nil do %>
-                      <.link navigate={~p"/multi/#{@multi.id}"}>{@series.title}</.link>
-                    <% end %>
-                    <%= if @series.multi_series != nil do %>
-                      <.link navigate={~p"/multi/#{@series.multi_series.id}"}>
-                        {@series.multi_series.series.title}
-                      </.link>
-                    <% end %>
+                    <.link :if={@multi} navigate={~p"/multi/#{@multi.id}"}>{@series.title}</.link>
+                    <.link :if={@series.multi_series} navigate={~p"/multi/#{@series.multi_series.id}"}>
+                      {@series.multi_series.series.title}
+                    </.link>
                   <% end %>
                 </div>
 
-                <div>
-                  <%= if @is_multi do %>
-                    <span>
-                      <.link navigate={~p"/series/#{@multi.series.id}"}>
-                        {@multi.series.source.name}
-                      </.link>
-                      <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
-                    </span>
+                <div :if={@is_multi}>
+                  <span>
+                    <.link navigate={~p"/series/#{@multi.series.id}"}>
+                      {@multi.series.source.name}
+                    </.link>
+                    <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
+                  </span>
 
-                    <span :for={s <- @multi.children}>
-                      <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
-                      <span class="updated">{relative_time(s.chapters_updated)}</span>
-                      <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
-                      <button
-                        phx-click="multi_remove"
-                        phx-value-id={s.id}
-                        class="material-symbols-rounded"
-                      >
-                        close
-                      </button>
-                    </span>
-                  <% end %>
+                  <span :for={s <- @multi.children}>
+                    <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
+                    <span class="updated">{relative_time(s.chapters_updated)}</span>
+                    <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
+                    <button
+                      phx-click="multi_remove"
+                      phx-value-id={s.id}
+                      class="material-symbols-rounded"
+                    >
+                      close
+                    </button>
+                  </span>
                 </div>
 
                 <div :if={assigns[:multis]}>
@@ -166,6 +162,7 @@ defmodule LLWeb.SeriesLive do
                   <span :for={c <- categories}>
                     <span>{c.name}</span>
                     <button
+                      :if={@current_scope.user}
                       phx-click="category_remove"
                       phx-value-id={c.id}
                       class="material-symbols-rounded"
@@ -175,12 +172,9 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
 
-                <button phx-click="category_get">Add to category</button>
+                <button :if={@current_scope.user} phx-click="category_get">Add to category</button>
                 <div :if={assigns[:categories]}>
-                  <span :for={
-                    c <-
-                      @categories |> Enum.reject(fn c -> Enum.any?(categories, &(&1.id == c.id)) end)
-                  }>
+                  <span :for={c <- @categories} :if={!Enum.any?(categories, &(&1.id == c.id))}>
                     <span>{c.name}</span>
                     <button
                       phx-click="category_add"
@@ -199,7 +193,7 @@ defmodule LLWeb.SeriesLive do
 
       <div class="tags">{@series.genre}</div>
       <div class="description">{@series.description}</div>
-      <div class="actions">
+      <div :if={@current_scope.user} class="actions">
         <button phx-click="refresh_chapters">Refresh chapters</button>
         <button phx-click="download_all">Download all</button>
         <button phx-click="show_hidden" phx-value-show={if @show_hidden, do: 0, else: 1}>
@@ -225,6 +219,7 @@ defmodule LLWeb.SeriesLive do
             source={s.source}
             show_source={true}
             show_hide={@show_hidden}
+            user={@current_scope.user}
           />
         <% else %>
           <.live_component
@@ -236,6 +231,7 @@ defmodule LLWeb.SeriesLive do
             chapter={c}
             source={@series.source}
             show_hide={@show_hidden}
+            user={@current_scope.user}
           />
         <% end %>
       </div>

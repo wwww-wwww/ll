@@ -7,56 +7,34 @@ defmodule LLWeb.ChapterComponent do
     ~H"""
     <div class={["ChapterComponent", assigns[:selected] && "selected", @chapter.hidden && "hidden"]}>
       <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, &File.exists?/1) %>
-      <%= if @chapter.files != nil do %>
-        <%= if length(downloaded) != length(@chapter.files) do %>
-          <div class="extra">
-            <span>{length(downloaded)}/{length(@chapter.files)}</span>
-            <button
-              phx-click="download_chapter"
-              phx-target={@myself}
-              value={@chapter.id}
-              class="material-symbols-rounded"
-            >
-              download
-            </button>
-          </div>
-        <% end %>
-      <% else %>
-        <div class="extra">
-          <button
-            phx-click="download_chapter"
-            phx-target={@myself}
-            value={@chapter.id}
-            class="material-symbols-rounded"
-          >
-            download
-          </button>
-        </div>
-      <% end %>
+      <div :if={@chapter.files == nil or length(downloaded) != length(@chapter.files)} class="extra">
+        <span :if={@chapter.files}>{length(downloaded)}/{length(@chapter.files)}</span>
+        <button
+          :if={assigns[:user]}
+          phx-click="download_chapter"
+          phx-target={@myself}
+          value={@chapter.id}
+          class="material-symbols-rounded"
+        >
+          download
+        </button>
+      </div>
       <div class="body">
         <%= if downloaded do %>
           <.link patch={@href}>
-            <div>
-              <span class="title">{@chapter.title}</span>
-            </div>
+            <div><span class="title">{@chapter.title}</span></div>
             <div>
               <span class="date">{relative_time(@chapter.date)}</span>
-              <%= if assigns[:show_source] do %>
-                <span class="source">{@source.name}</span>
-              <% end %>
+              <span :if={assigns[:show_source]} class="source">{@source.name}</span>
               <span class="scanlator">{@chapter.scanlator}</span>
             </div>
           </.link>
         <% else %>
           <div>
-            <div>
-              <span class="title">{@chapter.title}</span>
-            </div>
+            <div><span class="title">{@chapter.title}</span></div>
             <div>
               <span class="date">{relative_time(@chapter.date)}</span>
-              <%= if assigns[:show_source] do %>
-                <span class="source">{@source.name}</span>
-              <% end %>
+              <span :if={assigns[:show_source]} class="source">{@source.name}</span>
               <span class="scanlator">{@chapter.scanlator}</span>
             </div>
           </div>
