@@ -2,7 +2,7 @@ defmodule LLWeb.LibrariesLive do
   use LLWeb, :live_view
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Library, Message}
+  alias LL.{Repo, Library}
 
   def title(), do: "Libraries"
 
@@ -74,9 +74,8 @@ defmodule LLWeb.LibrariesLive do
   def get_libraries(socket) do
     user = socket.assigns.current_scope.user
 
-    libraries =
-      from(l in Library, where: l.user_id == ^user.id)
-      |> Repo.all()
-      |> Enum.sort_by(& &1.id)
+    from(l in Library, where: l.user_id == ^user.id)
+    |> Repo.all()
+    |> Enum.sort_by(& &1.id)
   end
 end

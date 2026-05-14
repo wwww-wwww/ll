@@ -17,7 +17,7 @@ defmodule LLWeb.LibraryLive do
         module={LLWeb.SeriesComponent}
         id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
         series={series}
-        href={create_path(series, assigns[:category])}
+        href={create_path(series, assigns[:library])}
         is_multi={is_multi?(series)}
       />
     </div>
@@ -57,20 +57,26 @@ defmodule LLWeb.LibraryLive do
       |> Repo.all()
       |> Repo.preload([:series, [multi_series: [:series, :children]]])
 
-    entries = Enum.map(libraries, & &1.series) |> List.flatten()
+    entries =
+      case socket.assigns do
+        %{library: %{id: library_id}} -> Enum.filter(libraries, &(&1.id == library_id))
+        _ -> libraries
+      end
+      |> Enum.map(&(&1.series ++ &1.multi_series))
+      |> List.flatten()
+      |> Enum.uniq_by(&{&1.__struct__, &1.id})
+      |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
 
     assigns = %{socket: socket, libraries: libraries, library: socket.assigns[:library]}
 
     library_nav = ~H"""
-    <div class="sub">
-      <.link
-        :for={c <- @libraries}
-        navigate={~p"/library/#{c.name}"}
-        class={if(@library && @library.id == c.id, do: ["active"], else: [])}
-      >
-        {c.name}
-      </.link>
-    </div>
+    <.link
+      :for={c <- @libraries}
+      navigate={~p"/library/#{c.name}"}
+      class={if(@library && @library.id == c.id, do: ["active"], else: [])}
+    >
+      {c.name}
+    </.link>
     """
 
     socket =

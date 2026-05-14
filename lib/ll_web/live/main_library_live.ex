@@ -5,19 +5,19 @@ defmodule LLWeb.MainLibraryLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, MultiSeries, Series, Category}
+  alias LL.{Repo, MultiSeries, Series, Library}
 
-  def title(), do: "Library0"
+  def title(), do: "Home"
 
   def render(assigns) do
     ~H"""
     <div class="library">
       <.live_component
-        :for={series <- @library}
+        :for={series <- @entries}
         module={LLWeb.SeriesComponent}
         id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
         series={series}
-        href={create_path(series, assigns[:category])}
+        href={create_path(series, assigns[:library])}
         is_multi={is_multi?(series)}
       />
     </div>
@@ -37,56 +37,57 @@ defmodule LLWeb.MainLibraryLive do
   def create_path(%Series{id: id}, %{name: name}), do: "/home/#{name}?series=#{id}"
   def create_path(%MultiSeries{id: id}, %{name: name}), do: "/home/#{name}?multi=#{id}"
 
-  def mount(%{"category" => category} = params, session, socket) do
+  def main_libraries() do
+    from(l in Library, where: is_nil(l.user_id))
+    |> Repo.all()
+    |> Repo.preload([:series, [multi_series: [:series, :children]]])
+  end
+
+  def mount(%{"library" => library} = params, session, socket) do
     socket =
-      case Repo.get_by(Category, name: category) do
+      from(l in Library, where: is_nil(l.user_id) and l.name == ^library)
+      |> Repo.one()
+      |> case do
         nil -> socket
-        category -> assign(socket, category: category)
+        library -> assign(socket, library: library)
       end
 
-    mount(Map.delete(params, "category"), session, socket)
+    mount(Map.delete(params, "library"), session, socket)
   end
 
   def mount(params, _session, socket) do
     {:noreply, socket} = handle_params(params, "", socket)
 
-    library =
-      from(s in Series, where: s.in_library == true)
-      |> Repo.all()
-      |> Repo.preload(:categories)
-      |> Enum.map(&Map.put(&1, :description, ""))
+    libraries = main_libraries()
 
-    multis = Repo.all(LL.MultiSeries) |> Repo.preload([:series, :children, :categories])
-
-    library =
-      (library ++ multis)
-      |> Enum.filter(fn series ->
-        socket.assigns[:category] == nil or
-          Enum.any?(series.categories, &(&1.id == socket.assigns.category.id))
-      end)
+    entries =
+      case socket.assigns do
+        %{library: %{id: library_id}} -> Enum.filter(libraries, &(&1.id == library_id))
+        _ -> libraries
+      end
+      |> Enum.map(&(&1.series ++ &1.multi_series))
+      |> List.flatten()
+      |> Enum.uniq_by(&{&1.__struct__, &1.id})
       |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
+      |> Enum.uniq_by(&if &1.__struct__ == Series, do: &1.id, else: &1.series.id)
 
-    categories = Repo.all(Category)
-
-    assigns = %{socket: socket, categories: categories, category: socket.assigns[:category]}
+    assigns = %{socket: socket, libraries: libraries, library: socket.assigns[:library]}
 
     home_nav = ~H"""
-    <div class="sub">
-      <.link
-        :for={c <- @categories}
-        navigate={~p"/home/#{c.name}"}
-        class={if(@category && @category.id == c.id, do: ["active"], else: [])}
-      >
-        {c.name}
-      </.link>
-    </div>
+    <.link
+      :for={c <- @libraries}
+      navigate={~p"/home/#{c.name}"}
+      class={if(@library && @library.id == c.id, do: ["active"], else: [])}
+    >
+      {c.name}
+    </.link>
     """
 
     socket =
       socket
       |> assign(home_nav: home_nav)
-      |> assign(library: library)
-      |> assign(categories: categories)
+      |> assign(entries: entries)
+      |> assign(libraries: libraries)
 
     {:ok, socket}
   end

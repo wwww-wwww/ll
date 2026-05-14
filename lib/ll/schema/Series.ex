@@ -25,8 +25,6 @@ defmodule LL.Series do
     belongs_to :multi_series, LL.MultiSeries
     field :priority, :integer
 
-    many_to_many :categories, LL.Category, join_through: LL.SeriesCategory
-
     timestamps()
   end
 end

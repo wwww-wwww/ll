@@ -15,10 +15,7 @@ defmodule LLWeb.SeriesLive do
     LibraryMulti,
     LibrarySeries,
     MultiSeries,
-    Message,
-    Category,
-    SeriesCategory,
-    MultiSeriesCategory
+    Message
   }
 
   def title(), do: "Series"
@@ -63,13 +60,6 @@ defmodule LLWeb.SeriesLive do
                 <span :if={not @is_multi}>
                   Last chapter refresh:
                   <span class="updated">{relative_time(@series.chapters_updated)}</span>
-                </span>
-
-                <span :if={not @is_multi and @current_scope.user}>
-                  <button :if={@series.in_library} phx-click="library_remove">
-                    Remove from library
-                  </button>
-                  <button :if={not @series.in_library} phx-click="library_add">Add to library</button>
                 </span>
               </div>
 
@@ -136,7 +126,7 @@ defmodule LLWeb.SeriesLive do
                   <span :for={l <- @libraries}>
                     <span>{l.name}</span>
                     <button
-                      :if={in_library?(l, assigns[:multi] || @series)}
+                      :if={in_library?(l, if(@is_multi, do: @multi, else: @series))}
                       phx-click="library-remove"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -144,7 +134,7 @@ defmodule LLWeb.SeriesLive do
                       close
                     </button>
                     <button
-                      :if={!in_library?(l, assigns[:multi] || @series)}
+                      :if={!in_library?(l, if(@is_multi, do: @multi, else: @series))}
                       phx-click="library-add"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -155,30 +145,26 @@ defmodule LLWeb.SeriesLive do
                 </div>
               </div>
 
-              <div class="categories">
-                <span>Categories:</span>
+              <div
+                :if={@current_scope.user}
+                class="libraries"
+              >
+                <span>Main libraries:</span>
                 <div>
-                  <% categories = if @is_multi, do: @multi.categories, else: @series.categories %>
-                  <span :for={c <- categories}>
-                    <span>{c.name}</span>
+                  <span :for={l <- @main_libraries}>
+                    <span>{l.name}</span>
                     <button
-                      :if={@current_scope.user}
-                      phx-click="category_remove"
-                      phx-value-id={c.id}
+                      :if={in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      phx-click="library-remove"
+                      phx-value-id={l.id}
                       class="material-symbols-rounded"
                     >
                       close
                     </button>
-                  </span>
-                </div>
-
-                <button :if={@current_scope.user} phx-click="category_get">Add to category</button>
-                <div :if={assigns[:categories]}>
-                  <span :for={c <- @categories} :if={!Enum.any?(categories, &(&1.id == c.id))}>
-                    <span>{c.name}</span>
                     <button
-                      phx-click="category_add"
-                      phx-value-id={c.id}
+                      :if={!in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      phx-click="library-add"
+                      phx-value-id={l.id}
                       class="material-symbols-rounded"
                     >
                       add
@@ -269,11 +255,7 @@ defmodule LLWeb.SeriesLive do
 
     multi =
       Repo.get(MultiSeries, multi_id)
-      |> Repo.preload([
-        [series: [:source, :chapters]],
-        [children: [:source, :chapters]],
-        :categories
-      ])
+      |> Repo.preload(series: [:source, :chapters], children: [:source, :chapters])
 
     chapters = MultiSeries.get_chapters(multi)
 
@@ -292,6 +274,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(series: multi.series)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
+      |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
 
     {:ok, socket}
   end
@@ -304,7 +287,7 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload([[source: :extension], [multi_series: :series], :categories])
+      |> Repo.preload(source: :extension, multi_series: :series)
 
     multi = Repo.get_by(MultiSeries, series_id: series.id)
 
@@ -325,6 +308,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(series: series)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
+      |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
 
     if series.details_updated == nil do
       ExtensionManager.series_details(series)
@@ -338,7 +322,7 @@ defmodule LLWeb.SeriesLive do
   end
 
   def update(%LL.Series{} = series) do
-    series = LL.Repo.preload(series, [[multi_series: :series], :categories])
+    series = LL.Repo.preload(series, multi_series: :series)
 
     Endpoint.broadcast("series:#{series.id}", "update", series)
 
@@ -349,11 +333,7 @@ defmodule LLWeb.SeriesLive do
 
   def update(%LL.MultiSeries{} = multi) do
     multi =
-      LL.Repo.preload(multi, [
-        [series: [:source, :chapters]],
-        [children: [:source, :chapters]],
-        :categories
-      ])
+      LL.Repo.preload(multi, series: [:source, :chapters], children: [:source, :chapters])
 
     chapters = MultiSeries.get_chapters(multi)
 
@@ -378,42 +358,6 @@ defmodule LLWeb.SeriesLive do
 
     if socket.assigns.is_multi do
       socket.assigns.multi.children |> Enum.each(&ExtensionManager.series_chapters/1)
-    end
-
-    {:noreply, socket}
-  end
-
-  def handle_event("library_add", _, socket) do
-    Repo.transact(fn ->
-      Repo.get(Series, socket.assigns.series.id)
-      |> Ecto.Changeset.change(%{in_library: true})
-      |> Repo.update()
-    end)
-    |> case do
-      {:ok, series} ->
-        LL.Message.create("Added {:library,#{series.id}} to library")
-        update(series)
-
-      err ->
-        Message.error(err)
-    end
-
-    {:noreply, socket}
-  end
-
-  def handle_event("library_remove", _, socket) do
-    Repo.transact(fn ->
-      Repo.get(Series, socket.assigns.series.id)
-      |> Ecto.Changeset.change(%{in_library: false})
-      |> Repo.update()
-    end)
-    |> case do
-      {:ok, series} ->
-        LL.Message.create("Removed {:library,#{series.id}} from library")
-        update(series)
-
-      err ->
-        Message.error(err)
     end
 
     {:noreply, socket}
@@ -548,26 +492,21 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_event("library-add", %{"id" => id}, socket) do
-    library = Repo.get_by(Library, id: id, user_id: socket.assigns.current_scope.user.id)
+    library = Repo.get_by(Library, id: id)
 
     Repo.transact(fn ->
       if socket.assigns.is_multi do
-        %LibraryMulti{}
-        |> Ecto.Changeset.change(%{})
-        |> Ecto.Changeset.put_assoc(:library, library)
-        |> Ecto.Changeset.put_assoc(:multi_series, socket.assigns.multi)
-        |> Repo.insert()
+        %LibraryMulti{library_id: library.id, multi_series_id: socket.assigns.multi.id}
       else
-        %LibrarySeries{}
-        |> Ecto.Changeset.change(%{})
-        |> Ecto.Changeset.put_assoc(:library, library)
-        |> Ecto.Changeset.put_assoc(:series, socket.assigns.series)
-        |> Repo.insert()
+        %LibrarySeries{library_id: library.id, series_id: socket.assigns.series.id}
       end
+      |> Repo.insert()
     end)
     |> case do
       {:ok, _} ->
-        {:noreply, assign(socket, libraries: get_libraries(socket))}
+        {:noreply,
+         assign(socket, libraries: get_libraries(socket))
+         |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())}
 
       err ->
         Message.error(err)
@@ -593,78 +532,14 @@ defmodule LLWeb.SeriesLive do
     end)
     |> case do
       {:ok, _} ->
-        {:noreply, assign(socket, libraries: get_libraries(socket))}
+        {:noreply,
+         assign(socket, libraries: get_libraries(socket))
+         |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())}
 
       err ->
         Message.error(err)
         {:noreply, socket}
     end
-  end
-
-  def handle_event("category_get", _, socket) do
-    categories = Repo.all(Category)
-    {:noreply, assign(socket, categories: categories)}
-  end
-
-  def handle_event("category_add", %{"id" => id}, socket) do
-    category = Repo.get(Category, id)
-
-    Repo.transact(fn ->
-      if socket.assigns.is_multi do
-        %MultiSeriesCategory{}
-        |> Ecto.Changeset.change(%{})
-        |> Ecto.Changeset.put_assoc(:multi_series, socket.assigns.multi)
-        |> Ecto.Changeset.put_assoc(:category, category)
-        |> Repo.insert!()
-
-        {:ok, Repo.reload(socket.assigns.multi)}
-      else
-        %SeriesCategory{}
-        |> Ecto.Changeset.change(%{})
-        |> Ecto.Changeset.put_assoc(:series, socket.assigns.series)
-        |> Ecto.Changeset.put_assoc(:category, category)
-        |> Repo.insert!()
-
-        {:ok, Repo.reload(socket.assigns.series)}
-      end
-    end)
-    |> case do
-      {:ok, series} ->
-        update(series)
-
-      err ->
-        Message.error(err)
-    end
-
-    {:noreply, socket}
-  end
-
-  def handle_event("category_remove", %{"id" => id}, socket) do
-    Repo.transact(fn ->
-      if socket.assigns.is_multi do
-        Repo.get_by(MultiSeriesCategory,
-          multi_series_id: socket.assigns.multi.id,
-          category_id: id
-        )
-        |> Repo.delete!()
-
-        {:ok, Repo.reload(socket.assigns.multi)}
-      else
-        Repo.get_by(SeriesCategory, series_id: socket.assigns.series.id, category_id: id)
-        |> Repo.delete!()
-
-        {:ok, Repo.reload(socket.assigns.series)}
-      end
-    end)
-    |> case do
-      {:ok, series} ->
-        update(series)
-
-      err ->
-        Message.error(err)
-    end
-
-    {:noreply, socket}
   end
 
   def handle_event("show_hidden", %{"show" => b}, socket) do

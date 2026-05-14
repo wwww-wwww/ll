@@ -47,8 +47,6 @@ defmodule LLWeb.Router do
 
       live "/extensions", ExtensionsLive
 
-      live "/categories", CategoriesLive
-
       live "/user/settings", UserLive.Settings, :edit
     end
 
@@ -65,7 +63,7 @@ defmodule LLWeb.Router do
 
       live "/", MainLibraryLive
       live "/home", MainLibraryLive
-      live "/home/:category", MainLibraryLive
+      live "/home/:library", MainLibraryLive
 
       live "/multi/:multi_id", SeriesLive
       live "/multi/:multi_id/:chapter_id", ReaderLive

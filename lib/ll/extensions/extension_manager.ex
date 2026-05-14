@@ -285,7 +285,7 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def series_chapters(series) do
+  def series_chapters(series, download \\ false) do
     source = Repo.get(Source, series.source_id) |> Repo.preload(:extension)
 
     data =
@@ -391,9 +391,8 @@ defmodule LL.ExtensionManager do
               chapters_updated: DateTime.utc_now() |> DateTime.truncate(:second)
             })
             |> Repo.update!()
-            |> Repo.preload(:categories)
 
-          if Enum.any?(series.categories, & &1.autoupdate) do
+          if download do
             Enum.filter(chapters, &elem(&1, 0))
             |> Enum.each(fn {_, c} ->
               Message.create("{:library,#{series.id}}", "New chapter {:chapter,#{c.id}}")

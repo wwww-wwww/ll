@@ -15,8 +15,8 @@ defmodule LL.LibrarySeries do
   use Ecto.Schema
 
   schema "library_series" do
-    belongs_to :series, LL.Series
     belongs_to :library, LL.Library
+    belongs_to :series, LL.Series
   end
 end
 
@@ -24,7 +24,7 @@ defmodule LL.LibraryMulti do
   use Ecto.Schema
 
   schema "library_multi" do
-    belongs_to :multi_series, LL.MultiSeries
     belongs_to :library, LL.Library
+    belongs_to :multi_series, LL.MultiSeries
   end
 end
