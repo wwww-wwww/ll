@@ -5,38 +5,37 @@ defmodule LLWeb.ApiController do
   alias LL.{Repo, Chapter, Series, MultiSeries}
 
   def all(conn, _params) do
-    list =
-      from(s in Series, where: s.in_library == true)
-      |> Repo.all()
-      |> Enum.map(fn series ->
-        %{
-          url: ~p"/series/#{series.id}",
-          title: series.title,
-          artist: series.artist,
-          author: series.author,
-          genre: series.genre,
-          status: series.status,
-          thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
-        }
+    entries =
+      LLWeb.MainLibraryLive.main_libraries()
+      |> LLWeb.MainLibraryLive.libraries_series()
+      |> Enum.map(fn entry ->
+        case entry do
+          %MultiSeries{series: series} ->
+            %{
+              url: ~p"/series/#{"m#{entry.id}"}",
+              title: series.title <> " (Multi)",
+              artist: series.artist,
+              author: series.author,
+              genre: series.genre,
+              status: series.status,
+              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
+              multi: true
+            }
+
+          series ->
+            %{
+              url: ~p"/series/#{series.id}",
+              title: series.title,
+              artist: series.artist,
+              author: series.author,
+              genre: series.genre,
+              status: series.status,
+              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
+            }
+        end
       end)
 
-    multis =
-      Repo.all(MultiSeries)
-      |> Repo.preload(:series)
-      |> Enum.map(fn multi ->
-        %{
-          url: ~p"/series/#{"m#{multi.id}"}",
-          title: multi.series.title <> " (Multi)",
-          artist: multi.series.artist,
-          author: multi.series.author,
-          genre: multi.series.genre,
-          status: multi.series.status,
-          thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.series.thumbnail_path)}",
-          multi: true
-        }
-      end)
-
-    json(conn, list ++ multis)
+    json(conn, entries)
   end
 
   def map_tags(tags) do

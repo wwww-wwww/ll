@@ -44,10 +44,11 @@ defmodule LLWeb.ChapterComponent do
       <div class="extra">
         <%= if assigns[:show_hide] do %>
           <%= if @chapter.hidden != true do %>
-            <button phx-click="hide-chapter" phx-target={@myself}>Hide</button>
+            <button phx-click="hide" phx-target={@myself}>Hide</button>
           <% else %>
-            <button phx-click="unhide-chapter" phx-target={@myself}>Show</button>
+            <button phx-click="unhide" phx-target={@myself}>Show</button>
           <% end %>
+          <button phx-click="delete" phx-target={@myself}>Delete</button>
         <% end %>
         <.link
           class="button material-symbols-rounded"
@@ -70,7 +71,7 @@ defmodule LLWeb.ChapterComponent do
     {:ok, socket}
   end
 
-  def handle_event("hide-chapter", _params, socket) do
+  def handle_event("hide", _params, socket) do
     socket.assigns.chapter
     |> Ecto.Changeset.change(%{hidden: true})
     |> Repo.update()
@@ -82,7 +83,7 @@ defmodule LLWeb.ChapterComponent do
     {:noreply, socket}
   end
 
-  def handle_event("unhide-chapter", _params, socket) do
+  def handle_event("unhide", _params, socket) do
     socket.assigns.chapter
     |> Ecto.Changeset.change(%{hidden: false})
     |> Repo.update()
@@ -90,6 +91,16 @@ defmodule LLWeb.ChapterComponent do
       {:ok, chapter} -> Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
       _ -> nil
     end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("delete", _params, socket) do
+    Repo.delete(socket.assigns.chapter)
+
+    chapters = LL.Chapter.list(%{id: socket.assigns.chapter.series_id})
+
+    Endpoint.broadcast("chapters:#{socket.assigns.chapter.series_id}", "update", chapters)
 
     {:noreply, socket}
   end

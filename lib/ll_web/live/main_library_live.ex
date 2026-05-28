@@ -43,6 +43,18 @@ defmodule LLWeb.MainLibraryLive do
     |> Repo.preload([:series, [multi_series: [:series, :children]]])
   end
 
+  def libraries_series(libraries) do
+    libraries
+    |> Enum.map(&(&1.series ++ &1.multi_series))
+    |> List.flatten()
+    |> Enum.uniq_by(&{&1.__struct__, &1.id})
+    |> Enum.sort_by(
+      &{Map.get(&1, :series, &1).title |> String.downcase(),
+       if(&1.__struct__ == Series, do: 1, else: 0)}
+    )
+    |> Enum.uniq_by(&if &1.__struct__ == Series, do: &1.id, else: &1.series.id)
+  end
+
   def mount(%{"library" => library} = params, session, socket) do
     socket =
       from(l in Library, where: is_nil(l.user_id) and l.name == ^library)
@@ -65,14 +77,7 @@ defmodule LLWeb.MainLibraryLive do
         %{library: %{id: library_id}} -> Enum.filter(libraries, &(&1.id == library_id))
         _ -> libraries
       end
-      |> Enum.map(&(&1.series ++ &1.multi_series))
-      |> List.flatten()
-      |> Enum.uniq_by(&{&1.__struct__, &1.id})
-      |> Enum.sort_by(
-        &{Map.get(&1, :series, &1).title |> String.downcase(),
-         if(&1.__struct__ == Series, do: 1, else: 0)}
-      )
-      |> Enum.uniq_by(&if &1.__struct__ == Series, do: &1.id, else: &1.series.id)
+      |> libraries_series()
 
     assigns = %{socket: socket, libraries: libraries, library: socket.assigns[:library]}
 
