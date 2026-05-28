@@ -1,7 +1,6 @@
 defmodule LLWeb.ApiController do
   use LLWeb, :controller
 
-  import Ecto.Query, only: [from: 2]
   alias LL.{Repo, Chapter, Series, MultiSeries}
 
   def all(conn, _params) do

@@ -5,8 +5,10 @@ defmodule LLWeb.SeriesLive do
   import Ecto.Query
 
   require Logger
+  require LL.Downloader
 
   alias LL.{
+    Downloader,
     Repo,
     Series,
     Chapter,
@@ -23,58 +25,89 @@ defmodule LLWeb.SeriesLive do
   def render(assigns) do
     ~H"""
     <div class="inner">
-      <div class="head" phx-value-sid={@series.id}>
+      <div class="head" phx-value-sid={@entry.id}>
         <div
-          :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
+          :if={@entry.thumbnail_path != nil and File.exists?(@entry.thumbnail_path)}
           class="cover-image"
         >
-          <img src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"} />
+          <img src={~p"/thumbnail/#{Path.basename(@entry.thumbnail_path)}"} />
         </div>
 
         <div class="info">
           <h1>
-            <.link :if={@is_multi} navigate={~p"/multi/#{@multi.id}"}>{@series.title} (Multi)</.link>
-            <.link :if={not @is_multi} navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
+            <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{@entry.title} (Multi)</.link>
+            <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{@entry.title}</.link>
           </h1>
           <div>
             <div>
               <div>
-                <span>Author: <span class="author">{@series.author}</span></span>
-                <span>Artist: <span class="artist">{@series.artist}</span></span>
-                <span>Status: <span class="status">{status(@series)}</span></span>
+                <span>
+                  Anilist:
+                  <.link class="anilist" href={"https://anilist.co/manga/#{@entry.anilist_id}"}>
+                    {@entry.anilist_id}
+                  </.link>
+                </span>
+                <span>Author: <span class="author">{@entry.author}</span></span>
+                <span>Artist: <span class="artist">{@entry.artist}</span></span>
+                <span>Status: <span class="status">{status(@entry)}</span></span>
                 <span>
                   Source:
                   <span class="source">
                     <span :if={@is_multi}>Multi</span>
-                    <.link :if={not @is_multi} href={Path.join(@series.source.base_url, @series.url)}>
-                      {@series.source.name} ({@series.source.lang})
+                    <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
+                      {@entry.source.name} ({@entry.source.lang})
                     </.link>
                   </span>
-                </span>
-                <span>
-                  Last details refresh:
-                  <span class="updated">{relative_time(@series.details_updated)}</span>
-                  <button :if={@current_scope.user} phx-click="refresh_details">Refresh</button>
                 </span>
 
                 <span :if={not @is_multi}>
                   Last chapter refresh:
-                  <span class="updated">{relative_time(@series.chapters_updated)}</span>
+                  <span class="updated">{relative_time(@entry.chapters_updated)}</span>
                 </span>
+              </div>
+
+              <div :if={@current_scope.user} class="anilist-details">
+                Anilist
+                <form phx-submit="anilist-search">
+                  <div>
+                    <input type="text" name="title" value={@entry.title || @entry.series.title} />
+                    <input type="submit" value="Search" />
+                  </div>
+                </form>
+
+                <div>
+                  <span :for={{t, i} <- (assigns[:anilist_search_results] || []) |> Enum.with_index()}>
+                    <% title = t["title"]["english"] || t["title"]["romaji"] || t["title"]["native"] %>
+                    <img src={t["coverImage"]["extraLarge"]} />
+                    <.link href={t["siteUrl"]} target="_blank">{title}</.link>
+                    <div
+                      :for={title <- Enum.map(t["title"], &elem(&1, 1)) ++ t["synonyms"]}
+                      :if={!is_nil(title)}
+                    >
+                      {title}
+                      <button
+                        phx-click="anilist-details-set"
+                        phx-value-details={i}
+                        phx-value-title={title}
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </span>
+                </div>
               </div>
 
               <div class="multis">
                 <div>
                   Multi: <button :if={@is_multi} phx-click="multi_delete">Delete multi</button>
-                  <%= if not @is_multi and @series.multi_series_id == nil and assigns[:multi] == nil do %>
+                  <%= if not @is_multi and @entry.multi_series_id == nil and assigns[:multi] == nil do %>
                     <button :if={@current_scope.user} phx-click="multi_create">Create multi</button>
                     <button :if={@current_scope.user} phx-click="multi_get">Add to multi</button>
                   <% end %>
 
                   <%= if not @is_multi do %>
-                    <.link :if={@multi} navigate={~p"/multi/#{@multi.id}"}>{@series.title}</.link>
-                    <.link :if={@series.multi_series} navigate={~p"/multi/#{@series.multi_series.id}"}>
-                      {@series.multi_series.series.title}
+                    <.link :if={@entry.multi_series} navigate={~p"/multi/#{@entry.multi_series.id}"}>
+                      {@entry.multi_series.title || @entry.multi_series.series.title}
                     </.link>
                   <% end %>
                 </div>
@@ -102,7 +135,7 @@ defmodule LLWeb.SeriesLive do
                 </div>
 
                 <div :if={assigns[:multis]}>
-                  <span :for={m <- @multis |> Enum.filter(&(@series.multi_series_id != &1.id))}>
+                  <span :for={m <- @multis |> Enum.filter(&(@entry.multi_series_id != &1.id))}>
                     <span>{m.series.title}</span>
                     <button
                       phx-click="multi_add"
@@ -126,7 +159,7 @@ defmodule LLWeb.SeriesLive do
                   <span :for={l <- @libraries}>
                     <span>{l.name}</span>
                     <button
-                      :if={in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      :if={in_library?(l, @entry)}
                       phx-click="library-remove"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -134,7 +167,7 @@ defmodule LLWeb.SeriesLive do
                       close
                     </button>
                     <button
-                      :if={!in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      :if={!in_library?(l, @entry)}
                       phx-click="library-add"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -154,7 +187,7 @@ defmodule LLWeb.SeriesLive do
                   <span :for={l <- @main_libraries}>
                     <span>{l.name}</span>
                     <button
-                      :if={in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      :if={in_library?(l, @entry)}
                       phx-click="library-remove"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -162,7 +195,7 @@ defmodule LLWeb.SeriesLive do
                       close
                     </button>
                     <button
-                      :if={!in_library?(l, if(@is_multi, do: @multi, else: @series))}
+                      :if={!in_library?(l, @entry)}
                       phx-click="library-add"
                       phx-value-id={l.id}
                       class="material-symbols-rounded"
@@ -177,8 +210,8 @@ defmodule LLWeb.SeriesLive do
         </div>
       </div>
 
-      <div class="tags">{@series.genre}</div>
-      <div class="description">{@series.description}</div>
+      <div class="tags">{@entry.genre}</div>
+      <div class="description">{raw(@entry.description)}</div>
       <div :if={@current_scope.user} class="actions">
         <button phx-click="refresh_chapters">Refresh chapters</button>
         <button phx-click="download_all">Download all</button>
@@ -215,7 +248,7 @@ defmodule LLWeb.SeriesLive do
             id={LLWeb.ChapterComponent.id(c.id)}
             href={~p"/series/#{c.series_id}/#{c.id}"}
             chapter={c}
-            source={@series.source}
+            source={@entry.source}
             show_hide={@show_hidden}
             user={@current_scope.user}
           />
@@ -268,10 +301,10 @@ defmodule LLWeb.SeriesLive do
 
     socket =
       socket
+      |> assign(entry: multi)
       |> assign(multi: multi)
       |> assign(is_multi: true)
       |> assign(page_title: multi.series.title)
-      |> assign(series: multi.series)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
@@ -302,10 +335,10 @@ defmodule LLWeb.SeriesLive do
 
     socket =
       socket
+      |> assign(entry: series)
       |> assign(multi: multi)
       |> assign(is_multi: false)
       |> assign(page_title: series.title)
-      |> assign(series: series)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
@@ -322,7 +355,7 @@ defmodule LLWeb.SeriesLive do
   end
 
   def update(%LL.Series{} = series) do
-    series = LL.Repo.preload(series, multi_series: :series)
+    series = LL.Repo.preload(series, [[multi_series: :series], :source])
 
     Endpoint.broadcast("series:#{series.id}", "update", series)
 
@@ -349,38 +382,38 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_event("refresh_details", _, socket) do
-    ExtensionManager.series_details(socket.assigns.series)
+    ExtensionManager.series_details(socket.assigns.entry)
     {:noreply, socket}
   end
 
   def handle_event("refresh_chapters", _, socket) do
-    ExtensionManager.series_chapters(socket.assigns.series)
+    ExtensionManager.series_chapters(socket.assigns.entry)
 
     if socket.assigns.is_multi do
-      socket.assigns.multi.children |> Enum.each(&ExtensionManager.series_chapters/1)
+      socket.assigns.entry.children |> Enum.each(&ExtensionManager.series_chapters/1)
     end
 
     {:noreply, socket}
   end
 
   def handle_event("download_all", _, socket) do
-    Repo.get(Series, socket.assigns.series.id)
+    Repo.get(Series, socket.assigns.entry.id)
     |> Repo.preload(:chapters)
     |> Map.get(:chapters)
     |> Enum.reject(&Chapter.downloaded?(&1))
     |> Enum.reverse()
-    |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.source))
+    |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.entry.source))
 
     {:noreply, socket}
   end
 
   def handle_event("multi_create", _, socket) do
     %MultiSeries{}
-    |> Ecto.Changeset.change(%{series_id: socket.assigns.series.id})
+    |> Ecto.Changeset.change(%{series_id: socket.assigns.entry.id})
     |> Repo.insert()
     |> case do
       {:ok, multi} ->
-        Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", multi)
+        Endpoint.broadcast("series:#{socket.assigns.entry.id}", "multi", multi)
 
       err ->
         Message.error(err)
@@ -399,7 +432,7 @@ defmodule LLWeb.SeriesLive do
       multi = Repo.get(MultiSeries, id)
 
       series =
-        socket.assigns.series
+        socket.assigns.entry
         |> Repo.reload()
         |> Ecto.Changeset.change(%{multi_series_id: multi.id})
         |> Repo.update!()
@@ -421,7 +454,7 @@ defmodule LLWeb.SeriesLive do
   def handle_event("multi_set_primary", %{"id" => id}, socket) do
     Repo.transact(fn ->
       multi =
-        socket.assigns.multi
+        socket.assigns.entry
         |> Repo.reload()
         |> Repo.preload(:series)
 
@@ -474,13 +507,13 @@ defmodule LLWeb.SeriesLive do
 
   def handle_event("multi_delete", _, socket) do
     socket =
-      socket.assigns.multi
+      socket.assigns.entry
       |> Repo.delete()
       |> case do
         {:ok, _} ->
-          socket.assigns.multi.children |> Enum.each(&update/1)
-          update(socket.assigns.multi.series)
-          Endpoint.broadcast("series:#{socket.assigns.series.id}", "multi", nil)
+          socket.assigns.entry.children |> Enum.each(&update/1)
+          update(socket.assigns.entry.series)
+          Endpoint.broadcast("series:#{socket.assigns.entry.id}", "multi", nil)
           push_navigate(socket, to: ~p"/")
 
         err ->
@@ -496,9 +529,9 @@ defmodule LLWeb.SeriesLive do
 
     Repo.transact(fn ->
       if socket.assigns.is_multi do
-        %LibraryMulti{library_id: library.id, multi_series_id: socket.assigns.multi.id}
+        %LibraryMulti{library_id: library.id, multi_series_id: socket.assigns.entry.id}
       else
-        %LibrarySeries{library_id: library.id, series_id: socket.assigns.series.id}
+        %LibrarySeries{library_id: library.id, series_id: socket.assigns.entry.id}
       end
       |> Repo.insert()
     end)
@@ -519,13 +552,13 @@ defmodule LLWeb.SeriesLive do
       if socket.assigns.is_multi do
         Repo.get_by(LibraryMulti,
           library_id: id,
-          multi_series_id: socket.assigns.multi.id
+          multi_series_id: socket.assigns.entry.id
         )
         |> Repo.delete()
       else
         Repo.get_by(LibrarySeries,
           library_id: id,
-          series_id: socket.assigns.series.id
+          series_id: socket.assigns.entry.id
         )
         |> Repo.delete()
       end
@@ -546,8 +579,135 @@ defmodule LLWeb.SeriesLive do
     {:noreply, assign(socket, show_hidden: b == "1")}
   end
 
+  def handle_event("anilist-search", %{"title" => title}, socket) do
+    query = """
+    query ($title: String) {
+      Page {
+        media (search: $title, type: MANGA) {
+          siteUrl
+          title {
+            english
+            romaji
+            native
+          }
+          status
+          staff {
+            edges {
+              role
+              node {
+                name {
+                  full
+                }
+              }
+            }
+          }
+          coverImage {
+            extraLarge
+          }
+          id
+          description
+          synonyms
+        }
+      }
+    }
+    """
+
+    body = Jason.encode!(%{query: query, variables: %{title: title}})
+
+    HTTPoison.request(%HTTPoison.Request{
+      method: "POST",
+      url: "https://graphql.anilist.co",
+      body: body,
+      headers: [
+        {"Accept", "application/json"},
+        {"Content-Type", "application/json"}
+      ],
+      options: [recv_timeout: 30000]
+    })
+    |> case do
+      {:ok, %{body: body}} ->
+        results =
+          Jason.decode!(body)
+          |> Map.get("data")
+          |> Map.get("Page")
+          |> Map.get("media")
+
+        {:noreply, socket |> assign(:anilist_search_results, results)}
+
+      err ->
+        IO.inspect(err)
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("anilist-details-set", %{"details" => details, "title" => title}, socket) do
+    {index, _} = Integer.parse(details)
+
+    details = socket.assigns.anilist_search_results |> Enum.at(index)
+
+    author =
+      details["staff"]["edges"]
+      |> Enum.filter(&String.contains?(&1["role"], "Original Story"))
+      |> Enum.map(& &1["node"]["name"]["full"])
+      |> Enum.at(0) ||
+        details["staff"]["edges"]
+        |> Enum.filter(&String.contains?(&1["role"], "Story"))
+        |> Enum.map(& &1["node"]["name"]["full"])
+        |> Enum.at(0)
+
+    artist =
+      details["staff"]["edges"]
+      |> Enum.filter(
+        &(String.contains?(&1["role"], "Art") or String.contains?(&1["role"], "Illustration"))
+      )
+      |> Enum.map(& &1["node"]["name"]["full"])
+      |> Enum.at(0)
+
+    thumbnail_url = details["coverImage"]["extraLarge"]
+
+    {:ok, entry} =
+      socket.assigns.entry
+      |> Ecto.Changeset.change(%{
+        anilist_id: details["id"],
+        title: title |> String.trim(),
+        thumbnail_path: thumbnail_url,
+        author: author,
+        artist: artist,
+        description: details["description"]
+      })
+      |> Repo.update()
+
+    case entry do
+      %MultiSeries{} -> Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+      %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
+    end
+
+    Downloader.get thumbnail_url do
+      {:ok, body, _headers} ->
+        ext = thumbnail_url |> URI.parse() |> Map.get(:path) |> Path.extname()
+        path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
+        {:ok, file} = File.open(path, [:write])
+        IO.binwrite(file, body)
+        File.close(file)
+
+        {:ok, entry} =
+          Ecto.Changeset.change(entry, %{thumbnail_path: path})
+          |> Repo.update()
+
+        case entry do
+          %MultiSeries{} -> Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+          %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
+        end
+
+      err ->
+        Message.error(err)
+    end
+
+    {:noreply, assign(socket, entry: entry)}
+  end
+
   def handle_info(%{topic: "series:" <> _id, event: "update", payload: series}, socket) do
-    {:noreply, assign(socket, series: series)}
+    {:noreply, assign(socket, entry: series)}
   end
 
   def handle_info(%{topic: "series:" <> _id, event: "multi", payload: multi}, socket) do
@@ -556,6 +716,10 @@ defmodule LLWeb.SeriesLive do
 
   def handle_info(%{topic: "chapters:" <> _id, event: "update", payload: chapters}, socket) do
     {:noreply, assign(socket, chapters: chapters)}
+  end
+
+  def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
+    {:noreply, assign(socket, entry: multi)}
   end
 
   def handle_info(%{topic: "multi:" <> _id, event: "update", payload: {multi, chapters}}, socket) do

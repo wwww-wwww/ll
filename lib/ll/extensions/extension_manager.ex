@@ -141,10 +141,10 @@ defmodule LL.ExtensionManager do
   end
 
   def download_thumbnail(series) do
-    if series.thumbnail_url != nil do
-      Downloader.get series.thumbnail_url do
+    if series.thumbnail_path != nil do
+      Downloader.get series.thumbnail_path do
         {:ok, body, _headers} ->
-          ext = series.thumbnail_url |> URI.parse() |> Map.get(:path) |> Path.extname()
+          ext = series.thumbnail_path |> URI.parse() |> Map.get(:path) |> Path.extname()
           path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
           {:ok, file} = File.open(path, [:write])
           IO.binwrite(file, body)
@@ -155,7 +155,7 @@ defmodule LL.ExtensionManager do
             |> Repo.update()
 
           LLWeb.SeriesLive.update(series)
-          Endpoint.broadcast("series_thumb:#{series.id}", "update", series)
+          Endpoint.broadcast("thumb:series:#{series.id}", "update", series)
 
         err ->
           Message.error(err)
@@ -189,7 +189,7 @@ defmodule LL.ExtensionManager do
                       description: m.description,
                       genre: m.genre,
                       status: m.status,
-                      thumbnail_url: m.thumbnail_url
+                      thumbnail_path: m.thumbnail_url
                     })
                     |> Repo.insert()
 
@@ -199,8 +199,7 @@ defmodule LL.ExtensionManager do
                   series
               end
 
-            if series.thumbnail_url != nil and
-                 not String.contains?(series.thumbnail_url, "keiyoushi-chapter-cover") do
+            if series.thumbnail_path != nil and not File.exists?(series.thumbnail_path) do
               download_thumbnail(series)
             end
 
@@ -235,15 +234,13 @@ defmodule LL.ExtensionManager do
               description: j.description,
               genre: j.genre,
               status: j.status,
-              thumbnail_url: j.thumbnail_url,
+              thumbnail_path: j.thumbnail_url,
               details_updated: DateTime.utc_now() |> DateTime.truncate(:second)
             })
             |> Repo.update()
           end)
 
-        if series.thumbnail_path == nil and
-             series.thumbnail_url != nil and
-             not String.contains?(series.thumbnail_url, "keiyoushi-chapter-cover") do
+        if series.thumbnail_path != nil and not File.exists?(series.thumbnail_path) do
           download_thumbnail(series)
         end
 

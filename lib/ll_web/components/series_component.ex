@@ -14,12 +14,11 @@ defmodule LLWeb.SeriesComponent do
         </.link>
       <% else %>
         <.link id={@id} patch={@href}>
-          <% series = if assigns[:is_multi], do: @series.series, else: @series %>
           <img
-            :if={series.thumbnail_path != nil and File.exists?(series.thumbnail_path)}
-            src={~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"}
+            :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
+            src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
           />
-          <span class="title">{series.title}</span>
+          <span class="title">{@series.title}</span>
         </.link>
       <% end %>
     </div>
@@ -28,8 +27,10 @@ defmodule LLWeb.SeriesComponent do
 
   def update(assigns, socket) do
     socket =
-      socket
-      |> subscribe_once("series_thumb:#{assigns.series.id}")
+      case assigns[:series] do
+        %LL.MultiSeries{} -> subscribe_once(socket, "thumb:multi:#{assigns.series.id}")
+        %LL.Series{} -> subscribe_once(socket, "thumb:series:#{assigns.series.id}")
+      end
       |> assign(assigns)
 
     {:ok, socket}
@@ -37,7 +38,12 @@ defmodule LLWeb.SeriesComponent do
 
   defmacro __using__(_opts) do
     quote do
-      def handle_info(%{topic: "series_thumb:" <> _, event: "update", payload: series}, socket) do
+      def handle_info(%{topic: "thumb:multi:" <> _, event: "update", payload: series}, socket) do
+        LLWeb.SeriesComponent.update_assigns(series.id, series: series)
+        {:noreply, socket}
+      end
+
+      def handle_info(%{topic: "thumb:series:" <> _, event: "update", payload: series}, socket) do
         LLWeb.SeriesComponent.update_assigns(series.id, series: series)
         {:noreply, socket}
       end

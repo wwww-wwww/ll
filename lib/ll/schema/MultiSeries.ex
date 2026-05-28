@@ -2,6 +2,16 @@ defmodule LL.MultiSeries do
   use Ecto.Schema
 
   schema "multi_series" do
+    field :anilist_id, :integer
+    field :title, :string
+    field :artist, :string
+    field :author, :string
+    field :description, :string
+    field :genre, :string
+    field :status, :integer
+    field :thumbnail_path, :string
+    field :details_updated, :utc_datetime
+
     belongs_to :series, LL.Series
 
     has_many :children, LL.Series
