@@ -140,15 +140,20 @@ defmodule LL.ExtensionManager do
     end
   end
 
-  def download_thumbnail(series) do
-    if series.thumbnail_path != nil do
+  def download_cover(series) do
+    if series.thumbnail_path != nil and
+         not String.contains?(series.thumbnail_path, "keiyoushi-chapter-cover") do
       Downloader.get series.thumbnail_path do
         {:ok, body, _headers} ->
           ext = series.thumbnail_path |> URI.parse() |> Map.get(:path) |> Path.extname()
-          path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
+          filename = "#{Ecto.UUID.generate()}#{ext}"
+          path = Path.expand("covers/#{filename}")
+
           {:ok, file} = File.open(path, [:write])
           IO.binwrite(file, body)
           File.close(file)
+
+          System.cmd("uv", ["run", "covers.py", path, "thumbnails/#{filename}"])
 
           {:ok, series} =
             Ecto.Changeset.change(series, %{thumbnail_path: path})
@@ -200,7 +205,7 @@ defmodule LL.ExtensionManager do
               end
 
             if series.thumbnail_path != nil and not File.exists?(series.thumbnail_path) do
-              download_thumbnail(series)
+              download_cover(series)
             end
 
             series
@@ -241,7 +246,7 @@ defmodule LL.ExtensionManager do
           end)
 
         if series.thumbnail_path != nil and not File.exists?(series.thumbnail_path) do
-          download_thumbnail(series)
+          download_cover(series)
         end
 
         LLWeb.SeriesLive.update(series)

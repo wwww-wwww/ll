@@ -3,25 +3,42 @@ defmodule LLWeb.SeriesComponent do
 
   def render(assigns) do
     ~H"""
-    <div class={"SeriesComponent #{if assigns[:is_multi], do: "multi"}"}>
-      <%= if assigns[:select] do %>
-        <.link id={@id} href={@href} phx-value-id={@series.id} phx-hook="select_series">
-          <img
-            :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
-            src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
-          />
-          <span class="title">{@series.title}</span>
-        </.link>
-      <% else %>
-        <.link id={@id} patch={@href}>
-          <img
-            :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
-            src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
-          />
-          <span class="title">{@series.title}</span>
-        </.link>
-      <% end %>
+    <div class="SeriesComponent">
+      <.slink {assigns}>
+        <img
+          :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
+          src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
+        />
+
+        <div class="info">
+          <%= if assigns[:in_library] do %>
+            <span class="material-symbols-rounded">library_books</span>
+          <% end %>
+
+          <%= if Map.get(@series, :multi_series_id) != nil do %>
+            <span>Has multi</span>
+          <% end %>
+        </div>
+
+        <span class="title">{@series.title}</span>
+      </.slink>
     </div>
+    """
+  end
+
+  slot :inner_block
+
+  def slink(assigns) do
+    ~H"""
+    <%= if assigns[:select] do %>
+      <.link id={@id} href={@href} phx-value-id={@series.id} phx-hook="select_series">
+        {render_slot(@inner_block)}
+      </.link>
+    <% else %>
+      <.link id={@id} patch={@href}>
+        {render_slot(@inner_block)}
+      </.link>
+    <% end %>
     """
   end
 

@@ -23,6 +23,7 @@ defmodule LLWeb.Endpoint do
     only: LLWeb.static_paths()
 
   plug Plug.Static, at: "/thumbnail", from: "thumbnails"
+  plug Plug.Static, at: "/cover", from: "covers"
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.

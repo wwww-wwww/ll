@@ -8,8 +8,8 @@
     position: relative;
     animation: 0.2s fade-in;
 
-    >.header {
-        position: absolute;
+    > .header {
+        display: flex;
         top: 0;
         right: 0;
         z-index: 1;
@@ -48,10 +48,12 @@
 
 @keyframes fade-in {
     from {
+        transform: translateX(100%);
         opacity: 0;
     }
 
     to {
+        transform: translateX(0);
         opacity: 1;
     }
 }

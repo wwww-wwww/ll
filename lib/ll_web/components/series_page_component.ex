@@ -5,7 +5,7 @@ defmodule LLWeb.SeriesPageComponent do
     ~H"""
     <div class="SeriesPageComponent">
       <div class="header">
-        <button phx-click="close_series" class="material-symbols-rounded">close</button>
+        <button phx-click="close_series" class="material-symbols-rounded">arrow_back</button>
       </div>
       <div class="body" phx-value-sid={@series_id}>
         <%= if assigns[:is_multi] do %>

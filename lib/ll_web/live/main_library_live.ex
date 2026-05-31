@@ -13,12 +13,13 @@ defmodule LLWeb.MainLibraryLive do
     ~H"""
     <div class="library">
       <.live_component
-        :for={series <- @entries}
+        :for={entry <- @entries}
         module={LLWeb.SeriesComponent}
-        id={"#{LLWeb.SeriesComponent.id(series.id)}#{if is_multi?(series), do: "-Multi"}"}
-        series={series}
-        href={create_path(series, assigns[:library])}
-        is_multi={is_multi?(series)}
+        id={"#{LLWeb.SeriesComponent.id(entry.id)}#{if is_multi?(entry), do: "-Multi"}"}
+        series={entry}
+        href={create_path(entry, assigns[:library])}
+        is_multi={is_multi?(entry)}
+        in_library={in_library?(entry, @my_library)}
       />
     </div>
 
@@ -51,6 +52,10 @@ defmodule LLWeb.MainLibraryLive do
     |> Enum.sort_by(&{&1.title |> String.downcase(), if(&1.__struct__ == Series, do: 1, else: 0)})
     |> Enum.uniq_by(&if &1.__struct__ == Series, do: &1.id, else: &1.series.id)
     |> Enum.sort_by(&(&1.title |> String.downcase()))
+  end
+
+  def in_library?(entry, my_library) do
+    Enum.any?(my_library, &(&1.__struct__ == entry.__struct__ and &1.id == entry.id))
   end
 
   def mount(%{"library" => library} = params, session, socket) do
@@ -89,11 +94,26 @@ defmodule LLWeb.MainLibraryLive do
     </.link>
     """
 
+    my_library =
+      case socket.assigns.current_scope do
+        %{user: %LL.User{} = user} ->
+          from(l in Library, where: l.user_id == ^user.id)
+          |> Repo.all()
+          |> Repo.preload([:series, [multi_series: [:series, :children]]])
+          |> Enum.map(&(&1.series ++ &1.multi_series))
+          |> List.flatten()
+          |> Enum.uniq_by(&{&1.__struct__, &1.id})
+
+        _ ->
+          []
+      end
+
     socket =
       socket
       |> assign(home_nav: home_nav)
       |> assign(entries: entries)
       |> assign(libraries: libraries)
+      |> assign(my_library: my_library)
 
     {:ok, socket}
   end

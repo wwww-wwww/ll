@@ -113,17 +113,12 @@ defmodule LLWeb.SeriesLive do
                 </div>
 
                 <div :if={@is_multi}>
-                  <span>
-                    <.link navigate={~p"/series/#{@multi.series.id}"}>
-                      {@multi.series.source.name}
-                    </.link>
-                    <span class="updated">{relative_time(@multi.series.chapters_updated)}</span>
-                  </span>
-
                   <span :for={s <- @multi.children}>
                     <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
                     <span class="updated">{relative_time(s.chapters_updated)}</span>
-                    <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
+                    <%= if @multi.series.id != s.id do %>
+                      <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
+                    <% end %>
                     <button
                       phx-click="multi_remove"
                       phx-value-id={s.id}
@@ -290,6 +285,10 @@ defmodule LLWeb.SeriesLive do
       Repo.get(MultiSeries, multi_id)
       |> Repo.preload(series: [:source, :chapters], children: [:source, :chapters])
 
+    if not File.exists?(multi.thumbnail_path) do
+      LL.Anilist.download_cover(multi)
+    end
+
     chapters = MultiSeries.get_chapters(multi)
 
     socket =
@@ -322,6 +321,10 @@ defmodule LLWeb.SeriesLive do
       Repo.get(Series, series_id)
       |> Repo.preload(source: :extension, multi_series: :series)
 
+    if not File.exists?(series.thumbnail_path) do
+      LL.Anilist.download_cover(series)
+    end
+
     multi = Repo.get_by(MultiSeries, series_id: series.id)
 
     chapters = Chapter.list(series)
@@ -341,6 +344,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(page_title: series.title)
       |> assign(chapters: chapters)
       |> assign(show_hidden: false)
+      |> assign(source: series.source)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
 
     if series.details_updated == nil do
@@ -402,7 +406,7 @@ defmodule LLWeb.SeriesLive do
     |> Map.get(:chapters)
     |> Enum.reject(&Chapter.downloaded?(&1))
     |> Enum.reverse()
-    |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.entry.source))
+    |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.source))
 
     {:noreply, socket}
   end
@@ -462,10 +466,7 @@ defmodule LLWeb.SeriesLive do
       |> Ecto.Changeset.change(%{multi_series_id: multi.id})
       |> Repo.update!()
 
-      {:ok, series} =
-        Repo.get(Series, id)
-        |> Ecto.Changeset.change(%{multi_series_id: nil})
-        |> Repo.update()
+      series = Repo.get(Series, id)
 
       multi
       |> Ecto.Changeset.change(%{series_id: series.id})
@@ -663,14 +664,14 @@ defmodule LLWeb.SeriesLive do
       |> Enum.map(& &1["node"]["name"]["full"])
       |> Enum.at(0)
 
-    thumbnail_url = details["coverImage"]["extraLarge"]
+    cover_url = details["coverImage"]["extraLarge"]
 
     {:ok, entry} =
       socket.assigns.entry
       |> Ecto.Changeset.change(%{
         anilist_id: details["id"],
         title: title |> String.trim(),
-        thumbnail_path: thumbnail_url,
+        thumbnail_path: cover_url,
         author: author,
         artist: artist,
         description: details["description"]
@@ -682,26 +683,7 @@ defmodule LLWeb.SeriesLive do
       %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
     end
 
-    Downloader.get thumbnail_url do
-      {:ok, body, _headers} ->
-        ext = thumbnail_url |> URI.parse() |> Map.get(:path) |> Path.extname()
-        path = Path.expand("thumbnails/#{Ecto.UUID.generate()}#{ext}")
-        {:ok, file} = File.open(path, [:write])
-        IO.binwrite(file, body)
-        File.close(file)
-
-        {:ok, entry} =
-          Ecto.Changeset.change(entry, %{thumbnail_path: path})
-          |> Repo.update()
-
-        case entry do
-          %MultiSeries{} -> Endpoint.broadcast("multi:#{entry.id}", "update", entry)
-          %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
-        end
-
-      err ->
-        Message.error(err)
-    end
+    LL.Anilist.download_cover(cover_url, entry)
 
     {:noreply, assign(socket, entry: entry)}
   end
