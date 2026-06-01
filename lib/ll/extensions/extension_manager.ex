@@ -282,6 +282,11 @@ defmodule LL.ExtensionManager do
         {n, _} = Float.parse(g)
         n
 
+      match = Regex.run(~r/# ([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
+
       true ->
         j.number
     end

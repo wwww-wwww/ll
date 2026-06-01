@@ -11,7 +11,7 @@ defmodule LLWeb.ApiController do
         case entry do
           %MultiSeries{series: series} ->
             %{
-              url: ~p"/series/#{"m#{entry.id}"}",
+              url: ~p"/multi/#{entry.id}",
               title: series.title <> " (Multi)",
               artist: series.artist,
               author: series.author,
@@ -48,7 +48,7 @@ defmodule LLWeb.ApiController do
     |> Enum.sort_by(& &1.name)
   end
 
-  def series(conn, %{"series_id" => "m" <> multi_id}) do
+  def multi(conn, %{"multi_id" => multi_id}) do
     Repo.get(MultiSeries, multi_id)
     |> Repo.preload(series: :source, children: :source)
     |> case do
@@ -78,7 +78,7 @@ defmodule LLWeb.ApiController do
         conn
         |> json(%{
           success: 1,
-          url: ~p"/series/#{"m#{multi.id}"}",
+          url: ~p"/multi/#{multi.id}",
           title: multi.series.title <> " (Multi)",
           artist: multi.series.artist || "",
           author: multi.series.author || "",

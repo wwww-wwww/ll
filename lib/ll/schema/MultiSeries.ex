@@ -18,17 +18,16 @@ defmodule LL.MultiSeries do
   end
 
   def get_chapters(multi) do
-    multi =
-      multi
-      |> LL.Repo.preload(series: [:chapters, :source], children: [:chapters, :source])
-
-    series = [{multi.series, true}] ++ Enum.map(multi.children, &{&1, false})
-
-    series
-    |> Enum.map(fn {s, is_main} -> Enum.map(s.chapters, fn c -> {s, c, is_main} end) end)
+    multi
+    |> LL.Repo.preload(children: [:source, :chapters])
+    |> Map.get(:children)
+    |> Enum.map(fn s -> Enum.map(s.chapters, fn c -> {s, c} end) end)
     |> List.flatten()
-    |> Enum.sort_by(fn {_s, c, is_main} -> {c.number, is_main, c.scanlator, c.date} end, :desc)
+    |> Enum.sort_by(fn {s, c} -> c.date end, :desc)
+    |> Enum.sort_by(fn {s, c} -> c.scanlator end, :desc)
+    |> Enum.sort_by(fn {s, c} -> s.priority end, :asc)
+    |> Enum.sort_by(fn {s, c} -> c.hidden || 0 end, :asc)
+    |> Enum.sort_by(fn {s, c} -> c.number end, :desc)
     |> Enum.uniq_by(&elem(&1, 1).number)
-    |> Enum.map(&{elem(&1, 0), elem(&1, 1)})
   end
 end

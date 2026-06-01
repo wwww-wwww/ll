@@ -66,7 +66,7 @@ defmodule LLWeb.SeriesLive do
                 </span>
               </div>
 
-              <div :if={@current_scope.user} class="anilist-details">
+              <div :if={LL.User.mod?(@current_scope)} class="anilist-details">
                 Anilist
                 <form phx-submit="anilist-search">
                   <div>
@@ -97,12 +97,18 @@ defmodule LLWeb.SeriesLive do
                 </div>
               </div>
 
-              <div class="multis">
+              <div
+                :if={@is_multi or not is_nil(@entry.multi_series) or LL.User.mod?(@current_scope)}
+                class="multis"
+              >
                 <div>
-                  Multi: <button :if={@is_multi} phx-click="multi_delete">Delete multi</button>
-                  <%= if not @is_multi and @entry.multi_series_id == nil and assigns[:multi] == nil do %>
-                    <button :if={@current_scope.user} phx-click="multi_create">Create multi</button>
-                    <button :if={@current_scope.user} phx-click="multi_get">Add to multi</button>
+                  Multi:
+                  <button :if={@is_multi and LL.User.mod?(@current_scope)} phx-click="multi_delete">
+                    Delete multi
+                  </button>
+                  <%= if LL.User.mod?(@current_scope) and not @is_multi and @entry.multi_series_id == nil and assigns[:multi] == nil do %>
+                    <button phx-click="multi_create">Create multi</button>
+                    <button phx-click="multi_get">Add to multi</button>
                   <% end %>
 
                   <%= if not @is_multi do %>
@@ -113,13 +119,28 @@ defmodule LLWeb.SeriesLive do
                 </div>
 
                 <div :if={@is_multi}>
-                  <span :for={s <- @multi.children}>
+                  <span :for={s <- Enum.sort_by(@multi_children, &(&1.priority || 0))}>
+                    <%= if LL.User.mod?(@current_scope) do %>
+                      <span>{inspect(s.priority)}</span>
+                      <button
+                        phx-click="multi-priority-up"
+                        phx-value-id={s.id}
+                        class="material-symbols-rounded"
+                      >
+                        keyboard_arrow_up
+                      </button>
+                    <% end %>
                     <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
                     <span class="updated">{relative_time(s.chapters_updated)}</span>
-                    <%= if @multi.series.id != s.id do %>
-                      <button phx-click="multi_set_primary" phx-value-id={s.id}>Set primary</button>
-                    <% end %>
                     <button
+                      :if={LL.User.mod?(@current_scope) and @multi.series.id != s.id}
+                      phx-click="multi_set_primary"
+                      phx-value-id={s.id}
+                    >
+                      Set primary
+                    </button>
+                    <button
+                      :if={LL.User.mod?(@current_scope)}
                       phx-click="multi_remove"
                       phx-value-id={s.id}
                       class="material-symbols-rounded"
@@ -174,7 +195,7 @@ defmodule LLWeb.SeriesLive do
               </div>
 
               <div
-                :if={@current_scope.user}
+                :if={LL.User.mod?(@current_scope.user)}
                 class="libraries"
               >
                 <span>Main libraries:</span>
@@ -206,45 +227,42 @@ defmodule LLWeb.SeriesLive do
       </div>
 
       <div class="tags">{@entry.genre}</div>
-      <div class="description">{raw(@entry.description)}</div>
-      <div :if={@current_scope.user} class="actions">
+      <div class="description">{raw(HtmlSanitizeEx.basic_html(@entry.description))}</div>
+      <div :if={LL.User.mod?(@current_scope)} class="actions">
         <button phx-click="refresh_chapters">Refresh chapters</button>
         <button phx-click="download_all">Download all</button>
-        <button phx-click="show_hidden" phx-value-show={if @show_hidden, do: 0, else: 1}>
-          <%= if @show_hidden do %>
-            Hide
+        <button phx-click="editing" phx-value-show={if @editing, do: 0, else: 1}>
+          <%= if @editing do %>
+            Stop editing
           <% else %>
-            Show
+            Edit
           <% end %>
-          hidden ({@chapters
-          |> Enum.filter(&if @is_multi, do: elem(&1, 1).hidden, else: &1.hidden)
-          |> length})
         </button>
       </div>
       <div class="chapterlist">
         <%= if @is_multi do %>
           <.live_component
             :for={{s, c} <- @chapters}
-            :if={@show_hidden or c.hidden != true}
+            :if={c.hidden != true or @editing}
             module={LLWeb.ChapterComponent}
             id={LLWeb.ChapterComponent.id(c.id)}
             href={~p"/multi/#{@multi.id}/#{c.id}"}
             chapter={c}
             source={s.source}
             show_source={true}
-            show_hide={@show_hidden}
+            show_edit={@editing}
             user={@current_scope.user}
           />
         <% else %>
           <.live_component
             :for={c <- @chapters}
-            :if={@show_hidden or c.hidden != true}
+            :if={c.hidden != true or @editing}
             module={LLWeb.ChapterComponent}
             id={LLWeb.ChapterComponent.id(c.id)}
             href={~p"/series/#{c.series_id}/#{c.id}"}
             chapter={c}
             source={@entry.source}
-            show_hide={@show_hidden}
+            show_edit={@editing}
             user={@current_scope.user}
           />
         <% end %>
@@ -302,10 +320,11 @@ defmodule LLWeb.SeriesLive do
       socket
       |> assign(entry: multi)
       |> assign(multi: multi)
+      |> assign(multi_children: multi.children)
       |> assign(is_multi: true)
       |> assign(page_title: multi.series.title)
       |> assign(chapters: chapters)
-      |> assign(show_hidden: false)
+      |> assign(editing: false)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
 
     {:ok, socket}
@@ -343,7 +362,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(is_multi: false)
       |> assign(page_title: series.title)
       |> assign(chapters: chapters)
-      |> assign(show_hidden: false)
+      |> assign(editing: false)
       |> assign(source: series.source)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
 
@@ -525,6 +544,41 @@ defmodule LLWeb.SeriesLive do
     {:noreply, socket}
   end
 
+  def handle_event("multi-priority-up", %{"id" => id}, socket) do
+    Repo.transact(fn ->
+      children =
+        Repo.get(MultiSeries, socket.assigns.multi.id)
+        |> Repo.preload(:children)
+        |> Map.get(:children)
+        |> Enum.sort_by(&(&1.priority || 0))
+
+      idx = Enum.find_index(children, &(to_string(&1.id) == id))
+
+      children
+      |> List.replace_at(idx, Enum.at(children, idx - 1))
+      |> List.replace_at(idx - 1, Enum.at(children, idx))
+      |> Enum.with_index()
+      |> Enum.map(fn {e, i} ->
+        Ecto.Changeset.change(e, %{priority: i})
+        |> Repo.update!()
+      end)
+
+      {:ok, nil}
+    end)
+    |> case do
+      {:ok, _} ->
+        multi_children =
+          Repo.get(MultiSeries, socket.assigns.multi.id)
+          |> Repo.preload(children: :source)
+          |> Map.get(:children)
+
+        {:noreply, assign(socket, multi_children: multi_children)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("library-add", %{"id" => id}, socket) do
     library = Repo.get_by(Library, id: id)
 
@@ -576,8 +630,8 @@ defmodule LLWeb.SeriesLive do
     end
   end
 
-  def handle_event("show_hidden", %{"show" => b}, socket) do
-    {:noreply, assign(socket, show_hidden: b == "1")}
+  def handle_event("editing", %{"show" => b}, socket) do
+    {:noreply, assign(socket, editing: b == "1")}
   end
 
   def handle_event("anilist-search", %{"title" => title}, socket) do

@@ -1,6 +1,8 @@
 defmodule LL.Anilist do
+  require Logger
   require LL.Downloader
-  alias LL.{Downloader, MultiSeries, Series, Repo}
+
+  alias LL.{Downloader, MultiSeries, Series, Repo, Message}
   alias LLWeb.Endpoint
 
   @endpoint "https://graphql.anilist.co"
@@ -54,6 +56,8 @@ defmodule LL.Anilist do
         ext = cover_url |> URI.parse() |> Map.get(:path) |> Path.extname()
         filename = "#{Ecto.UUID.generate()}#{ext}"
         path = Path.expand("covers/#{filename}")
+
+        Logger.info("Saved cover to #{path}")
 
         {:ok, file} = File.open(path, [:write])
         IO.binwrite(file, body)

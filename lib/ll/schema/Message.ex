@@ -31,7 +31,9 @@ defmodule LL.Message do
   end
 
   def error(message) do
-    Logger.error(inspect(message))
-    create("Error", inspect(message))
+    {:current_stacktrace, stacktrace} = Process.info(self(), :current_stacktrace)
+    formatted_stack = Exception.format_stacktrace(stacktrace)
+    Logger.error(formatted_stack)
+    create("Error", formatted_stack)
   end
 end

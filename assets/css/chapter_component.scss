@@ -26,12 +26,21 @@
         padding-right: 0.5em;
     }
 
+    &:has(a[disabled=""]) {
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+    }
+
     .body {
         flex: 1;
         display: flex;
         gap: 0.5em;
 
-        >* {
+        >a {
+            &[disabled=""] {
+                cursor: default;
+                pointer-events: none;
+            }
+
             display: flex;
             flex: 1;
             color: black;

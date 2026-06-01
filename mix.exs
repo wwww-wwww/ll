@@ -58,7 +58,8 @@ defmodule LL.MixProject do
       {:size, "~> 0.1.0"},
       {:unzip, "~> 0.11"},
       {:timex, "~> 3.7"},
-      {:wax_, "~> 0.7.0"}
+      {:wax_, "~> 0.7.0"},
+      {:html_sanitize_ex, "~> 1.4"}
     ]
   end
 

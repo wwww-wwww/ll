@@ -19,30 +19,22 @@ defmodule LLWeb.ChapterComponent do
           download
         </button>
       </div>
+
+      <% available = downloaded != false and length(downloaded) == length(@chapter.files) %>
       <div class="body">
-        <%= if downloaded do %>
-          <.link patch={@href}>
-            <div><span class="title">{@chapter.title}</span></div>
-            <div>
-              <span class="date">{relative_time(@chapter.date)}</span>
-              <span :if={assigns[:show_source]} class="source">{@source.name}</span>
-              <span class="scanlator">{@chapter.scanlator}</span>
-            </div>
-          </.link>
-        <% else %>
+        <.link patch={if available, do: @href} disabled={not available}>
+          <div><span class="title">{@chapter.title}</span></div>
           <div>
-            <div><span class="title">{@chapter.title}</span></div>
-            <div>
-              <span class="date">{relative_time(@chapter.date)}</span>
-              <span :if={assigns[:show_source]} class="source">{@source.name}</span>
-              <span class="scanlator">{@chapter.scanlator}</span>
-            </div>
+            <span class="date">{relative_time(@chapter.date)}</span>
+            <span :if={assigns[:show_source]} class="source">{@source.name}</span>
+            <span class="number">{@chapter.number}</span>
+            <span class="scanlator">{@chapter.scanlator}</span>
           </div>
-        <% end %>
+        </.link>
       </div>
 
       <div class="extra">
-        <%= if assigns[:show_hide] do %>
+        <%= if assigns[:show_edit] do %>
           <%= if @chapter.hidden != true do %>
             <button phx-click="hide" phx-target={@myself}>Hide</button>
           <% else %>

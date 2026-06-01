@@ -22,9 +22,11 @@ defmodule LL.Chapter do
   end
 
   def list(series) do
-    from(c in Chapter, where: c.series_id == ^series.id)
+    from(c in Chapter,
+      where: c.series_id == ^series.id,
+      order_by: [desc: c.number, desc: c.scanlator, desc: c.date]
+    )
     |> Repo.all()
-    |> Enum.sort_by(&{&1.number, &1.scanlator, &1.date}, :desc)
   end
 
   def downloaded?(chapter),

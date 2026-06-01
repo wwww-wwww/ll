@@ -7,8 +7,14 @@ defmodule LL.User do
     field :password, :string, virtual: true, redact: true
     field :password_hash, :string, redact: true
 
+    field :level, :integer
+
     timestamps()
   end
+
+  def mod?(%{user: %{level: level}}) when not is_nil(level), do: level >= 10
+  def mod?(%{level: level}) when not is_nil(level), do: level >= 10
+  def mod?(_), do: false
 
   def username_password_changeset(user, attrs, opts \\ []) do
     user
