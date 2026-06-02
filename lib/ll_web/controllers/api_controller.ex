@@ -12,7 +12,7 @@ defmodule LLWeb.ApiController do
           %MultiSeries{series: series} ->
             %{
               url: ~p"/multi/#{entry.id}",
-              title: series.title <> " (Multi)",
+              title: series.title,
               artist: series.artist,
               author: series.author,
               genre: series.genre,
@@ -79,7 +79,7 @@ defmodule LLWeb.ApiController do
         |> json(%{
           success: 1,
           url: ~p"/multi/#{multi.id}",
-          title: multi.series.title <> " (Multi)",
+          title: multi.series.title,
           artist: multi.series.artist || "",
           author: multi.series.author || "",
           description: multi.series.description,
