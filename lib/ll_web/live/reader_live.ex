@@ -69,6 +69,7 @@ defmodule LLWeb.ReaderLive do
       <div class="info">
         <span class="page"></span>
         <span class="zoom"></span>
+        <span class="mipmaplevel"></span>
         <div class="log"></div>
       </div>
     </div>

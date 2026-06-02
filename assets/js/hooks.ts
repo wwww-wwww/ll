@@ -53,7 +53,7 @@ class Reader extends ViewHook {
 struct Uniforms {
     offset: vec2<f32>,
     scale: f32,
-    padding: f32,
+    width: f32,
 }
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
@@ -192,7 +192,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     let ratio = dst_size_f / src_size_f;
 
-    let scale = vec2(1.0 / transform.scale);
+    let mul = f32(src_size.x) / transform.width;
+    let scale = vec2(1.0 / (transform.scale)) * mul;
     let offset = transform.offset - vec2(0.5) + vec2(0.5) * ratio * scale;
 
     if (max(scale.x, scale.y) > 1.0) {
@@ -215,7 +216,29 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let fit = true
 
         let im: HTMLImageElement = new Image()
-        let cubeTexture: GPUTexture | null = null
+        let mipmaps: GPUTexture[] = []
+        const e_mipmaplevel = this.el.querySelector(".info>.mipmaplevel")!
+
+        const render_image = (source: GPUTexture, dest: GPUTexture, uniform_buffer: GPUBuffer) => {
+            const encoder = device.createCommandEncoder()
+
+            const pass = encoder.beginComputePass()
+            pass.setPipeline(pipeline_draw)
+            pass.setBindGroup(
+                0,
+                device.createBindGroup({
+                    layout: pipeline_draw.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: source },
+                        { binding: 1, resource: dest },
+                        { binding: 2, resource: uniform_buffer },
+                    ],
+                }),
+            )
+            pass.dispatchWorkgroups(Math.ceil(dest.width / 16), Math.ceil(dest.height / 16))
+            pass.end()
+            device.queue.submit([encoder.finish()])
+        }
 
         this.draw_image = async () => {
             if (this.page == -1) return
@@ -240,19 +263,60 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     next.decode()
                 }
 
-                cubeTexture?.destroy()
-                cubeTexture = device.createTexture({
-                    size: [im.width, im.height, 1],
-                    format: "rgba8unorm",
-                    usage:
-                        GPUTextureUsage.TEXTURE_BINDING |
-                        GPUTextureUsage.COPY_DST |
-                        GPUTextureUsage.RENDER_ATTACHMENT,
-                })
-                device.queue.copyExternalImageToTexture({ source: im }, { texture: cubeTexture }, [
-                    im.width,
-                    im.height,
-                ])
+                mipmaps.forEach(t => t.destroy())
+                mipmaps = []
+
+                {
+                    let texture = device.createTexture({
+                        size: [im.width, im.height, 1],
+                        format: "rgba8unorm",
+                        usage:
+                            GPUTextureUsage.TEXTURE_BINDING |
+                            GPUTextureUsage.COPY_DST |
+                            GPUTextureUsage.RENDER_ATTACHMENT,
+                    })
+                    mipmaps.push(texture)
+                    device.queue.copyExternalImageToTexture({ source: im }, { texture: texture }, [
+                        im.width,
+                        im.height,
+                    ])
+                }
+
+                refit(0, 0, 0, false)
+                move(0, 0, tz, 0, false)
+
+                uniformData[3] = im.width
+                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+
+                let width = im.width
+                let height = im.height
+                while (width > 500 && height > 500) {
+                    width = width / 2
+                    height = height / 2
+                    const mipmap = device.createTexture({
+                        size: [Math.ceil(width), Math.ceil(height), 1],
+                        format: "rgba8unorm",
+                        usage:
+                            GPUTextureUsage.STORAGE_BINDING |
+                            GPUTextureUsage.TEXTURE_BINDING |
+                            GPUTextureUsage.RENDER_ATTACHMENT,
+                    })
+                    mipmaps.push(mipmap)
+
+                    const uniform_buffer = device.createBuffer({
+                        size: 16,
+                        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                    })
+
+                    const uniformData = new Float32Array(4)
+                    uniformData[0] = 0
+                    uniformData[1] = 0
+                    uniformData[2] = 1
+                    uniformData[3] = Math.ceil(width)
+                    device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+
+                    render_image(mipmaps[0], mipmap, uniform_buffer)
+                }
 
                 this.el.classList.toggle("loading", false)
 
@@ -262,28 +326,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 }
             }
 
-            if (!cubeTexture) return
+            if (mipmaps.length == 0) return
 
-            const encoder = device.createCommandEncoder()
-
-            const texture_canvas = context.getCurrentTexture().createView()
-
-            const pass = encoder.beginComputePass()
-            pass.setPipeline(pipeline_draw)
-            pass.setBindGroup(
-                0,
-                device.createBindGroup({
-                    layout: pipeline_draw.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: cubeTexture! },
-                        { binding: 1, resource: texture_canvas },
-                        { binding: 2, resource: uniform_buffer },
-                    ],
-                }),
-            )
-            pass.dispatchWorkgroups(Math.ceil(canvas.width / 16), Math.ceil(canvas.height / 16))
-            pass.end()
-            device.queue.submit([encoder.finish()])
+            let mipmap = Math.floor(Math.log2(1 / uniformData[2]))
+            mipmap = Math.min(Math.max(mipmap, 0), mipmaps.length - 1)
+            e_mipmaplevel.textContent = `${mipmap + 1}/${mipmaps.length}`
+            if (mipmaps[mipmap]) {
+                render_image(mipmaps[mipmap], context.getCurrentTexture(), uniform_buffer)
+            }
         }
 
         const uniformData = new Float32Array(4)
@@ -329,7 +379,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         const animate_pan = () => {
             const t = performance.now()
             const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
-            console.log("animate")
             uniformData[0] = tx + (tx0 - tx) * m
             uniformData[1] = ty + (ty0 - ty) * m
 
@@ -341,7 +390,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             }
         }
 
-        const move = (x: number, y: number, zoom: number, _duration = 0) => {
+        const move = (x: number, y: number, zoom: number, _duration = 0, render = true) => {
             end_time = performance.now()
 
             if (_duration > 0) {
@@ -356,15 +405,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             ty = y
             tz = Math.min(Math.max(0.01, zoom || 1), 1000)
 
-            console.log(tx, ty)
-
             uniformData[0] = x
             uniformData[1] = y
             uniformData[2] = zoom
 
             if (_duration == 0) {
                 device.queue.writeBuffer(uniform_buffer, 0, uniformData)
-                this.draw_image!()
+                if (render) {
+                    this.draw_image!()
+                }
             }
 
             e_zoom.textContent = `${(zoom * 100).toFixed(2)}%`
@@ -389,10 +438,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             tx = tx + (x - 0.5) * diff * ratiox
             ty = ty + (y - 0.5) * diff * ratioy
             tz = new_zoom
-            console.log(x, y, tx, ty)
 
-            end_time = performance.now() + duration
-            requestAnimationFrame(animate_zoom)
+            if (_duration == 0) {
+                uniformData[0] = tx0
+                uniformData[1] = ty0
+                uniformData[2] = tz
+                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+            } else {
+                end_time = performance.now() + duration
+                requestAnimationFrame(animate_zoom)
+            }
 
             e_zoom.textContent = `${(zoom * 100).toFixed(2)}%`
         }
@@ -567,6 +622,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             this.draw_image!()
         })
 
+        const refit = (x: number, y: number, duration: number, render: boolean = true) => {
+            const ratiox = canvas.width / im.width
+            const ratioy = canvas.height / im.height
+
+            const new_zoom = Math.min(Math.max(0.01, Math.min(ratiox, ratioy)), 1000)
+            if (tz == new_zoom) {
+                move(0, 0, new_zoom, duration, render)
+            } else {
+                const diff = 1 / new_zoom - 1 / tz
+                zoom(-tx / (diff * ratiox) + 0.5, -ty / (diff * ratioy) + 0.5, new_zoom, duration)
+            }
+        }
+
         const toggle_fit = (x: number, y: number) => {
             const ratiox = canvas.width / im.width
             const ratioy = canvas.height / im.height
@@ -574,14 +642,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             if (!fit) {
                 // scale to fit
                 fit = true
-                const new_zoom = Math.min(Math.max(0.01, Math.min(ratiox, ratioy)), 1000)
-                if (tz == new_zoom) {
-                    console.log("pan")
-                    move(0, 0, new_zoom, 200)
-                } else {
-                    const diff = 1 / new_zoom - 1 / tz
-                    zoom(-tx / (diff * ratiox) + 0.5, -ty / (diff * ratioy) + 0.5, new_zoom, 200)
-                }
+                refit(x, y, 200)
             } else {
                 // 100%
                 fit = false
