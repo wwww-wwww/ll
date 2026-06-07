@@ -1,4 +1,21 @@
 import { ViewHook } from "phoenix_live_view"
+import shader from "./shader"
+
+const TILESIZE = 4096
+
+class Mipmap {
+    scale: number = 1
+    tiles: GPUTexture[][] = []
+    width: number = 0
+    height: number = 0
+
+    constructor(scale: number, tiles: GPUTexture[][]) {
+        this.scale = scale
+        this.tiles = tiles
+        this.width = tiles[0].length
+        this.height = tiles.length
+    }
+}
 
 class Reader extends ViewHook {
     private device: GPUDevice | null = null
@@ -42,185 +59,65 @@ class Reader extends ViewHook {
             format: "rgba8unorm",
             colorSpace: "srgb",
             // @ts-ignore
-            usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT,
+            usage: GPUTextureUsage.STORAGE_BINDING || GPUTextureUsage.RENDER_ATTACHMENT,
             alphaMode: "premultiplied",
         })
 
         const pipeline_draw = device.createComputePipeline({
             layout: "auto",
-            compute: {
-                module: this.create_shader(/* wgsl */ `
-struct Uniforms {
-    offset: vec2<f32>,
-    scale: f32,
-    width: f32,
-}
-
-@group(0) @binding(0) var src_tex: texture_2d<f32>;
-@group(0) @binding(1) var dst_tex: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(2) var<uniform> transform: Uniforms;
-
-fn to_linear_exact(srgb: vec4<f32>) -> vec4<f32> {
-    let c = max(srgb.rgb, vec3<f32>(0.0));
-    let lower = c / vec3<f32>(12.92);
-    let higher = pow((c + vec3<f32>(0.055)) / vec3<f32>(1.055), vec3<f32>(2.4));
-    let cond = c <= vec3<f32>(0.04045);
-    return vec4(select(higher, lower, cond), srgb.a);
-}
-
-fn to_srgb_exact(linear_rgb: vec4<f32>) -> vec4<f32> {
-    let c = max(linear_rgb.rgb, vec3<f32>(0.0));
-    let lower = c * vec3<f32>(12.92);
-    let higher = vec3<f32>(1.055) * pow(c, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
-    let cond = c <= vec3<f32>(0.0031308);
-    return vec4(select(higher, lower, cond), linear_rgb.a);
-}
-
-fn to_linear_fast(srgb: vec4<f32>) -> vec4<f32> {
-    return vec4(pow(max(srgb.rgb, vec3<f32>(0.0)), vec3<f32>(2.2)), srgb.a);
-}
-
-fn to_srgb_fast(linear: vec4<f32>) -> vec4<f32> {
-    return vec4(pow(max(linear.rgb, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2)), linear.a);
-}
-
-fn catmull_rom_weights(t: f32) -> array<f32, 4> {
-    let t2 = t * t;
-    let t3 = t2 * t;
-
-    return array<f32, 4>(
-        -0.5 * t3 + t2 - 0.5 * t,          // Weight 0 (Negative lobe)
-         1.5 * t3 - 2.5 * t2 + 1.0,        // Weight 1 (Primary influence)
-        -1.5 * t3 + 2.0 * t2 + 0.5 * t,    // Weight 2 (Primary influence)
-         0.5 * t3 - 0.5 * t2               // Weight 3 (Negative lobe)
-    );
-}
-
-// Main function: Samples the texture using a 4x4 Catmull-Rom filter
-fn textureSampleCatmullRom(uv: vec2<f32>) -> vec4<f32> {
-    let tex_size_u = textureDimensions(src_tex, 0);
-    let tex_size = vec2<f32>(tex_size_u);
-
-    let pixel_coord = uv * tex_size - vec2<f32>(0.5);
-    let base_coord = vec2<i32>(floor(pixel_coord));
-    let f = fract(pixel_coord);
-
-    let wx = catmull_rom_weights(f.x);
-    let wy = catmull_rom_weights(f.y);
-
-    let max_coord = vec2<i32>(tex_size_u) - vec2<i32>(1, 1);
-
-    var final_color = vec4<f32>(0.0);
-
-    for (var y: i32 = 0; y < 4; y++) {
-        var row_color = vec4<f32>(0.0);
-
-        let current_y = base_coord.y - 1 + y;
-
-        for (var x: i32 = 0; x < 4; x++) {
-            let current_x = base_coord.x - 1 + x;
-
-            var texel = vec4<f32>(0.0);
-
-            if (current_x >= 0 && current_x <= max_coord.x &&
-                current_y >= 0 && current_y <= max_coord.y) {
-                texel = textureLoad(src_tex, vec2<i32>(current_x, current_y), 0);
-                texel = to_linear_exact(texel);
-            }
-
-            row_color += texel * wx[x];
-        }
-
-        final_color += row_color * wy[y];
-    }
-
-    final_color = to_srgb_exact(final_color);
-    return clamp(final_color, vec4<f32>(0.0), vec4<f32>(1.0));
-}
-
-fn downsample(src_start: vec2<f32>, scale: vec2<f32>) -> vec4<f32> {
-    let dst_size = textureDimensions(dst_tex);
-    let src_size = textureDimensions(src_tex);
-
-    let src_size_f = vec2<f32>(src_size);
-    let dst_size_f = vec2<f32>(dst_size);
-
-    let src_end = src_start + vec2<f32>(1) * scale;
-
-    let start_i = vec2<i32>(clamp(floor(src_start), vec2<f32>(0.0), src_size_f));
-    let end_i   = vec2<i32>(clamp(ceil(src_end), vec2<f32>(0.0), src_size_f));
-
-    var color_sum = vec4<f32>(0.0);
-    var weight_sum = 0.0;
-
-    for (var y: i32 = start_i.y; y < end_i.y; y++) {
-        let y_f = f32(y);
-        let y_overlap = max(0.0, min(y_f + 1.0, src_end.y) - max(y_f, src_start.y));
-
-        for (var x: i32 = start_i.x; x < end_i.x; x++) {
-            let x_f = f32(x);
-            let x_overlap = max(0.0, min(x_f + 1.0, src_end.x) - max(x_f, src_start.x));
-
-            let weight = x_overlap * y_overlap;
-            var texel = textureLoad(src_tex, vec2<i32>(x, y), 0);
-            texel = to_linear_exact(texel);
-
-            color_sum += texel * weight;
-            weight_sum += weight;
-        }
-    }
-
-    var col = color_sum / weight_sum;
-    return to_srgb_exact(col);
-}
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    let dst_size = textureDimensions(dst_tex);
-    let src_size = textureDimensions(src_tex);
-
-    if (id.x >= dst_size.x || id.y >= dst_size.y) {
-        return;
-    }
-
-    let src_size_f = vec2<f32>(src_size);
-    let dst_size_f = vec2<f32>(dst_size);
-
-    let aspect1 = vec2<f32>(src_size_f.x / src_size_f.y, 1);
-    let aspect2 = vec2<f32>(dst_size_f.x / dst_size_f.y, 1);
-    let aspect = aspect2 / aspect1;
-
-    let ratio = dst_size_f / src_size_f;
-
-    let mul = f32(src_size.x) / transform.width;
-    let scale = vec2(1.0 / (transform.scale)) * mul;
-    let offset = transform.offset - vec2(0.5) + vec2(0.5) * ratio * scale;
-
-    if (max(scale.x, scale.y) > 1.0) {
-        let col = downsample(vec2<f32>(id.xy) * scale - offset * src_size_f, scale);
-        textureStore(dst_tex, id.xy, col);
-    } else {
-        let uv = vec2<f32>(id.xy) / src_size_f * scale - offset;
-        let col = textureSampleCatmullRom(uv);
-        textureStore(dst_tex, id.xy, col);
-    }
-}`),
-            },
-        })
+            compute: {module: this.create_shader(shader)}
+        });
 
         const uniform_buffer = this.device.createBuffer({
-            size: 16,
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
 
         let fit = true
 
         let im: HTMLImageElement = new Image()
-        let mipmaps: GPUTexture[] = []
+        let mipmaps: Mipmap[] = []
         const e_mipmaplevel = this.el.querySelector(".info>.mipmaplevel")!
 
-        const render_image = (source: GPUTexture, dest: GPUTexture, uniform_buffer: GPUBuffer) => {
+        const render_image = (mipmap: Mipmap, dest: GPUTexture, uniform_buffer: GPUBuffer) => {
             const encoder = device.createCommandEncoder()
+
+            let vx = (-zx * dest.width + 0.5 * im.width) * mipmap.scale
+            vx = Math.round(vx / TILESIZE) - 1
+            vx = Math.min(vx, mipmap.width - 2)
+            vx = Math.max(vx, 0)
+
+            let vy = (-zy * dest.height + 0.5 * im.height) * mipmap.scale
+            vy = Math.round(vy / TILESIZE) - 1
+            vy = Math.min(vy, mipmap.height - 2)
+            vy = Math.max(vy, 0)
+
+            uniformData[0] =
+                (0.5 / zz + zx) * mipmap.scale +
+                (vx * TILESIZE - (mipmap.scale * im.width) / 2) / dest.width
+            uniformData[1] =
+                (0.5 / zz + zy) * mipmap.scale +
+                (vy * TILESIZE - (mipmap.scale * im.height) / 2) / dest.height
+            uniformData[2] = zz / mipmap.scale
+            uniformData[3] = TILESIZE
+            uniformData[4] = mipmap.width
+            uniformData[5] = mipmap.height
+            uniformData[6] = dest.width
+            uniformData[7] = dest.height
+            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+
+            const vx1 = mipmap.width > 1 ? vx + 1 : vx
+            const vy1 = mipmap.height > 1 ? vy + 1 : vy
+
+            const textures = [
+                mipmap.tiles[vy][vx],
+                mipmap.tiles[vy][vx1],
+                mipmap.tiles[vy1][vx],
+                mipmap.tiles[vy1][vx1],
+            ]
+                .map((texture, i) => {
+                    return { binding: 1 + i, resource: texture }
+                })
 
             const pass = encoder.beginComputePass()
             pass.setPipeline(pipeline_draw)
@@ -229,15 +126,78 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 device.createBindGroup({
                     layout: pipeline_draw.getBindGroupLayout(0),
                     entries: [
-                        { binding: 0, resource: source },
-                        { binding: 1, resource: dest },
-                        { binding: 2, resource: uniform_buffer },
-                    ],
+                        { binding: 0, resource: dest },
+                        { binding: 1, resource: uniform_buffer },
+                    ].concat(textures),
                 }),
             )
             pass.dispatchWorkgroups(Math.ceil(dest.width / 16), Math.ceil(dest.height / 16))
             pass.end()
             device.queue.submit([encoder.finish()])
+
+            // const pass = encoder.beginRenderPass({
+            //     colorAttachments: [
+            //         {
+            //             view: dest.createView ? dest.createView() : dest,
+            //             clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+            //             loadOp: "clear",
+            //             storeOp: "store",
+            //         },
+            //     ],
+            // })
+            // pass.setPipeline(pipeline_draw)
+            // pass.setBindGroup(
+            //     0,
+            //     device.createBindGroup({
+            //         layout: pipeline_draw.getBindGroupLayout(0),
+            //         entries: [
+            //             { binding: 0, resource: uniform_buffer },
+            //         ].concat(textures),
+            //     }),
+            // )
+            // pass.draw(3)
+            // pass.end()
+            // device.queue.submit([encoder.finish()])
+        }
+
+        const create_tiles = async (
+            im: ImageBitmap | HTMLImageElement,
+        ): Promise<GPUTexture[][]> => {
+            console.log(im.width, im.height)
+            const tiles = []
+            for (let y = 0; y < im.height; y += TILESIZE) {
+                const row = []
+                for (let x = 0; x < im.width; x += TILESIZE) {
+                    console.log(x, y)
+                    const width = Math.min(TILESIZE, im.width - x)
+                    const height = Math.min(TILESIZE, im.height - y)
+
+                    const canvas = document.createElement("canvas")
+                    canvas.width = width
+                    canvas.height = height
+                    const ctx = canvas.getContext("2d")
+                    ctx!.drawImage(im, x, y, width, height, 0, 0, width, height)
+
+                    let texture = device.createTexture({
+                        size: [width, height, 1],
+                        format: "rgba8unorm",
+                        usage:
+                            GPUTextureUsage.TEXTURE_BINDING |
+                            GPUTextureUsage.COPY_DST |
+                            GPUTextureUsage.RENDER_ATTACHMENT,
+                    })
+                    row.push(texture)
+
+                    device.queue.copyExternalImageToTexture(
+                        { source: canvas },
+                        { texture: texture },
+                        [width, height],
+                    )
+                }
+                tiles.push(row)
+            }
+
+            return tiles
         }
 
         this.draw_image = async () => {
@@ -263,24 +223,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     next.decode()
                 }
 
-                mipmaps.forEach(t => t.destroy())
+                mipmaps.forEach(t =>
+                    t.tiles
+                        .flat()
+                        .flat()
+                        .forEach(t => t.destroy()),
+                )
                 mipmaps = []
-
-                {
-                    let texture = device.createTexture({
-                        size: [im.width, im.height, 1],
-                        format: "rgba8unorm",
-                        usage:
-                            GPUTextureUsage.TEXTURE_BINDING |
-                            GPUTextureUsage.COPY_DST |
-                            GPUTextureUsage.RENDER_ATTACHMENT,
-                    })
-                    mipmaps.push(texture)
-                    device.queue.copyExternalImageToTexture({ source: im }, { texture: texture }, [
-                        im.width,
-                        im.height,
-                    ])
-                }
+                e_mipmaplevel.textContent = `Creating textures`
+                mipmaps.push(new Mipmap(1, await create_tiles(im)))
 
                 refit(0, 0, 0, false)
                 move(0, 0, tz, 0, false)
@@ -288,34 +239,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 uniformData[3] = im.width
                 device.queue.writeBuffer(uniform_buffer, 0, uniformData)
 
-                let width = im.width
-                let height = im.height
-                while (width > 500 && height > 500) {
-                    width = width / 2
-                    height = height / 2
-                    const mipmap = device.createTexture({
-                        size: [Math.ceil(width), Math.ceil(height), 1],
-                        format: "rgba8unorm",
-                        usage:
-                            GPUTextureUsage.STORAGE_BINDING |
-                            GPUTextureUsage.TEXTURE_BINDING |
-                            GPUTextureUsage.RENDER_ATTACHMENT,
-                    })
-                    mipmaps.push(mipmap)
+                let scale = 1
+                while (im.width * scale > 512 && im.height * scale > 512) {
+                    scale /= 2
+                    e_mipmaplevel.textContent = `Building mipmaps ${im.width}x${im.height} ${scale}`
+                    console.log(scale, im.width * scale, im.height * scale)
 
-                    const uniform_buffer = device.createBuffer({
-                        size: 16,
-                        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                    const im2 = await createImageBitmap(im, 0, 0, im.width, im.height, {
+                        resizeWidth: im.width * scale,
+                        resizeHeight: im.height * scale,
                     })
 
-                    const uniformData = new Float32Array(4)
-                    uniformData[0] = 0
-                    uniformData[1] = 0
-                    uniformData[2] = 1
-                    uniformData[3] = Math.ceil(width)
-                    device.queue.writeBuffer(uniform_buffer, 0, uniformData)
-
-                    render_image(mipmaps[0], mipmap, uniform_buffer)
+                    mipmaps.push(new Mipmap(scale, await create_tiles(im2)))
                 }
 
                 this.el.classList.toggle("loading", false)
@@ -328,17 +263,22 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
             if (mipmaps.length == 0) return
 
-            let mipmap = Math.floor(Math.log2(1 / uniformData[2]))
-            mipmap = Math.min(Math.max(mipmap, 0), mipmaps.length - 1)
-            e_mipmaplevel.textContent = `${mipmap + 1}/${mipmaps.length}`
-            if (mipmaps[mipmap]) {
-                render_image(mipmaps[mipmap], context.getCurrentTexture(), uniform_buffer)
+            let level = Math.floor(Math.log2(1 / zz))
+            level = Math.min(Math.max(level, 0), mipmaps.length - 1)
+            if (mipmaps[level]) {
+                const mipmap = mipmaps[level]
+                e_mipmaplevel.textContent = `${level + 1}/${mipmaps.length} ${mipmap.tiles[0].length}x${mipmap.tiles.length}`
+                render_image(mipmap, context.getCurrentTexture(), uniform_buffer)
             }
         }
 
-        const uniformData = new Float32Array(4)
+        const uniformData = new Float32Array(8)
 
         const e_zoom = this.el.querySelector(".info>.zoom")!
+
+        let zx = 0
+        let zy = 0
+        let zz = 1
 
         let tx = 0
         let ty = 0
@@ -358,17 +298,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const t = performance.now()
             const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
 
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
             const new_zoom = tz + (tz0 - tz) * m
             const diff = 1 / new_zoom - 1 / tz0
 
-            uniformData[0] = tx0 + (mx - 0.5) * diff * ratiox
-            uniformData[1] = ty0 + (my - 0.5) * diff * ratioy
-            uniformData[2] = new_zoom
+            zx = tx0 + (mx - 0.5) * diff
+            zy = ty0 + (my - 0.5) * diff
+            zz = new_zoom
 
-            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
             this.draw_image!()
 
             if (t < end_time) {
@@ -379,10 +315,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         const animate_pan = () => {
             const t = performance.now()
             const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
-            uniformData[0] = tx + (tx0 - tx) * m
-            uniformData[1] = ty + (ty0 - ty) * m
+            zx = tx + (tx0 - tx) * m
+            zy = ty + (ty0 - ty) * m
 
-            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
             this.draw_image!()
 
             if (t < end_time) {
@@ -405,9 +340,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             ty = y
             tz = Math.min(Math.max(0.01, zoom || 1), 1000)
 
-            uniformData[0] = x
-            uniformData[1] = y
-            uniformData[2] = zoom
+            zx = x
+            zy = y
+            zz = zoom
 
             if (_duration == 0) {
                 device.queue.writeBuffer(uniform_buffer, 0, uniformData)
@@ -429,20 +364,17 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             mx = x
             my = y
 
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
             const new_zoom = Math.min(Math.max(0.01, zoom || 1), 1000)
             const diff = 1 / new_zoom - 1 / tz
 
-            tx = tx + (x - 0.5) * diff * ratiox
-            ty = ty + (y - 0.5) * diff * ratioy
+            tx = tx + (x - 0.5) * diff
+            ty = ty + (y - 0.5) * diff
             tz = new_zoom
 
             if (_duration == 0) {
-                uniformData[0] = tx0
-                uniformData[1] = ty0
-                uniformData[2] = tz
+                zx = tx0
+                zy = ty0
+                zz = tz
                 device.queue.writeBuffer(uniform_buffer, 0, uniformData)
             } else {
                 end_time = performance.now() + duration
@@ -475,10 +407,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             const x = (clientX - rect.x) / rect.width
             const y = (clientY - rect.y) / rect.height
 
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
-            move(tx + ((x - last_pos[0]) / tz) * ratiox, ty + ((y - last_pos[1]) / tz) * ratioy, tz)
+            move(tx + (x - last_pos[0]) / tz, ty + (y - last_pos[1]) / tz, tz)
 
             last_pos = [x, y]
         }
@@ -563,15 +492,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 const x = (clientX - rect.x) / rect.width
                 const y = (clientY - rect.y) / rect.height
 
-                const ratiox = canvas.width / im.width
-                const ratioy = canvas.height / im.height
-
                 const new_zoom = tz * (dist / last_dist)
                 const diff = 1 / new_zoom - 1 / tz
 
                 last_dist = dist
 
-                move(tx + (x - 0.5) * diff * ratiox, ty + (y - 0.5) * diff * ratioy, new_zoom)
+                move(tx + (x - 0.5) * diff, ty + (y - 0.5) * diff, new_zoom)
 
                 this.draw_image!()
             }
@@ -631,14 +557,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 move(0, 0, new_zoom, duration, render)
             } else {
                 const diff = 1 / new_zoom - 1 / tz
-                zoom(-tx / (diff * ratiox) + 0.5, -ty / (diff * ratioy) + 0.5, new_zoom, duration)
+                zoom(-tx / diff + 0.5, -ty / diff + 0.5, new_zoom, duration)
             }
         }
 
         const toggle_fit = (x: number, y: number) => {
-            const ratiox = canvas.width / im.width
-            const ratioy = canvas.height / im.height
-
             if (!fit) {
                 // scale to fit
                 fit = true
@@ -646,18 +569,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             } else {
                 // 100%
                 fit = false
-
-                const diff = 1 - 1 / tz
-
-                fit = false
-                let offx = tx + (x - 0.5) * diff * ratiox
-                let offy = ty + (y - 0.5) * diff * ratioy
-                if (ratiox > 1) {
-                    offx = 0
-                }
-                if (ratioy > 1) {
-                    offy = 0
-                }
                 zoom(x, y, 1, 200)
             }
             this.draw_image!()
