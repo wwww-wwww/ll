@@ -61,13 +61,15 @@ class Reader extends ViewHook {
         return canvas
     }
 
-    async create_tiles(im: ImageBitmap | HTMLImageElement): Promise<GPUTexture[][]> {
-        console.log(im.width, im.height)
+    async create_tiles(
+        im: ImageBitmap | HTMLImageElement | HTMLCanvasElement,
+    ): Promise<GPUTexture[][]> {
+        console.log("Create tiles", im.width, im.height)
         const tiles = []
         for (let y = 0; y < im.height; y += TILESIZE) {
             const row = []
             for (let x = 0; x < im.width; x += TILESIZE) {
-                console.log(x, y)
+                console.log("Tile", x, y)
                 const width = Math.min(TILESIZE, im.width - x)
                 const height = Math.min(TILESIZE, im.height - y)
                 const im2 = this.crop_image(im, x, y, width, height)
@@ -236,10 +238,12 @@ class Reader extends ViewHook {
                 let scale = 1
                 while (im.width * scale > 512 && im.height * scale > 512) {
                     scale /= 2
-                    e_mipmaplevel.textContent = `Building mipmaps ${im.width}x${im.height} ${scale}`
-                    console.log(scale, im.width * scale, im.height * scale)
+                    e_mipmaplevel.textContent = `Creating mipmap ${im.width}x${im.height} ${scale}`
+                    const width = Math.floor(im.width * scale)
+                    const height = Math.floor(im.height * scale)
+                    console.log("Create mipmap", scale, width, height)
 
-                    const im2 = downsample(im, Math.floor(im.width * scale), Math.floor(im.height * scale))
+                    const im2 = downsample(im, width, height)
 
                     mipmaps.push(new Mipmap(scale, await this.create_tiles(im2)))
                 }
