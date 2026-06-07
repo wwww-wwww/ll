@@ -1,5 +1,6 @@
 import { ViewHook } from "phoenix_live_view"
 import shader from "./shader"
+import downsample from "./downsample"
 
 const TILESIZE = 4096
 
@@ -238,10 +239,7 @@ class Reader extends ViewHook {
                     e_mipmaplevel.textContent = `Building mipmaps ${im.width}x${im.height} ${scale}`
                     console.log(scale, im.width * scale, im.height * scale)
 
-                    const im2 = await createImageBitmap(im, 0, 0, im.width, im.height, {
-                        resizeWidth: im.width * scale,
-                        resizeHeight: im.height * scale,
-                    })
+                    const im2 = downsample(im, Math.floor(im.width * scale), Math.floor(im.height * scale))
 
                     mipmaps.push(new Mipmap(scale, await this.create_tiles(im2)))
                 }
