@@ -38,6 +38,10 @@ class Reader extends ViewHook {
         return module
     }
 
+    private x: number = 0
+    private y: number = 0
+    private scale: number = 1
+
     async init() {
         const canvas: HTMLCanvasElement = this.el.querySelector("canvas")!
 
@@ -79,31 +83,29 @@ class Reader extends ViewHook {
         let mipmaps: Mipmap[] = []
         const e_mipmaplevel = this.el.querySelector(".info>.mipmaplevel")!
 
-        const render_image = (mipmap: Mipmap, dest: GPUTexture, uniform_buffer: GPUBuffer) => {
+        const render_image = (mipmap: Mipmap, dest: GPUTexture, x: number, y: number, scale: number) => {
             const encoder = device.createCommandEncoder()
 
-            let vx = (-zx * dest.width + 0.5 * im.width) * mipmap.scale
+            let vx = (-x * dest.width + 0.5 * im.width) * mipmap.scale
             vx = Math.round(vx / TILESIZE) - 1
             vx = Math.min(vx, mipmap.width - 2)
             vx = Math.max(vx, 0)
 
-            let vy = (-zy * dest.height + 0.5 * im.height) * mipmap.scale
+            let vy = (-y * dest.height + 0.5 * im.height) * mipmap.scale
             vy = Math.round(vy / TILESIZE) - 1
             vy = Math.min(vy, mipmap.height - 2)
             vy = Math.max(vy, 0)
 
             uniformData[0] =
-                (0.5 / zz + zx) * mipmap.scale +
+                (0.5 / scale + x) * mipmap.scale +
                 (vx * TILESIZE - (mipmap.scale * im.width) / 2) / dest.width
             uniformData[1] =
-                (0.5 / zz + zy) * mipmap.scale +
+                (0.5 / scale + y) * mipmap.scale +
                 (vy * TILESIZE - (mipmap.scale * im.height) / 2) / dest.height
-            uniformData[2] = zz / mipmap.scale
+            uniformData[2] = scale / mipmap.scale
             uniformData[3] = TILESIZE
             uniformData[4] = mipmap.width
             uniformData[5] = mipmap.height
-            uniformData[6] = dest.width
-            uniformData[7] = dest.height
             device.queue.writeBuffer(uniform_buffer, 0, uniformData)
 
             const vx1 = mipmap.width > 1 ? vx + 1 : vx
@@ -116,7 +118,7 @@ class Reader extends ViewHook {
                 mipmap.tiles[vy1][vx1],
             ]
                 .map((texture, i) => {
-                    return { binding: 1 + i, resource: texture }
+                    return { binding: 2 + i, resource: texture }
                 })
 
             const pass = encoder.beginComputePass()
@@ -182,6 +184,7 @@ class Reader extends ViewHook {
                         size: [width, height, 1],
                         format: "rgba8unorm",
                         usage:
+                            GPUTextureUsage.STORAGE_BINDING |
                             GPUTextureUsage.TEXTURE_BINDING |
                             GPUTextureUsage.COPY_DST |
                             GPUTextureUsage.RENDER_ATTACHMENT,
@@ -236,9 +239,6 @@ class Reader extends ViewHook {
                 refit(0, 0, 0, false)
                 move(0, 0, tz, 0, false)
 
-                uniformData[3] = im.width
-                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
-
                 let scale = 1
                 while (im.width * scale > 512 && im.height * scale > 512) {
                     scale /= 2
@@ -263,22 +263,18 @@ class Reader extends ViewHook {
 
             if (mipmaps.length == 0) return
 
-            let level = Math.floor(Math.log2(1 / zz))
+            let level = Math.floor(Math.log2(1 / this.scale))
             level = Math.min(Math.max(level, 0), mipmaps.length - 1)
             if (mipmaps[level]) {
                 const mipmap = mipmaps[level]
                 e_mipmaplevel.textContent = `${level + 1}/${mipmaps.length} ${mipmap.tiles[0].length}x${mipmap.tiles.length}`
-                render_image(mipmap, context.getCurrentTexture(), uniform_buffer)
+                render_image(mipmap, context.getCurrentTexture(), this.x, this.y, this.scale)
             }
         }
 
         const uniformData = new Float32Array(8)
 
         const e_zoom = this.el.querySelector(".info>.zoom")!
-
-        let zx = 0
-        let zy = 0
-        let zz = 1
 
         let tx = 0
         let ty = 0
@@ -301,9 +297,9 @@ class Reader extends ViewHook {
             const new_zoom = tz + (tz0 - tz) * m
             const diff = 1 / new_zoom - 1 / tz0
 
-            zx = tx0 + (mx - 0.5) * diff
-            zy = ty0 + (my - 0.5) * diff
-            zz = new_zoom
+            this.x = tx0 + (mx - 0.5) * diff
+            this.y = ty0 + (my - 0.5) * diff
+            this.scale = new_zoom
 
             this.draw_image!()
 
@@ -315,8 +311,8 @@ class Reader extends ViewHook {
         const animate_pan = () => {
             const t = performance.now()
             const m = Math.pow(Math.max(end_time - t, 0) / duration, 2)
-            zx = tx + (tx0 - tx) * m
-            zy = ty + (ty0 - ty) * m
+            this.x = tx + (tx0 - tx) * m
+            this.y = ty + (ty0 - ty) * m
 
             this.draw_image!()
 
@@ -340,12 +336,11 @@ class Reader extends ViewHook {
             ty = y
             tz = Math.min(Math.max(0.01, zoom || 1), 1000)
 
-            zx = x
-            zy = y
-            zz = zoom
+            this.x = x
+            this.y = y
+            this.scale = zoom
 
             if (_duration == 0) {
-                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
                 if (render) {
                     this.draw_image!()
                 }
@@ -372,10 +367,9 @@ class Reader extends ViewHook {
             tz = new_zoom
 
             if (_duration == 0) {
-                zx = tx0
-                zy = ty0
-                zz = tz
-                device.queue.writeBuffer(uniform_buffer, 0, uniformData)
+                this.x = tx0
+                this.y = ty0
+                this.scale = tz
             } else {
                 end_time = performance.now() + duration
                 requestAnimationFrame(animate_zoom)
