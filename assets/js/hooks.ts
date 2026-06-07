@@ -18,7 +18,10 @@ class Mipmap {
 }
 
 class Reader extends ViewHook {
-    private device: GPUDevice | null = null
+    private device!: GPUDevice
+    private pipeline_draw!: GPUComputePipeline
+    private uniform_buffer!: GPUBuffer
+
     private files: string[] = []
     private draw_image: (() => void) | null = null
     private loaded_page = -1
@@ -42,6 +45,117 @@ class Reader extends ViewHook {
     private y: number = 0
     private scale: number = 1
 
+    crop_image(
+        im: ImageBitmap | HTMLImageElement,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+    ) {
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        ctx!.drawImage(im, x, y, width, height, 0, 0, width, height)
+        return canvas
+    }
+
+    async create_tiles(im: ImageBitmap | HTMLImageElement): Promise<GPUTexture[][]> {
+        console.log(im.width, im.height)
+        const tiles = []
+        for (let y = 0; y < im.height; y += TILESIZE) {
+            const row = []
+            for (let x = 0; x < im.width; x += TILESIZE) {
+                console.log(x, y)
+                const width = Math.min(TILESIZE, im.width - x)
+                const height = Math.min(TILESIZE, im.height - y)
+                const im2 = this.crop_image(im, x, y, width, height)
+
+                let texture = this.device.createTexture({
+                    size: [width, height, 1],
+                    format: "rgba8unorm",
+                    usage:
+                        GPUTextureUsage.STORAGE_BINDING |
+                        GPUTextureUsage.TEXTURE_BINDING |
+                        GPUTextureUsage.COPY_DST |
+                        GPUTextureUsage.RENDER_ATTACHMENT,
+                })
+                row.push(texture)
+
+                this.device.queue.copyExternalImageToTexture(
+                    { source: im2 },
+                    { texture: texture },
+                    [width, height],
+                )
+            }
+            tiles.push(row)
+        }
+
+        return tiles
+    }
+
+    render_image(
+        im: HTMLImageElement,
+        mipmap: Mipmap,
+        dest: GPUTexture,
+        x: number,
+        y: number,
+        scale: number,
+    ) {
+        const encoder = this.device.createCommandEncoder()
+
+        let vx = (-x * dest.width + 0.5 * im.width) * mipmap.scale
+        vx = Math.round(vx / TILESIZE) - 1
+        vx = Math.min(vx, mipmap.width - 2)
+        vx = Math.max(vx, 0)
+
+        let vy = (-y * dest.height + 0.5 * im.height) * mipmap.scale
+        vy = Math.round(vy / TILESIZE) - 1
+        vy = Math.min(vy, mipmap.height - 2)
+        vy = Math.max(vy, 0)
+
+        const data = new Float32Array(8)
+        data[0] =
+            (0.5 / scale + x) * mipmap.scale +
+            (vx * TILESIZE - (mipmap.scale * im.width) / 2) / dest.width
+        data[1] =
+            (0.5 / scale + y) * mipmap.scale +
+            (vy * TILESIZE - (mipmap.scale * im.height) / 2) / dest.height
+        data[2] = scale / mipmap.scale
+        data[3] = TILESIZE
+        data[4] = mipmap.width
+        data[5] = mipmap.height
+        this.device.queue.writeBuffer(this.uniform_buffer, 0, data)
+
+        const vx1 = mipmap.width > 1 ? vx + 1 : vx
+        const vy1 = mipmap.height > 1 ? vy + 1 : vy
+
+        const textures = [
+            mipmap.tiles[vy][vx],
+            mipmap.tiles[vy][vx1],
+            mipmap.tiles[vy1][vx],
+            mipmap.tiles[vy1][vx1],
+        ].map((texture, i) => {
+            return { binding: 2 + i, resource: texture }
+        })
+
+        const pass = encoder.beginComputePass()
+        pass.setPipeline(this.pipeline_draw)
+        pass.setBindGroup(
+            0,
+            this.device.createBindGroup({
+                layout: this.pipeline_draw.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: dest },
+                    { binding: 1, resource: this.uniform_buffer },
+                ].concat(textures),
+            }),
+        )
+        pass.dispatchWorkgroups(Math.ceil(dest.width / 16), Math.ceil(dest.height / 16))
+        pass.end()
+        this.device.queue.submit([encoder.finish()])
+    }
+
     async init() {
         const canvas: HTMLCanvasElement = this.el.querySelector("canvas")!
 
@@ -51,11 +165,20 @@ class Reader extends ViewHook {
         })
 
         if (!device) {
-            console.log("need a browser that supports WebGPU")
-            return
+            throw Error("need a browser that supports WebGPU")
         }
 
         this.device = device
+
+        this.pipeline_draw = device.createComputePipeline({
+            layout: "auto",
+            compute: { module: this.create_shader(shader) },
+        })
+
+        this.uniform_buffer = this.device.createBuffer({
+            size: 32,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        })
 
         const context = canvas.getContext("webgpu") as GPUCanvasContext
         context.configure({
@@ -67,141 +190,11 @@ class Reader extends ViewHook {
             alphaMode: "premultiplied",
         })
 
-        const pipeline_draw = device.createComputePipeline({
-            layout: "auto",
-            compute: {module: this.create_shader(shader)}
-        });
-
-        const uniform_buffer = this.device.createBuffer({
-            size: 32,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        })
-
         let fit = true
 
         let im: HTMLImageElement = new Image()
         let mipmaps: Mipmap[] = []
         const e_mipmaplevel = this.el.querySelector(".info>.mipmaplevel")!
-
-        const render_image = (mipmap: Mipmap, dest: GPUTexture, x: number, y: number, scale: number) => {
-            const encoder = device.createCommandEncoder()
-
-            let vx = (-x * dest.width + 0.5 * im.width) * mipmap.scale
-            vx = Math.round(vx / TILESIZE) - 1
-            vx = Math.min(vx, mipmap.width - 2)
-            vx = Math.max(vx, 0)
-
-            let vy = (-y * dest.height + 0.5 * im.height) * mipmap.scale
-            vy = Math.round(vy / TILESIZE) - 1
-            vy = Math.min(vy, mipmap.height - 2)
-            vy = Math.max(vy, 0)
-
-            uniformData[0] =
-                (0.5 / scale + x) * mipmap.scale +
-                (vx * TILESIZE - (mipmap.scale * im.width) / 2) / dest.width
-            uniformData[1] =
-                (0.5 / scale + y) * mipmap.scale +
-                (vy * TILESIZE - (mipmap.scale * im.height) / 2) / dest.height
-            uniformData[2] = scale / mipmap.scale
-            uniformData[3] = TILESIZE
-            uniformData[4] = mipmap.width
-            uniformData[5] = mipmap.height
-            device.queue.writeBuffer(uniform_buffer, 0, uniformData)
-
-            const vx1 = mipmap.width > 1 ? vx + 1 : vx
-            const vy1 = mipmap.height > 1 ? vy + 1 : vy
-
-            const textures = [
-                mipmap.tiles[vy][vx],
-                mipmap.tiles[vy][vx1],
-                mipmap.tiles[vy1][vx],
-                mipmap.tiles[vy1][vx1],
-            ]
-                .map((texture, i) => {
-                    return { binding: 2 + i, resource: texture }
-                })
-
-            const pass = encoder.beginComputePass()
-            pass.setPipeline(pipeline_draw)
-            pass.setBindGroup(
-                0,
-                device.createBindGroup({
-                    layout: pipeline_draw.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: dest },
-                        { binding: 1, resource: uniform_buffer },
-                    ].concat(textures),
-                }),
-            )
-            pass.dispatchWorkgroups(Math.ceil(dest.width / 16), Math.ceil(dest.height / 16))
-            pass.end()
-            device.queue.submit([encoder.finish()])
-
-            // const pass = encoder.beginRenderPass({
-            //     colorAttachments: [
-            //         {
-            //             view: dest.createView ? dest.createView() : dest,
-            //             clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-            //             loadOp: "clear",
-            //             storeOp: "store",
-            //         },
-            //     ],
-            // })
-            // pass.setPipeline(pipeline_draw)
-            // pass.setBindGroup(
-            //     0,
-            //     device.createBindGroup({
-            //         layout: pipeline_draw.getBindGroupLayout(0),
-            //         entries: [
-            //             { binding: 0, resource: uniform_buffer },
-            //         ].concat(textures),
-            //     }),
-            // )
-            // pass.draw(3)
-            // pass.end()
-            // device.queue.submit([encoder.finish()])
-        }
-
-        const create_tiles = async (
-            im: ImageBitmap | HTMLImageElement,
-        ): Promise<GPUTexture[][]> => {
-            console.log(im.width, im.height)
-            const tiles = []
-            for (let y = 0; y < im.height; y += TILESIZE) {
-                const row = []
-                for (let x = 0; x < im.width; x += TILESIZE) {
-                    console.log(x, y)
-                    const width = Math.min(TILESIZE, im.width - x)
-                    const height = Math.min(TILESIZE, im.height - y)
-
-                    const canvas = document.createElement("canvas")
-                    canvas.width = width
-                    canvas.height = height
-                    const ctx = canvas.getContext("2d")
-                    ctx!.drawImage(im, x, y, width, height, 0, 0, width, height)
-
-                    let texture = device.createTexture({
-                        size: [width, height, 1],
-                        format: "rgba8unorm",
-                        usage:
-                            GPUTextureUsage.STORAGE_BINDING |
-                            GPUTextureUsage.TEXTURE_BINDING |
-                            GPUTextureUsage.COPY_DST |
-                            GPUTextureUsage.RENDER_ATTACHMENT,
-                    })
-                    row.push(texture)
-
-                    device.queue.copyExternalImageToTexture(
-                        { source: canvas },
-                        { texture: texture },
-                        [width, height],
-                    )
-                }
-                tiles.push(row)
-            }
-
-            return tiles
-        }
 
         this.draw_image = async () => {
             if (this.page == -1) return
@@ -234,7 +227,7 @@ class Reader extends ViewHook {
                 )
                 mipmaps = []
                 e_mipmaplevel.textContent = `Creating textures`
-                mipmaps.push(new Mipmap(1, await create_tiles(im)))
+                mipmaps.push(new Mipmap(1, await this.create_tiles(im)))
 
                 refit(0, 0, 0, false)
                 move(0, 0, tz, 0, false)
@@ -250,7 +243,7 @@ class Reader extends ViewHook {
                         resizeHeight: im.height * scale,
                     })
 
-                    mipmaps.push(new Mipmap(scale, await create_tiles(im2)))
+                    mipmaps.push(new Mipmap(scale, await this.create_tiles(im2)))
                 }
 
                 this.el.classList.toggle("loading", false)
@@ -268,11 +261,16 @@ class Reader extends ViewHook {
             if (mipmaps[level]) {
                 const mipmap = mipmaps[level]
                 e_mipmaplevel.textContent = `${level + 1}/${mipmaps.length} ${mipmap.tiles[0].length}x${mipmap.tiles.length}`
-                render_image(mipmap, context.getCurrentTexture(), this.x, this.y, this.scale)
+                this.render_image(
+                    im,
+                    mipmap,
+                    context.getCurrentTexture(),
+                    this.x,
+                    this.y,
+                    this.scale,
+                )
             }
         }
-
-        const uniformData = new Float32Array(8)
 
         const e_zoom = this.el.querySelector(".info>.zoom")!
 
