@@ -11,8 +11,8 @@ defmodule LLWeb.ExtensionsLive do
     ~H"""
     <h1>Extensions</h1>
 
-    <button phx-click="update_remote">Update remote</button>
-    <button phx-click="update_local">Update local</button>
+    <button :if={LL.User.mod?(@current_scope)} phx-click="update_remote">Update remote</button>
+    <button :if={LL.User.mod?(@current_scope)} phx-click="update_local">Update local</button>
 
     <h3>Installed</h3>
     <table>
@@ -24,7 +24,7 @@ defmodule LLWeb.ExtensionsLive do
         <td>{ext.version}</td>
         <td>{ext.pkg}</td>
         <td :if={Map.has_key?(@remote, pkg) and @remote[pkg].version != ext.version}>
-          <button phx-click="install" phx-value-pkg={ext.pkg} phx-disable-with="Updating...">
+          <button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.pkg} phx-disable-with="Updating...">
             Update to {@remote[pkg].version}
           </button>
         </td>
@@ -41,7 +41,7 @@ defmodule LLWeb.ExtensionsLive do
             end)
           end)
       }>
-        <td><button phx-click="install" phx-value-pkg={ext.pkg}>Install</button></td>
+        <td><button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.pkg}>Install</button></td>
         <td>
           <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.pkg}.png"} />
         </td>

@@ -26,7 +26,7 @@ defmodule LL.ExtensionManager do
   def extension_repo(), do: "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
 
   def update_remote() do
-    Downloader.get extension_repo() <> "index.json" do
+    Downloader.get extension_repo() <> "index.min.json" do
       {:ok, body, _headers} ->
         case Jason.decode(body, keys: :atoms) do
           {:ok, arr} ->
@@ -201,7 +201,13 @@ defmodule LL.ExtensionManager do
                   series
 
                 series ->
-                  series
+                  if not File.exists?(series.thumbnail_path) do
+                    series
+                    |> Ecto.Changeset.change(%{thumbnail_path: m.thumbnail_url})
+                    |> Repo.update!()
+                  else
+                    series
+                  end
               end
 
             if series.thumbnail_path != nil and not File.exists?(series.thumbnail_path) do
