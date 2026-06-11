@@ -12,12 +12,12 @@ defmodule LLWeb.UpdatesLive do
     <h1>Updates</h1>
 
     <div class="messages">
-      <button phx-click="clear-errors" style="align-self: start">
+      <button :if={LL.User.mod?(@current_scope)} phx-click="clear-errors" style="align-self: start">
         Clear errors
       </button>
       <div :for={e <- @messages |> Enum.sort_by(& &1.inserted_at, {:desc, NaiveDateTime})}>
         <div>
-          <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
+          <button :if={LL.User.mod?(@current_scope)} phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
             close
           </button>
           <span>{relative_time(e.inserted_at)}</span>
