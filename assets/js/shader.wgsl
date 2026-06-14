@@ -1,4 +1,3 @@
-export default /* wgsl */ `
 struct Uniforms {
     offset: vec2<f32>,
     scale: f32,
@@ -150,7 +149,7 @@ fn textureSampleCatmullRom(uv: vec2<f32>) -> vec4<f32> {
     let ts = i32(transform.tile_size);
 
     let start_i = base_coord - vec2<i32>(1); // Top-left
-    let end_i   = base_coord + vec2<i32>(2); // Bottom-right
+    let end_i = base_coord + vec2<i32>(2); // Bottom-right
 
     let canvas_in_bounds = start_i.x >= 0 && start_i.y >= 0 && end_i.x <= max_coord.x && end_i.y <= max_coord.y;
     let tile_TL = start_i / ts;
@@ -231,7 +230,7 @@ fn downsample(src_start: vec2<f32>, scale: vec2<f32>) -> vec4<f32> {
     let src_end = src_start + scale;
 
     let start_i = vec2<i32>(clamp(floor(src_start), vec2<f32>(0.0), src_size_f));
-    let end_i   = vec2<i32>(clamp(ceil(src_end), vec2<f32>(0.0), src_size_f));
+    let end_i = vec2<i32>(clamp(ceil(src_end), vec2<f32>(0.0), src_size_f));
 
     let ts = i32(transform.tile_size);
 
@@ -261,7 +260,6 @@ fn downsample(src_start: vec2<f32>, scale: vec2<f32>) -> vec4<f32> {
         }
 
         return to_srgb_exact(avg_color);
-
     } else {
         for (var y: i32 = start_i.y; y < end_i.y; y++) {
             let y_f = f32(y);
@@ -319,4 +317,4 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let col = textureSampleCatmullRom(uv);
         textureStore(dst_tex, id.xy, col);
     }
-}`
+}

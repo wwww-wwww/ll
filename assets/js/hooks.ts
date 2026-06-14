@@ -1,5 +1,5 @@
 import { ViewHook } from "phoenix_live_view"
-import shader from "./shader"
+import shader from "./shader.wgsl"
 import downsample from "./downsample"
 
 const TILESIZE = 4096
