@@ -31,6 +31,6 @@ defmodule LL.Message do
   end
 
   def error(message) do
-    create("Error", message)
+    create("Error", inspect(message))
   end
 end
