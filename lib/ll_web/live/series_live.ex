@@ -303,7 +303,7 @@ defmodule LLWeb.SeriesLive do
       Repo.get(MultiSeries, multi_id)
       |> Repo.preload(series: [:source, :chapters], children: [:source, :chapters])
 
-    if not File.exists?(multi.thumbnail_path) do
+    if not is_nil(multi.thumbnail_path) and not File.exists?(multi.thumbnail_path) do
       LL.Anilist.download_cover(multi)
     end
 
