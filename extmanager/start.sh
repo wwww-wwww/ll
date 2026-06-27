@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-exec xvfb-run java -jar build/libs/extmanager-all.jar
+exec xvfb-run java -noverify -Xverify:none -jar build/libs/extmanager-all.jar
 
