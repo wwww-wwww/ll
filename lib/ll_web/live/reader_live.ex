@@ -65,7 +65,6 @@ defmodule LLWeb.ReaderLive do
         </filter>
       </svg>
       <div class="interstitial"></div>
-      <canvas></canvas>
       <div class="info">
         <span class="page"></span>
         <span class="zoom"></span>
