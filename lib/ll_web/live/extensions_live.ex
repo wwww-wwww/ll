@@ -23,9 +23,9 @@ defmodule LLWeb.ExtensionsLive do
         <td>{ext.sources |> Enum.at(0) |> Map.get(:name)}</td>
         <td>{ext.version}</td>
         <td>{ext.pkg}</td>
-        <td :if={Map.has_key?(@remote, pkg) and @remote[pkg].version != ext.version}>
+        <td :if={Map.has_key?(@remote, pkg) and @remote[pkg].versionName != ext.version}>
           <button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.pkg} phx-disable-with="Updating...">
-            Update to {@remote[pkg].version}
+            Update to {@remote[pkg].versionName}
           </button>
         </td>
       </tr>
@@ -41,17 +41,17 @@ defmodule LLWeb.ExtensionsLive do
             end)
           end)
       }>
-        <td><button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.pkg}>Install</button></td>
+        <td><button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.packageName}>Install</button></td>
         <td>
-          <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.pkg}.png"} />
+          <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.packageName}.png"} />
         </td>
         <td class="details">
           <div>
             <span>{ext.sources |> Enum.at(0) |> Map.get(:name)}</span>
-            <span>{ext.lang} - {ext.version}</span>
+            <span>{ext.versionName}</span>
           </div>
         </td>
-        <td>{ext.pkg}</td>
+        <td>{ext.packageName}</td>
       </tr>
     </table>
     """

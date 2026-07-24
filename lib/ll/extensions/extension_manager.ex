@@ -26,13 +26,15 @@ defmodule LL.ExtensionManager do
   def extension_repo(), do: "https://raw.githubusercontent.com/keiyoushi/extensions/repo/"
 
   def update_remote() do
-    Downloader.get extension_repo() <> "index.min.json" do
+    Downloader.get extension_repo() <> "index.json" do
       {:ok, body, _headers} ->
         case Jason.decode(body, keys: :atoms) do
           {:ok, arr} ->
             arr =
-              Enum.map(arr, &{&1.pkg, &1})
+              arr.extensionList.extensions
+              |> Enum.map(&{&1.packageName, &1})
               |> Map.new()
+              |> IO.inspect()
 
             Agent.update(__MODULE__, &%{&1 | remote: arr})
 
@@ -63,10 +65,11 @@ defmodule LL.ExtensionManager do
     get().remote
     |> Enum.filter(&(elem(&1, 0) == pkg))
     |> case do
-      [{_, %{apk: apk, name: ext_name, version: ext_version}}] ->
-        Downloader.get extension_repo() <> "apk/" <> apk do
+      [{_, %{name: ext_name, versionName: ext_version, resources: %{jarUrl: jarUrl}}}] ->
+        Downloader.get jarUrl do
           {:ok, body, _headers} ->
-            path = Path.expand(@extensions_path <> "/" <> apk)
+            filename = Path.basename(jarUrl)
+            path = Path.expand(@extensions_path <> "/" <> filename)
             {:ok, file} = File.open(path, [:write])
             IO.binwrite(file, body)
             File.close(file)
@@ -310,10 +313,10 @@ defmodule LL.ExtensionManager do
       |> Jason.encode!()
 
     Downloader.post data, @manager_api <> "series_chapters", :local do
-      {:ok, j} ->
+      {:ok, %{results: results}} ->
         Repo.transact(fn ->
           chapters =
-            Enum.map(j.results, fn chapter_j ->
+            Enum.map(results, fn chapter_j ->
               {new, chapter} =
                 case Repo.get_by(Chapter,
                        series_id: series.id,
