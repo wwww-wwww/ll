@@ -21,7 +21,6 @@
 // Feel free to adjust this configuration however you need.
 {
   "compilerOptions": {
-    "target": "ES2025",
     "paths": {
       "*": ["../deps/*"]
     },
