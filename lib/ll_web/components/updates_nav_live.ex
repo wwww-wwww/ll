@@ -1,7 +1,9 @@
 defmodule LLWeb.UpdatesNavLive do
   use LLWeb, :live_view
 
-  alias LL.{Repo, Message}
+  alias LL.{Repo, Message, MessagesUser}
+
+  import Ecto.Query, only: [from: 2]
 
   def render(assigns) do
     ~H"""
@@ -14,12 +16,19 @@ defmodule LLWeb.UpdatesNavLive do
     """
   end
 
-  def mount(_params, _session, socket) do
+  def mount(_params, %{"user" => user}, socket) do
     if connected?(socket) do
       LLWeb.Endpoint.subscribe("message_count")
     end
 
-    count = Repo.aggregate(Message, :count, :id)
+    count =
+      from(m in Message,
+        join: u in MessagesUser,
+        on: u.message_id == m.id,
+        where: u.user_id == ^user.id
+      )
+      |> Repo.aggregate(:count, :id)
+
     socket = assign(socket, count: count)
 
     {:ok, socket}

@@ -1,8 +1,8 @@
 import { Mipmap } from "./mipmap"
-import { Renderer } from "./renderer"
+import { Viewer } from "./viewer"
 
 export default class Page {
-    renderer: Renderer
+    renderer: Viewer
     width: number = 1
     height: number = 1
 
@@ -10,7 +10,9 @@ export default class Page {
     y: number = 0
     scale: number = 1
 
-    get fit_scale(): number {
+    get fit_scale(): number | null {
+        if (!this.ready) { return null; }
+
         const ratiox = this.renderer.context.canvas.width / this.width
         const ratioy = this.renderer.context.canvas.height / this.height
 
@@ -23,7 +25,7 @@ export default class Page {
     ready = false
     promise = Promise.withResolvers<boolean>()
 
-    constructor(renderer: Renderer, image: HTMLImageElement,) {
+    constructor(renderer: Renderer, image: HTMLImageElement) {
         this.renderer = renderer
 
         this.buffer = renderer.device.createBuffer({
@@ -44,8 +46,8 @@ export default class Page {
             const maxHeight = 1024
 
             this.mipmaps.push(new Mipmap(renderer.device, image, 1, tilesize))
-            this.ready = true
             this.promise.resolve(true)
+            this.ready = true
             renderer.invalidate()
         })
     }

@@ -1,28 +1,13 @@
 import { ViewHook } from "phoenix_live_view"
-import shader from "./shader.wgsl"
-import downsample from "./downsample"
 import { Viewer } from "./viewer"
 
 const TILESIZE = 4096
-
-class Mipmap {
-    scale: number = 1
-    tiles: GPUTexture[][] = []
-    width: number = 0
-    height: number = 0
-
-    constructor(scale: number, tiles: GPUTexture[][]) {
-        this.scale = scale
-        this.tiles = tiles
-        this.width = tiles[0].length
-        this.height = tiles.length
-    }
-}
+const PRELOAD_COUNT = 5
 
 class Reader extends ViewHook {
     private device!: GPUDevice
 
-    private files: string[] = []
+    private files: (HTMLImageElement | null)[][] = []
 
     create_shader(code: string) {
         const module = this.device!.createShaderModule({ code })
@@ -96,9 +81,15 @@ class Reader extends ViewHook {
         this.el.appendChild(this.viewer)
 
         this.viewer.fetch_pages = (n: number) => {
-            const im = new Image()
-            im.src = this.files[n]
-            return this.viewer.create_image(im)
+            let i = n + 1
+            let preload_next = () => {
+                if (i >= n + PRELOAD_COUNT) return
+                if (i >= this.files.length) return
+                Promise.all(this.files[i++].filter(f => f).map(f => f?.decode()))
+                    .then(preload_next)
+            }
+            preload_next()
+            return this.files[n]
         }
     }
 
@@ -175,13 +166,65 @@ class Reader extends ViewHook {
             this.prev_chapter = chapters.at(current_index + 1)!
         }
 
-        this.files = JSON.parse(this.el.dataset.files! || "[]")
+        const data = JSON.parse(this.el.dataset.files! || "{}")
+
+        function get_files(files_raw: HTMLImageElement[], order: number[]): (HTMLImageElement | null)[][] {
+            let i = 0
+
+            const files: (HTMLImageElement | null)[][] = []
+
+            while (order.length > 0) {
+                const o = order.shift()
+                if (o == 0) {
+                    if (order[0] == 1) {
+                        order.shift()
+                        files.push([files_raw[i++], files_raw[i++]])
+                    } else {
+                        files.push([files_raw[i++], null])
+                    }
+                }
+                if (o == 1) {
+                    files.push([null, files_raw[i++]])
+                }
+                if (o == 2) {
+                    files.push([files_raw[i++]])
+                }
+            }
+
+            return files
+        }
+
+        const files = data.files.map((f: string) => {
+            const im = new Image()
+            im.src = f
+            return im
+        })
+
+        if (data.order) {
+            this.files = get_files(files, data.order)
+        } else {
+            this.files = files.map((e: HTMLImageElement) => [e])
+        }
+
+        console.log(this.files)
 
         this.handleEvent("files", data => {
             if (!mounted) return
             console.info("files", data, window.history.state)
 
-            this.files = data.files
+            this.viewer.pages.clear()
+
+            const files = data.files.map((f: string) => {
+                const im = new Image()
+                im.src = f
+                return im
+            })
+            if (data.order) {
+                this.files = get_files(files, data.order)
+            } else {
+                this.files = files.map((e: HTMLImageElement) => [e])
+            }
+
             this.e_interstitial.classList.toggle("visible", false)
 
             if (chapters) {
@@ -209,6 +252,10 @@ class Reader extends ViewHook {
         })
 
         this.key_event = (e: KeyboardEvent) => {
+            if (document.activeElement?.tagName == "INPUT" || document.activeElement?.tagName == "TEXTAREA") {
+                return;
+            }
+
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
 

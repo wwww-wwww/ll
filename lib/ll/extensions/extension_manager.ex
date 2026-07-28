@@ -296,6 +296,10 @@ defmodule LL.ExtensionManager do
         {n, _} = Float.parse(g)
         n
 
+      match = Regex.run(~r/Volume ([0-9\.]+)/, j.title) ->
+        [_, g] = match
+        {n, _} = Float.parse(g)
+        n
       true ->
         j.number
     end
@@ -324,11 +328,19 @@ defmodule LL.ExtensionManager do
                        url: chapter_j.url
                      ) do
                   nil ->
+                    hidden =
+                      chapter_j.scanlator == "unofficial" and
+                        Enum.any?(results, fn chapter_j2 ->
+                          chapter_j2.scanlator == "official" and
+                            chapter_j.number == chapter_j2.number
+                        end)
+
                     {true,
                      %Chapter{
                        series_id: series.id,
                        source_id: source.id,
-                       url: chapter_j.url
+                       url: chapter_j.url,
+                       hidden: hidden
                      }}
 
                   chapter ->
@@ -411,7 +423,7 @@ defmodule LL.ExtensionManager do
           if download do
             Enum.filter(chapters, &elem(&1, 0))
             |> Enum.each(fn {_, c} ->
-              Message.create("{:library,#{series.id}}", "New chapter {:chapter,#{c.id}}")
+              Message.new_chapter(series, c)
               download_chapter(c, source)
             end)
           end
@@ -516,29 +528,17 @@ defmodule LL.ExtensionManager do
   end
 
   def download_page(chapter, source, page, index) do
-    %{image_url: url} = page
+    Map.merge(page, %{
+      extension: source.extension.path,
+      source: source.source_id
+    })
+    |> Jason.encode!()
+    |> Downloader.post @manager_api <> "image" do
+      {:ok, body, headers} ->
+        save_page(body, get_ext(headers), chapter, index)
 
-    if URI.parse(url).scheme == nil do
-      Map.merge(page, %{
-        extension: source.extension.path,
-        source: source.source_id
-      })
-      |> Jason.encode!()
-      |> Downloader.post @manager_api <> "image" do
-        {:ok, body, headers} ->
-          save_page(body, get_ext(headers), chapter, index)
-
-        err ->
-          Message.error(err)
-      end
-    else
-      Downloader.get url do
-        {:ok, body, headers} ->
-          save_page(body, get_ext(headers), chapter, index)
-
-        err ->
-          Message.error(err)
-      end
+      err ->
+        Message.error(err)
     end
   end
 

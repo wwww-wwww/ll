@@ -75,6 +75,7 @@ defmodule LLWeb.Router do
       live "/reader", ReaderLiveS
 
       live "/updates", UpdatesLive
+      live "/updates_all", UpdatesAllLive
 
       live "/routes", RoutesLive
       live "/status", StatusLive

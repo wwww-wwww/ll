@@ -18,6 +18,8 @@ defmodule LL.Chapter do
 
     field :hidden, :boolean
 
+    field :page_order, {:array, :integer}
+
     timestamps()
   end
 

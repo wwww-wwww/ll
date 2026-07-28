@@ -7,12 +7,6 @@ defmodule LL.Anilist do
 
   @endpoint "https://graphql.anilist.co"
 
-  def search(title) do
-  end
-
-  def details(id) do
-  end
-
   def cover(id) do
     query = """
     query ($id: Int) {

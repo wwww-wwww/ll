@@ -1,4 +1,4 @@
-defmodule LLWeb.UpdatesLive do
+defmodule LLWeb.UpdatesAllLive do
   use LLWeb, :live_view
 
   import Ecto.Query, only: [from: 2]
@@ -34,10 +34,7 @@ defmodule LLWeb.UpdatesLive do
       LLWeb.Endpoint.subscribe("messages")
     end
 
-    messages =
-      socket.assigns.current_scope.user
-      |> Repo.preload(:messages)
-      |> Map.get(:messages)
+    messages = Repo.all(Message)
 
     socket =
       socket

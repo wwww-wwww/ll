@@ -11,6 +11,13 @@ function spring(t: number) {
     return raw / end
 }
 
+function dist(pos1: number[], pos2: number[]) {
+    return Math.sqrt(Math.pow(pos1[0] - pos2[0], 2) + Math.pow(pos1[1] - pos2[1], 2))
+}
+
+const TOUCH_SLOP = 8 * window.devicePixelRatio * 96 / 160
+const DOUBLE_CLICK_DELAY = 300
+
 export class Viewer extends HTMLCanvasElement {
     device!: GPUDevice
     context!: GPUCanvasContext
@@ -22,21 +29,24 @@ export class Viewer extends HTMLCanvasElement {
 
     page = 0
 
-    pages: Map<number, Page> = new Map<number, Page>()
-    fetch_pages?: (n: number) => Page
+    pages: Map<number, (Page | null)[]> = new Map<number, (Page | null)[]>()
+    fetch_pages?: (n: number) => (HTMLImageElement | null)[]
 
-    get_page(n: number): Page | null {
+    get_page(n: number): (Page | null)[] | null {
         if (this.pages.has(n)) {
             return this.pages.get(n)!
         }
 
-        const image = this.fetch_pages?.(n)
+        const pages = this.fetch_pages?.(n)?.map(im => {
+            if (!im) return null
+            return this.create_image(im)
+        })
 
         return (
-            (image &&
+            (pages &&
                 (() => {
-                    this.pages.set(n, image)
-                    return image
+                    this.pages.set(n, pages)
+                    return pages
                 })()) ||
             null
         )
@@ -55,13 +65,20 @@ export class Viewer extends HTMLCanvasElement {
         this.next_frame = requestAnimationFrame(() => this.render())
     }
 
-    get fit_scale() {
-        const page1 = this.get_page(this.page)
-        const page2 = this.get_page(this.page + 1)
-        return Math.min(page1?.fit_scale ?? 1, page2?.fit_scale ?? 1)
+    get fit_scale(): number {
+        const pages = this.get_page(this.page)?.filter(p => p != null) ?? []
+        const width = pages.map(p => p.width).reduce((acc, val) => acc+val, 0)
+        const height = Math.max(...pages.map(p => p.height))
+
+        if (width <= 0 && height <= 0) return 1
+
+        const ratiox = this.context.canvas.width / width
+        const ratioy = this.context.canvas.height / height
+
+        return Math.min(ratiox, ratioy)
     }
 
-    get min_scale() {
+    get min_scale(): number {
         return this.fit_scale
     }
 
@@ -80,39 +97,33 @@ export class Viewer extends HTMLCanvasElement {
             })
             .end()
 
-        const page1 = this.get_page(this.page)
-        if (page1 && page1.ready) {
-            this.shader.render(
-                encoder,
-                page1,
-                texture,
-                this.x + (0.5 * page1.width) / this.width,
-                this.y,
-                this.scale,
-            )
-        }
-
-        const page2 = this.get_page(this.page + 1)
-        if (page2 && page2.ready) {
-            this.shader.render(
-                encoder,
-                page2,
-                texture,
-                this.x - (0.5 * page2.width) / this.width,
-                this.y,
-                this.scale,
-            )
-        }
-
-        if (!page1?.ready) {
-            page1?.promise.promise.then(() => {
-                this.scale = Math.min(page1?.fit_scale ?? 1, page2?.fit_scale ?? 1)
+        const pages = this.get_page(this.page) ?? []
+        if (pages.length == 2) {
+            pages.forEach((v, i) => {
+                if (v == null) return
+                if (!v.ready) return
+                this.shader.render(
+                    encoder,
+                    v,
+                    texture,
+                    this.x + ((0.5 - i) * v.width) / this.width,
+                    this.y,
+                    this.scale,
+                )
             })
-        }
-        if (!page2?.ready) {
-            page2?.promise.promise.then(() => {
-                this.scale = Math.min(page1?.fit_scale ?? 1, page2?.fit_scale ?? 1)
-            })
+        } else if (pages.length == 1) {
+            if (pages[0] != null) {
+                if (pages[0].ready) {
+                    this.shader.render(
+                        encoder,
+                        pages[0],
+                        texture,
+                        this.x,
+                        this.y,
+                        this.scale,
+                    )
+                }
+            }
         }
 
         this.device.queue.submit([encoder.finish()])
@@ -160,14 +171,14 @@ export class Viewer extends HTMLCanvasElement {
             origin_x != null ?
                 scale != start_scale ?
                     start_x + (origin_x - 0.5) * diff_end
-                :   start_x
-            :   x
+                    : start_x
+                : x
         const end_y =
             origin_y != null ?
                 scale != start_scale ?
                     start_y + (origin_y - 0.5) * diff_end
-                :   start_y
-            :   y
+                    : start_y
+                : y
 
         this.animation(t => {
             t = spring(t)
@@ -175,7 +186,7 @@ export class Viewer extends HTMLCanvasElement {
             const c =
                 start_scale != scale ?
                     Math.max(0, Math.min((1 / new_scale - 1 / start_scale) / diff_end, 1))
-                :   t
+                    : t
 
             this.x = start_x * (1 - c) + end_x * c
             this.y = start_y * (1 - c) + end_y * c
@@ -215,18 +226,10 @@ export class Viewer extends HTMLCanvasElement {
         let last_pos = [0, 0]
         let start = [0, 0]
 
-        const pan = (clientX: number, clientY: number) => {
-            const rect = (this.context.canvas as HTMLCanvasElement).getBoundingClientRect()
-            const x = (clientX - rect.x) / rect.width
-            const y = (clientY - rect.y) / rect.height
-
-            const offx = (x - last_pos[0]) / this.scale
-            const offy = (y - last_pos[1]) / this.scale
-
-            this.x = this.x + offx
-            this.y = this.y + offy
-
-            last_pos = [x, y]
+        const pan = (x: number, y: number) => {
+            this.x = this.x + x
+            this.y = this.y + y
+            this.invalidate()
         }
 
         {
@@ -251,6 +254,7 @@ export class Viewer extends HTMLCanvasElement {
                 this.invalidate()
             })
 
+            let past_slop = false
             this.addEventListener("pointerdown", e => {
                 if (e.button != 0) return
 
@@ -262,8 +266,9 @@ export class Viewer extends HTMLCanvasElement {
                 e.preventDefault()
                 this.classList.toggle("grabbing", true)
 
+                past_slop = false
                 last_pos = [x, y]
-                start = [x, y]
+                start = [e.clientX, e.clientY]
             })
 
             this.addEventListener("pointermove", e => {
@@ -272,12 +277,28 @@ export class Viewer extends HTMLCanvasElement {
                 if (!this.hasPointerCapture(e.pointerId)) return
                 if (!this.classList.contains("grabbing")) return
 
-                pan(e.clientX, e.clientY)
-                this.invalidate()
+
+                if (!past_slop && dist([e.clientX, e.clientY], start) >= TOUCH_SLOP) {
+                    past_slop = true
+                }
+                if (!past_slop) return
+
+                const rect = (this.context.canvas as HTMLCanvasElement).getBoundingClientRect()
+                const x = (e.clientX - rect.x) / rect.width
+                const y = (e.clientY - rect.y) / rect.height
+
+                const offx = (x - last_pos[0]) / this.scale
+                const offy = (y - last_pos[1]) / this.scale
+
+                last_pos = [x, y]
+
+                pan(offx, offy)
             })
 
+            let click_timeout: any = null
             this.addEventListener("pointerup", e => {
                 if (e.button != 0) return
+
                 if (!this.hasPointerCapture(e.pointerId)) return
                 this.releasePointerCapture(e.pointerId)
                 this.classList.toggle("grabbing", false)
@@ -285,25 +306,41 @@ export class Viewer extends HTMLCanvasElement {
                 const rect = this.getBoundingClientRect()
                 const x = (e.clientX - rect.x) / rect.width
                 const y = (e.clientY - rect.y) / rect.height
-                if (x == start[0] && y == start[1]) {
-                    if (this.at_home) {
-                        this.move_to(0, 0, 1, x, y)
-                    } else {
-                        this.move_to(0, 0, this.fit_scale)
-                    }
 
-                    this.invalidate()
-                } else {
-                    pan(e.clientX, e.clientY)
-                    this.invalidate()
+                if (dist([e.clientX, e.clientY], start) < TOUCH_SLOP) {
+                    if (click_timeout) {
+                        clearTimeout(click_timeout)
+                        click_timeout = null
+                        this.on_double_click(x, y)
+                    } else {
+                        click_timeout = setTimeout(() => {
+                            this.on_click(x, y)
+                            click_timeout = null
+                        }, DOUBLE_CLICK_DELAY)
+                    }
                 }
             })
         }
     }
 
+    on_click(x: number, y: number) {
+        document.getElementById("series_details_toggle")?.click()
+    }
+
+    on_double_click(x: number, y: number) {
+        if (this.at_home) {
+            this.move_to(0, 0, 1, x, y)
+        } else {
+            this.move_to(0, 0, this.fit_scale)
+        }
+    }
+
     set_page(n: number) {
         this.page = n
-        this.move_to(0, 0, this.fit_scale)
+        Promise.all(this.get_page(n)?.filter(v => v != null)?.map(v => v.promise.promise) ?? [])
+            .then(() => {
+                this.move_to(0, 0, this.fit_scale)
+            })
         this.invalidate()
     }
 }

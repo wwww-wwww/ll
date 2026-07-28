@@ -5,10 +5,8 @@ defmodule LLWeb.SeriesLive do
   import Ecto.Query
 
   require Logger
-  require LL.Downloader
 
   alias LL.{
-    Downloader,
     Repo,
     Series,
     Chapter,
@@ -424,6 +422,7 @@ defmodule LLWeb.SeriesLive do
     |> Repo.preload(:chapters)
     |> Map.get(:chapters)
     |> Enum.reject(&Chapter.downloaded?(&1))
+    |> Enum.reject(& &1.hidden)
     |> Enum.reverse()
     |> Enum.each(&ExtensionManager.download_chapter(&1, socket.assigns.source))
 

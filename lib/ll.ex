@@ -89,4 +89,10 @@ defmodule LL do
     |> Enum.reject(&(&1 in series))
     |> Enum.each(&File.rm(&1))
   end
+
+  def pagedetect_missing() do
+    LL.Repo.all(LL.Chapter)
+    |> Enum.filter(&LL.Chapter.downloaded?/1)
+    |> Enum.each(&LL.PageDetect.detect/1)
+  end
 end

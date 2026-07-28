@@ -17,6 +17,13 @@ defmodule LLWeb.ReaderLive do
               <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
             <% end %>
           </h2>
+          <div :if={not is_nil(@files.order)}>
+            <form phx-submit="order-save">
+              <textarea name="order">{inspect(@files.order)}</textarea>
+              <button>Save</button>
+            </form>
+          </div>
+          <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
         </div>
 
         <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
@@ -45,10 +52,6 @@ defmodule LLWeb.ReaderLive do
             />
           <% end %>
         </div>
-      </div>
-
-      <div class="series_details_toggle">
-        <label for="series_details_toggle" class="material-symbols-rounded"></label>
       </div>
     </div>
 
@@ -109,6 +112,8 @@ defmodule LLWeb.ReaderLive do
           Enum.with_index(chapter.files)
           |> Enum.map(fn {_, i} -> ~p"/page/#{chapter.id}/#{i + 1}" end)
 
+        order = chapter.page_order
+
         socket =
           socket
           |> assign(page_title: chapter.title)
@@ -116,7 +121,7 @@ defmodule LLWeb.ReaderLive do
           |> assign_new(:chapters, fn -> Chapter.list(series) end)
           |> assign(chapter: chapter)
           |> assign(source: chapter.source)
-          |> assign(files: files)
+          |> assign(files: %{files: files, order: order})
 
         {:ok, socket}
     end
@@ -124,12 +129,52 @@ defmodule LLWeb.ReaderLive do
 
   def handle_params(params, _path, socket) do
     {:ok, socket} = mount(params, %{}, socket)
-    send(self(), %{files: socket.assigns.files})
+    send(self(), "update_files")
     {:noreply, socket}
   end
 
-  def handle_info(_params, socket) do
-    socket = push_event(socket, "files", %{files: socket.assigns.files})
+  def handle_info("update_files", socket) do
+    socket =
+      push_event(socket, "files", %{
+        files: socket.assigns.files.files,
+        order: socket.assigns.files.order
+      })
+
     {:noreply, socket}
+  end
+
+  def handle_event("order-get", _, socket) do
+    {:ok, chapter} = socket.assigns.chapter |> LL.PageDetect.detect()
+
+    files =
+      Enum.with_index(chapter.files)
+      |> Enum.map(fn {_, i} -> ~p"/page/#{chapter.id}/#{i + 1}" end)
+
+    order = chapter.page_order
+
+    socket =
+      socket
+      |> assign(chapter: chapter)
+      |> assign(files: %{files: files, order: order})
+      |> push_event("files", %{
+        files: files,
+        order: order
+      })
+
+    {:noreply, socket}
+  end
+
+  def handle_event("order-save", %{"order" => order}, socket) do
+    case Jason.decode(order) do
+      {:ok, order} ->
+        Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
+        |> Repo.update()
+
+        send(self(), "update_files")
+        {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 end
