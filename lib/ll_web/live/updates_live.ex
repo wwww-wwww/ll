@@ -51,18 +51,35 @@ defmodule LLWeb.UpdatesLive do
         group
         |> String.split(",")
         |> case do
-          [":library", id] ->
-            series = Repo.get(Series, id) |> Repo.preload(:source)
+          [":series", id] ->
+            case Repo.get(Series, id) do
+              nil ->
+                "nil"
 
-            assigns = %{series: series}
+              series ->
+                assigns = %{series: series}
 
-            ~H"""
-            <.link navigate={~p"/series/#{@series.id}"}>
-              {@series.title} ({@series.source.name})
-            </.link>
-            """
-            |> Phoenix.HTML.Safe.to_iodata()
-            |> IO.iodata_to_binary()
+                ~H"""
+                <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
+                """
+                |> Phoenix.HTML.Safe.to_iodata()
+                |> IO.iodata_to_binary()
+            end
+
+          [":multi", id] ->
+            case Repo.get(MultiSeries, id) do
+              nil ->
+                "nil"
+
+              series ->
+                assigns = %{series: series}
+
+                ~H"""
+                <.link navigate={~p"/multi/#{@series.id}"}>{@series.title}</.link>
+                """
+                |> Phoenix.HTML.Safe.to_iodata()
+                |> IO.iodata_to_binary()
+            end
 
           [":chapter", id] ->
             case Repo.get(Chapter, id) do

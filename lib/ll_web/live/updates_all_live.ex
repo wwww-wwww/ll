@@ -2,8 +2,9 @@ defmodule LLWeb.UpdatesAllLive do
   use LLWeb, :live_view
 
   import Ecto.Query, only: [from: 2]
+  import LLWeb.UpdatesLive, only: [replace_links: 1]
 
-  alias LL.{Repo, Message, Series, Chapter}
+  alias LL.{Repo, Message}
 
   def title(), do: "Updates"
 
@@ -46,50 +47,6 @@ defmodule LLWeb.UpdatesAllLive do
       |> assign(messages: messages)
 
     {:ok, socket}
-  end
-
-  def replace_links(body) do
-    Regex.scan(~r/{(.+)?}/, body)
-    |> Enum.reduce(body, fn [match, group], acc ->
-      replace =
-        group
-        |> String.split(",")
-        |> case do
-          [":library", id] ->
-            series = Repo.get(Series, id) |> Repo.preload(:source)
-
-            assigns = %{series: series}
-
-            ~H"""
-            <.link navigate={~p"/series/#{@series.id}"}>
-              {@series.title} ({@series.source.name})
-            </.link>
-            """
-            |> Phoenix.HTML.Safe.to_iodata()
-            |> IO.iodata_to_binary()
-
-          [":chapter", id] ->
-            case Repo.get(Chapter, id) do
-              nil ->
-                "nil"
-
-              chapter ->
-                assigns = %{chapter: chapter}
-
-                ~H"""
-                <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>{@chapter.title}</.link>
-                """
-                |> Phoenix.HTML.Safe.to_iodata()
-                |> IO.iodata_to_binary()
-            end
-
-          _ ->
-            group
-        end
-
-      String.replace(acc, match, replace)
-    end)
-    |> raw()
   end
 
   def handle_event("clear-errors", _params, socket) do
