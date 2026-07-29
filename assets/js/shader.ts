@@ -1,4 +1,4 @@
-import Page from "./page"
+import Image from "./image"
 import shader from "./shader_frag.wgsl"
 
 export class Shader {
@@ -32,26 +32,26 @@ export class Shader {
 
     async render(
         encoder: GPUCommandEncoder,
-        page: Page,
+        image: Image,
         dst: GPUTexture,
         offset_x: number,
         offset_y: number,
         offset_scale: number,
     ) {
-        const scale = page.scale * offset_scale
+        const scale = image.scale * offset_scale
 
         const level = Math.min(
             Math.max(Math.floor(Math.log2(1 / scale)), 0),
-            page.mipmaps.length - 1,
+            image.mipmaps.length - 1,
         )
 
-        const x = offset_x / page.scale + page.x / dst.width
-        const y = offset_y / page.scale + page.y / dst.height
+        const x = offset_x / image.scale + image.x / dst.width
+        const y = offset_y / image.scale + image.y / dst.height
 
-        const mipmap = page.mipmaps[level]
+        const mipmap = image.mipmaps[level]
 
-        const vx = Math.round(((-x * page.width) / mipmap.width + 0.5) * mipmap.width)
-        const vy = Math.round(((-y * page.height) / mipmap.height + 0.5) * mipmap.height)
+        const vx = Math.round(((-x * image.width) / mipmap.width + 0.5) * mipmap.width)
+        const vy = Math.round(((-y * image.height) / mipmap.height + 0.5) * mipmap.height)
 
         const quad = mipmap.getQuad(vx, vy)
 
@@ -64,7 +64,7 @@ export class Shader {
         data[5] = mipmap.tilesRows
         data[6] = dst.width
         data[7] = dst.height
-        this.device.queue.writeBuffer(page.buffer, 0, data)
+        this.device.queue.writeBuffer(image.buffer, 0, data)
 
         const pass = encoder.beginRenderPass({
             colorAttachments: [
@@ -77,7 +77,7 @@ export class Shader {
             0,
             this.device.createBindGroup({
                 layout: this.pipeline.getBindGroupLayout(0),
-                entries: [{ binding: 0, resource: page.buffer } as GPUBindGroupEntry].concat(
+                entries: [{ binding: 0, resource: image.buffer } as GPUBindGroupEntry].concat(
                     quad.tiles.map((val, i) => {
                         return { binding: 1 + i, resource: val }
                     }),

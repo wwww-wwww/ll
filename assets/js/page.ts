@@ -1,59 +1,63 @@
-import { Mipmap } from "./mipmap"
+import Image from "./image"
+import { Shader } from "./shader"
 import { Viewer } from "./viewer"
 
 export default class Page {
-    renderer: Viewer
-    width: number = 1
-    height: number = 1
+    viewer: Viewer
+
+    images: (Image | null)[]
+
+    constructor(viewer: Viewer, images: (Image | null)[]) {
+        this.viewer = viewer
+        this.images = images
+    }
+
+    get width(): number {
+        return this.images
+            .filter(p => p != null)
+            .map(p => p.width)
+            .reduce((acc, val) => acc + val, 0)
+    }
+
+    get height(): number {
+        return Math.max(...this.images.filter(p => p != null).map(p => p.height))
+    }
 
     x: number = 0
     y: number = 0
     scale: number = 1
 
-    get fit_scale(): number | null {
-        if (!this.ready) { return null; }
-
-        const ratiox = this.renderer.context.canvas.width / this.width
-        const ratioy = this.renderer.context.canvas.height / this.height
-
-        return Math.min(ratiox, ratioy)
-    }
-
-    mipmaps: Mipmap[] = []
-
-    buffer!: GPUBuffer
-    ready = false
-    promise = Promise.withResolvers<boolean>()
-
-    constructor(renderer: Renderer, image: HTMLImageElement) {
-        this.renderer = renderer
-
-        this.buffer = renderer.device.createBuffer({
-            size: 32,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        })
-
-        image.decode().then(() => {
-            this.width = image.width
-            this.height = image.height
-
-            // this.scale = this.fit_scale
-
-            const tilesize = 4096
-
-            // TODO: create mipmaps
-            const maxWidth = 1024
-            const maxHeight = 1024
-
-            this.mipmaps.push(new Mipmap(renderer.device, image, 1, tilesize))
-            this.promise.resolve(true)
-            this.ready = true
-            renderer.invalidate()
-        })
+    render(
+        encoder: GPUCommandEncoder,
+        texture: GPUTexture,
+        shader: Shader,
+        x: number,
+        y: number,
+        scale: number,
+    ) {
+        if (this.images.length == 2) {
+            this.images.forEach((v, i) => {
+                if (v == null) return
+                if (!v.ready) return
+                shader.render(
+                    encoder,
+                    v,
+                    texture,
+                    x + ((0.5 - i) * v.width) / this.viewer.width,
+                    y,
+                    scale,
+                )
+            })
+        } else if (this.images.length == 1) {
+            if (this.images[0] != null) {
+                if (this.images[0].ready) {
+                    shader.render(encoder, this.images[0], texture, x, y, scale)
+                }
+            }
+        }
     }
 
     destroy() {
-        this.mipmaps.forEach(mipmap => mipmap.destroy())
-        this.buffer.destroy()
+        this.images.filter(p => p != null).forEach(im => im.destroy())
     }
 }
