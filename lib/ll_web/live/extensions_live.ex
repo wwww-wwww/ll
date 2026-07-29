@@ -24,7 +24,12 @@ defmodule LLWeb.ExtensionsLive do
         <td>{ext.version}</td>
         <td>{ext.pkg}</td>
         <td :if={Map.has_key?(@remote, pkg) and @remote[pkg].versionName != ext.version}>
-          <button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.pkg} phx-disable-with="Updating...">
+          <button
+            :if={LL.User.mod?(@current_scope)}
+            phx-click="install"
+            phx-value-pkg={ext.pkg}
+            phx-disable-with="Updating..."
+          >
             Update to {@remote[pkg].versionName}
           </button>
         </td>
@@ -41,9 +46,20 @@ defmodule LLWeb.ExtensionsLive do
             end)
           end)
       }>
-        <td><button :if={LL.User.mod?(@current_scope)} phx-click="install" phx-value-pkg={ext.packageName}>Install</button></td>
         <td>
-          <img loading="lazy" src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.packageName}.png"} />
+          <button
+            :if={LL.User.mod?(@current_scope)}
+            phx-click="install"
+            phx-value-pkg={ext.packageName}
+          >
+            Install
+          </button>
+        </td>
+        <td>
+          <img
+            loading="lazy"
+            src={"#{LL.ExtensionManager.extension_repo()}icon/#{ext.packageName}.png"}
+          />
         </td>
         <td class="details">
           <div>

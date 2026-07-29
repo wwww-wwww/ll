@@ -75,14 +75,22 @@ defmodule LLWeb.Router do
       live "/reader", ReaderLiveS
 
       live "/updates", UpdatesLive
+    end
+
+    post "/user/log-in", UserSessionController, :create
+    delete "/user/log-out", UserSessionController, :delete
+  end
+
+  scope "/", LLWeb do
+    pipe_through [:browser, :require_mod]
+
+    live_session :require_mod,
+      on_mount: [{LLWeb.UserAuth, :require_mod}] do
       live "/updates_all", UpdatesAllLive
 
       live "/routes", RoutesLive
       live "/status", StatusLive
     end
-
-    post "/user/log-in", UserSessionController, :create
-    delete "/user/log-out", UserSessionController, :delete
   end
 
   # Enables LiveDashboard only for development

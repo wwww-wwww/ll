@@ -18,23 +18,19 @@ defmodule LLWeb.UpdatesNavLive do
 
   def mount(_params, %{"user" => user}, socket) do
     if connected?(socket) do
-      LLWeb.Endpoint.subscribe("message_count")
+      LLWeb.Endpoint.subscribe("message_count:#{user.id}")
     end
 
-    count =
-      from(m in Message,
-        join: u in MessagesUser,
-        on: u.message_id == m.id,
-        where: u.user_id == ^user.id
-      )
-      |> Repo.aggregate(:count, :id)
-
-    socket = assign(socket, count: count)
+    socket = assign(socket, count: MessagesUser.count(user))
 
     {:ok, socket}
   end
 
-  def handle_info(%{topic: "message_count", payload: n}, socket) do
+  def handle_info(%{topic: "message_count:" <> _user_id, event: "new"}, socket) do
+    {:noreply, assign(socket, count: socket.assigns.count + 1)}
+  end
+
+  def handle_info(%{topic: "message_count:" <> _user_id, payload: n}, socket) do
     {:noreply, assign(socket, count: n)}
   end
 end

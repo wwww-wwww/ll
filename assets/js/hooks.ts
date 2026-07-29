@@ -7,7 +7,8 @@ const PRELOAD_COUNT = 5
 class Reader extends ViewHook {
     private device!: GPUDevice
 
-    private files: (HTMLImageElement | null)[][] = []
+    private files: HTMLImageElement[] = []
+    private pages: (HTMLImageElement | null)[][] = []
 
     create_shader(code: string) {
         const module = this.device!.createShaderModule({ code })
@@ -76,6 +77,11 @@ class Reader extends ViewHook {
 
     viewer!: Viewer
 
+    get_page(n: number) {
+        const file = this.files[n]
+        return this.pages.find(v => v.find(f => f == file)) ?? null
+    }
+
     async init() {
         this.viewer = await Viewer.new()
         this.el.appendChild(this.viewer)
@@ -85,11 +91,12 @@ class Reader extends ViewHook {
             let preload_next = () => {
                 if (i >= n + PRELOAD_COUNT) return
                 if (i >= this.files.length) return
-                Promise.all(this.files[i++].filter(f => f).map(f => f?.decode()))
-                    .then(preload_next)
+                this.files[i++].decode().then(preload_next)
             }
+
             preload_next()
-            return this.files[n]
+
+            return this.get_page(n)
         }
     }
 
@@ -101,6 +108,12 @@ class Reader extends ViewHook {
     private navigating = false
 
     set_page(page: number, push_state: boolean = true) {
+        Array.from(document.getElementsByClassName("order-page")).forEach(e => {
+            e.classList.toggle("selected", e.getAttribute("index") == page.toString())
+            if (e.getAttribute("index") == page.toString()) {
+                e.scrollIntoView({ block: "nearest" })
+            }
+        })
         if (this.files.length == 0) return
 
         if (page == this.files.length || page == -1) {
@@ -194,19 +207,21 @@ class Reader extends ViewHook {
             return files
         }
 
-        const files = data.files.map((f: string) => {
+        this.files = data.files.map((f: string) => {
             const im = new Image()
             im.src = f
             return im
         })
 
         if (data.order) {
-            this.files = get_files(files, data.order)
+            this.pages = get_files(this.files, data.order)
         } else {
-            this.files = files.map((e: HTMLImageElement) => [e])
+            this.pages = this.files.map((e: HTMLImageElement) => [e])
         }
 
-        console.log(this.files)
+        this.handleEvent("move", data => {
+            this.set_page(data.index)
+        })
 
         this.handleEvent("files", data => {
             if (!mounted) return
@@ -214,15 +229,15 @@ class Reader extends ViewHook {
 
             this.viewer.pages.clear()
 
-            const files = data.files.map((f: string) => {
+            this.files = data.files.map((f: string) => {
                 const im = new Image()
                 im.src = f
                 return im
             })
             if (data.order) {
-                this.files = get_files(files, data.order)
+                this.pages = get_files(this.files, data.order)
             } else {
-                this.files = files.map((e: HTMLImageElement) => [e])
+                this.pages = this.files.map((e: HTMLImageElement) => [e])
             }
 
             this.e_interstitial.classList.toggle("visible", false)
@@ -259,12 +274,20 @@ class Reader extends ViewHook {
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
 
-                this.set_page(this.viewer.page + 1)
+                if (this.get_page(this.viewer.page + 1) == this.get_page(this.viewer.page)) {
+                    this.set_page(this.viewer.page + 2)
+                } else {
+                    this.set_page(this.viewer.page + 1)
+                }
             }
             if (e.key == "ArrowRight") {
                 e.preventDefault()
 
-                this.set_page(this.viewer.page - 1)
+                if (this.get_page(this.viewer.page - 1) == this.get_page(this.viewer.page)) {
+                    this.set_page(this.viewer.page - 2)
+                } else {
+                    this.set_page(this.viewer.page - 1)
+                }
             }
         }
 

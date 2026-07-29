@@ -30,7 +30,7 @@ export class Viewer extends HTMLCanvasElement {
     page = 0
 
     pages: Map<number, (Page | null)[]> = new Map<number, (Page | null)[]>()
-    fetch_pages?: (n: number) => (HTMLImageElement | null)[]
+    fetch_pages?: (n: number) => (HTMLImageElement | null)[] | null
 
     get_page(n: number): (Page | null)[] | null {
         if (this.pages.has(n)) {

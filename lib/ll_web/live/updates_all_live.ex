@@ -17,7 +17,12 @@ defmodule LLWeb.UpdatesAllLive do
       </button>
       <div :for={e <- @messages |> Enum.sort_by(& &1.inserted_at, {:desc, NaiveDateTime})}>
         <div>
-          <button :if={LL.User.mod?(@current_scope)} phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
+          <button
+            :if={LL.User.mod?(@current_scope)}
+            phx-click="delete"
+            phx-value-id={e.id}
+            class="material-symbols-rounded"
+          >
             close
           </button>
           <span>{relative_time(e.inserted_at)}</span>
@@ -90,18 +95,15 @@ defmodule LLWeb.UpdatesAllLive do
   def handle_event("clear-errors", _params, socket) do
     from(m in Message, where: m.title == "Error")
     |> Repo.all()
-    |> Enum.each(&Message.delete/1)
+    |> Enum.each(&delete/1)
 
     {:noreply, socket}
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
     case Repo.get(Message, id) do
-      nil ->
-        nil
-
-      message ->
-        Message.delete(message)
+      nil -> nil
+      message -> delete(message)
     end
 
     {:noreply, socket}
@@ -115,5 +117,10 @@ defmodule LLWeb.UpdatesAllLive do
   def handle_info(%{topic: "messages", event: "delete", payload: message}, socket) do
     messages = socket.assigns.messages |> Enum.reject(&(&1.id == message.id))
     {:noreply, assign(socket, messages: messages)}
+  end
+
+  def delete(message) do
+    Repo.delete(message)
+    LLWeb.Endpoint.broadcast("messages", "delete", message)
   end
 end

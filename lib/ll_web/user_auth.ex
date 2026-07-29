@@ -231,6 +231,22 @@ defmodule LLWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_mod, _params, session, socket) do
+    socket = mount_current_scope(socket, session)
+
+    if socket.assigns.current_scope && socket.assigns.current_scope.user &&
+         User.mod?(socket.assigns.current_scope) do
+      {:cont, socket}
+    else
+      socket =
+        socket
+        |> Phoenix.LiveView.put_flash(:error, "You are not allowed to access this page.")
+        |> Phoenix.LiveView.redirect(to: ~p"/")
+
+      {:halt, socket}
+    end
+  end
+
   def mount_current_scope(socket, session) do
     Phoenix.Component.assign_new(socket, :current_scope, fn ->
       {user, _} =
@@ -261,6 +277,19 @@ defmodule LLWeb.UserAuth do
       |> put_flash(:error, "You must log in to access this page.")
       |> maybe_store_return_to()
       |> redirect(to: ~p"/user/log-in")
+      |> halt()
+    end
+  end
+
+  def require_mod(conn, _opts) do
+    if conn.assigns.current_scope && conn.assigns.current_scope.user &&
+         User.mod?(conn.assigns.current_scope) do
+      conn
+    else
+      conn
+      |> put_flash(:error, "You are not allowed to access this page.")
+      |> maybe_store_return_to()
+      |> redirect(to: ~p"/")
       |> halt()
     end
   end

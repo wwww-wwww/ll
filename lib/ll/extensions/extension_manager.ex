@@ -300,6 +300,7 @@ defmodule LL.ExtensionManager do
         [_, g] = match
         {n, _} = Float.parse(g)
         n
+
       true ->
         j.number
     end

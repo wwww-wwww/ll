@@ -22,6 +22,35 @@ defmodule LLWeb.ReaderLive do
               <textarea name="order">{inspect(@files.order)}</textarea>
               <button>Save</button>
             </form>
+            <div id="current_page"></div>
+            <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
+            <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
+            <table>
+              <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
+                <td>
+                  <button phx-click="order-set" phx-value-index={i} phx-value-n="0" disabled={o == 0}>
+                    0
+                  </button>
+                </td>
+                <td>
+                  <button phx-click="order-set" phx-value-index={i} phx-value-n="1" disabled={o == 1}>
+                    1
+                  </button>
+                </td>
+                <td>
+                  <button phx-click="order-set" phx-value-index={i} phx-value-n="2" disabled={o == 2}>
+                    2
+                  </button>
+                </td>
+                <td>
+                  <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
+                </td>
+                <td>
+                  <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
+                </td>
+                <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
+              </tr>
+            </table>
           </div>
           <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
         </div>
@@ -177,4 +206,67 @@ defmodule LLWeb.ReaderLive do
         {:noreply, socket}
     end
   end
+
+  def handle_event("order-set", %{"index" => index, "n" => n}, socket) do
+    {index, _} = Integer.parse(index)
+    {n, _} = Integer.parse(n)
+    order = socket.assigns.files.order |> List.replace_at(index, n)
+
+    Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
+    |> Repo.update()
+
+    send(self(), "update_files")
+    {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
+  end
+
+  def handle_event("order-alt", %{"index" => index, "n" => n}, socket) do
+    {index, _} = Integer.parse(index)
+    {n, _} = Integer.parse(n)
+
+    order = socket.assigns.files.order
+    a = Enum.drop(order, index) |> swap(n)
+    b = Enum.take(order, index)
+    order = b ++ a
+
+    Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
+    |> Repo.update()
+
+    send(self(), "update_files")
+    {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
+  end
+
+  def handle_event("order-reset", %{"n" => n}, socket) do
+    {n, _} = Integer.parse(n)
+    order = socket.assigns.files.order |> reset(n)
+
+    Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
+    |> Repo.update()
+
+    send(self(), "update_files")
+    {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
+  end
+
+  def handle_event("move", %{"index" => index}, socket) do
+    {index, _} = Integer.parse(index)
+
+    {:noreply,
+     socket
+     |> push_event("move", %{
+       index: index
+     })}
+  end
+
+  def swap([0 | tail], 1), do: [1] ++ swap(tail, 0)
+  def swap([1 | tail], 1), do: [1] ++ swap(tail, 0)
+  def swap(tail, 1), do: tail
+  def swap([0 | tail], 0), do: [0] ++ swap(tail, 1)
+  def swap([1 | tail], 0), do: [0] ++ swap(tail, 1)
+  def swap(tail, 0), do: tail
+
+  def reset([2 | tail], _), do: [2] ++ reset(tail, 0)
+  def reset([0 | tail], 1), do: [1] ++ reset(tail, 0)
+  def reset([1 | tail], 1), do: [1] ++ reset(tail, 0)
+  def reset([0 | tail], 0), do: [0] ++ reset(tail, 1)
+  def reset([1 | tail], 0), do: [0] ++ reset(tail, 1)
+  def reset([], _), do: []
 end
