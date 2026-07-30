@@ -53,7 +53,7 @@ defmodule LL.Message do
         %Series{} -> :series
       end
 
-    title = "{#{type},#{series.id}}"
+    title = "{:#{type},#{series.id}}"
     body = "New chapter {:chapter,#{chapter.id}}"
 
     Repo.transact(fn ->
