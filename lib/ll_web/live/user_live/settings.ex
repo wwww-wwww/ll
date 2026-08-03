@@ -11,7 +11,7 @@ defmodule LLWeb.UserLive.Settings do
     ~H"""
     <h1>{@user.id}:{@user.username}</h1>
 
-    <h1>Libraries</h1>
+    <h2>Libraries</h2>
 
     <.form for={@library_form} phx-submit="library-create">
       <div>
