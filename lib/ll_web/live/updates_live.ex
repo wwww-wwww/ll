@@ -3,7 +3,7 @@ defmodule LLWeb.UpdatesLive do
 
   import Ecto.Query, only: [from: 2]
 
-  alias LL.{Repo, Message, Series, Chapter, MessagesUser}
+  alias LL.{Repo, Message, MultiSeries, Series, Chapter, MessagesUser}
   alias LLWeb.Endpoint
 
   def title(), do: "Updates"
@@ -82,15 +82,23 @@ defmodule LLWeb.UpdatesLive do
             end
 
           [":chapter", id] ->
-            case Repo.get(Chapter, id) do
+            case Repo.get(Chapter, id) |> Repo.preload(series: :multi_series) do
               nil ->
                 "nil"
 
               chapter ->
-                assigns = %{chapter: chapter}
+                series = chapter.series.multi_series || chapter.series
+
+                type =
+                  case series do
+                    %Series{} -> "series"
+                    %MultiSeries{} -> "multi"
+                  end
+
+                assigns = %{chapter: chapter, type: type, series: series}
 
                 ~H"""
-                <.link navigate={~p"/series/#{@chapter.series_id}/#{@chapter.id}"}>{@chapter.title}</.link>
+                <.link navigate={~p"/#{type}/#{@series.id}/#{@chapter.id}"}>{@chapter.title}</.link>
                 """
                 |> Phoenix.HTML.Safe.to_iodata()
                 |> IO.iodata_to_binary()
