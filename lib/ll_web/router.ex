@@ -41,10 +41,7 @@ defmodule LLWeb.Router do
       live "/library", LibraryLive
       live "/library/:library", LibraryLive
 
-      live "/libraries", LibrariesLive
-
-      live "/search", SearchLive
-      live "/search/:source", SourceLive
+      live "/updates", UpdatesLive
 
       live "/extensions", ExtensionsLive
 
@@ -73,23 +70,26 @@ defmodule LLWeb.Router do
       live "/series/:series_id/:chapter_id", ReaderLive
 
       live "/reader", ReaderLiveS
-
-      live "/updates", UpdatesLive
     end
 
     post "/user/log-in", UserSessionController, :create
     delete "/user/log-out", UserSessionController, :delete
   end
 
-  scope "/", LLWeb do
+  scope "/admin", LLWeb do
     pipe_through [:browser, :require_mod]
 
     live_session :require_mod,
       on_mount: [{LLWeb.UserAuth, :require_mod}] do
       live "/updates_all", UpdatesAllLive
 
+      live "/search", SearchLive
+      live "/search/:source", SourceLive
+
       live "/routes", RoutesLive
       live "/status", StatusLive
+
+      live "/users", UsersLive
     end
   end
 

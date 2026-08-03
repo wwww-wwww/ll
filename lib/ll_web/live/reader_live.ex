@@ -17,6 +17,10 @@ defmodule LLWeb.ReaderLive do
               <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
             <% end %>
           </h2>
+        </div>
+
+        <div :if={LL.User.mod?(@current_scope)} class="details">
+          <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
           <div :if={not is_nil(@files.order)}>
             <form phx-submit="order-save">
               <textarea name="order">{inspect(@files.order)}</textarea>
@@ -52,7 +56,6 @@ defmodule LLWeb.ReaderLive do
               </tr>
             </table>
           </div>
-          <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
         </div>
 
         <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">

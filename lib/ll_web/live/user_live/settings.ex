@@ -1,7 +1,8 @@
 defmodule LLWeb.UserLive.Settings do
   use LLWeb, :live_view
+  import Ecto.Query, only: [from: 2]
 
-  alias LL.Accounts
+  alias LL.{Accounts, Repo, Library}
 
   def title(), do: "Settings"
 
@@ -9,6 +10,29 @@ defmodule LLWeb.UserLive.Settings do
   def render(assigns) do
     ~H"""
     <h1>{@user.id}:{@user.username}</h1>
+
+    <h1>Libraries</h1>
+
+    <.form for={@library_form} phx-submit="library-create">
+      <div>
+        <input
+          type="text"
+          id={@library_form[:name].id}
+          name={@library_form[:name].name}
+          value={@library_form[:name].value}
+        />
+
+        <input type="submit" value="Create" />
+      </div>
+    </.form>
+
+    <table>
+      <tr :for={c <- @libraries |> Enum.sort_by(& &1.id)}>
+        <td><button phx-click="library-delete" phx-value-id={c.id}>Delete</button></td>
+        <td>{c.name}</td>
+      </tr>
+    </table>
+
     <h2>Password</h2>
     <.form
       for={@password_form}
@@ -55,6 +79,8 @@ defmodule LLWeb.UserLive.Settings do
 
     socket =
       socket
+      |> assign(library_form: to_form(%{"name" => ""}))
+      |> assign(libraries: get_libraries(socket))
       |> assign(user: user)
       |> assign(current_username: user.username)
       |> assign(password_form: to_form(password_changeset))
@@ -88,5 +114,43 @@ defmodule LLWeb.UserLive.Settings do
       changeset ->
         {:noreply, assign(socket, password_form: to_form(changeset, action: :insert))}
     end
+  end
+
+  def handle_event("library-delete", %{"id" => id}, socket) do
+    user_id = socket.assigns.current_scope.user.id
+
+    Repo.get_by(Library, id: id, user_id: user_id)
+    |> case do
+      nil ->
+        {:noreply, socket}
+
+      library ->
+        Repo.delete(library)
+        {:noreply, assign(socket, libraries: get_libraries(socket))}
+    end
+  end
+
+  def handle_event("library-create", %{"name" => name}, socket) do
+    name = String.trim(name)
+
+    if String.length(name) > 0 do
+      %Library{user_id: socket.assigns.current_scope.user.id}
+      |> Ecto.Changeset.change(%{name: name})
+      |> Repo.insert()
+      |> case do
+        {:ok, _} -> {:noreply, assign(socket, libraries: get_libraries(socket))}
+        err -> {:noreply, put_flash(socket, :error, inspect(err))}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def get_libraries(socket) do
+    user = socket.assigns.current_scope.user
+
+    from(l in Library, where: l.user_id == ^user.id)
+    |> Repo.all()
+    |> Enum.sort_by(& &1.id)
   end
 end

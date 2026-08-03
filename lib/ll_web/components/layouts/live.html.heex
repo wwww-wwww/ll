@@ -18,16 +18,11 @@
     </.link>
     <div :if={assigns[:library_nav]} class="sub">{@library_nav}</div>
 
-    <.link :if={@current_scope.user} navigate={~p"/libraries"}>Libraries</.link>
-
     <%= if @current_scope.user do %>
       {live_render(@socket, LLWeb.UpdatesNavLive,
         id: LLWeb.UpdatesNavLive,
         session: %{"user" => @current_scope.user}
       )}
-      <.link navigate={~p"/search"} class={current_page?(@socket, LLWeb.SearchLive)}>
-        Search
-      </.link>
       <.link navigate={~p"/user/settings"} class={current_page?(@socket, LLWeb.UserLive.Settings)}>
         Settings
       </.link>
@@ -45,11 +40,23 @@
     <% end %>
 
     <%= if LL.User.mod?(@current_scope) do %>
-      <.link navigate={~p"/updates_all"} class={current_page?(@socket, LLWeb.UpdatesAllLive)}>
+      <.link
+        navigate={~p"/admin/updates_all"}
+        class={current_page?(@socket, LLWeb.UpdatesAllLive)}
+      >
         Updates (All)
       </.link>
-      <.link navigate={~p"/status"} class={current_page?(@socket, LLWeb.StatusLive)}>
+      <.link navigate={~p"/admin/search"} class={current_page?(@socket, LLWeb.SearchLive)}>
+        Search
+      </.link>
+      <.link navigate={~p"/admin/status"} class={current_page?(@socket, LLWeb.StatusLive)}>
         Status
+      </.link>
+      <.link navigate={~p"/admin/routes"} class={current_page?(@socket, LLWeb.RoutesLive)}>
+        Routes
+      </.link>
+      <.link navigate={~p"/admin/users"} class={current_page?(@socket, LLWeb.UsersLive)}>
+        Users
       </.link>
     <% end %>
   </nav>
