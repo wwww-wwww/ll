@@ -9,7 +9,7 @@ defmodule LL.PageDetect do
 
     body = {:multipart, files}
 
-    with {:ok, %{body: body}} <- HTTPoison.post("http://192.168.1.51:4000", body),
+    with {:ok, %{body: body}} <- HTTPoison.post("http://localhost:14010", body),
          {:ok, j} <- Jason.decode(body) do
       IO.inspect(j)
 

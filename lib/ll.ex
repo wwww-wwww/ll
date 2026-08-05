@@ -95,4 +95,55 @@ defmodule LL do
     |> Enum.filter(&LL.Chapter.downloaded?/1)
     |> Enum.each(&LL.PageDetect.detect/1)
   end
+
+  def migrate() do
+    LL.Repo.all(LL.Chapter)
+    |> Enum.filter(&(&1.files != nil))
+    |> Enum.filter(&(!is_nil(&1.scanlator) and &1.scanlator |> String.contains?("/")))
+    # |> Enum.take(1)
+    |> Enum.map(fn c ->
+      # IO.inspect(c)
+      files = c.files
+
+      # IO.inspect(c)
+
+      new_files =
+        files
+        |> Enum.map(fn file ->
+          file
+          # file
+          # |> File.exists?()
+          # IO.inspect(file)
+          old_file = String.replace(file, c.scanlator |> String.replace("/", "-"), c.scanlator)
+          # File.exists?(old_file)
+
+          Path.dirname(file) |> File.mkdir_p()
+
+          # new_file = String.replace(file, c.scanlator, c.scanlator |> String.replace("/", "-"))
+
+          File.rename(old_file, file)
+
+          # new_file
+
+          # new_path =
+          #   (Enum.take(split, 3) ++
+          #      [Enum.at(split, 3) |> String.downcase()] ++ Enum.drop(split, 4))
+          #   |> Path.join()
+
+          # {file, new_path}
+          # |> String.replace(c.scanlator |> String.replace("/", "-"), c.scanlator)
+        end)
+
+      # Ecto.Changeset.change(c, %{files: new_files})
+      # |> LL.Repo.update()
+    end)
+  end
+
+  def missing_page() do
+    LL.Repo.all(LL.Chapter)
+    |> Enum.filter(&(&1.files != nil))
+    |> Enum.filter(fn c ->
+      c.files |> Enum.any?(fn f -> f == "" end)
+    end)
+  end
 end

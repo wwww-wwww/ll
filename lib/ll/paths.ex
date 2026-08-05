@@ -13,15 +13,20 @@ defmodule LL.Paths do
   end
 
   def get(%Chapter{} = chapter) do
-    name =
-      if chapter.number > 0 do
-        "#{chapter.number}-#{chapter.title}"
-      else
-        chapter.title
-      end
+    number =
+      if chapter.number > 0,
+        do: "#{chapter.number}-",
+        else: ""
+
+    title = String.replace(chapter.title, "/", "-") <> "-"
+
+    scanlator =
+      if not is_nil(chapter.scanlator),
+        do: String.replace(chapter.scanlator, "/", "-") <> "-",
+        else: ""
 
     name =
-      "#{name}-#{chapter.scanlator}-#{chapter.id}"
+      "#{number}#{title}#{scanlator}#{chapter.id}"
       |> String.replace(~r/[^ a-zA-Z0-9\.\-\_]/, "")
       |> String.trim()
 

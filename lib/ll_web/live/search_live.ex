@@ -11,7 +11,7 @@ defmodule LLWeb.SearchLive do
     <div class="left">
       <h1>Search</h1>
 
-      <.link navigate={~p"/extensions"}>Extensions</.link>
+      <.link navigate={~p"/admin/extensions"}>Extensions</.link>
 
       <.form for={@search_form} phx-submit="search">
         <div>
@@ -29,7 +29,7 @@ defmodule LLWeb.SearchLive do
             <% field = @search_form["enable_#{source.id}"] %>
             <div>
               <input type="checkbox" id={field.id} name={field.name} checked={field.value} />
-              <.link navigate={~p"/search/#{source.id}"}>
+              <.link navigate={~p"/admin/search/#{source.id}"}>
                 <img
                   loading="lazy"
                   src={"#{LL.ExtensionManager.extension_repo()}icon/#{source.extension.pkg}.png"}

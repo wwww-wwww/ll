@@ -43,8 +43,6 @@ defmodule LLWeb.Router do
 
       live "/updates", UpdatesLive
 
-      live "/extensions", ExtensionsLive
-
       live "/user/settings", UserLive.Settings, :edit
     end
 
@@ -85,6 +83,8 @@ defmodule LLWeb.Router do
 
       live "/search", SearchLive
       live "/search/:source", SourceLive
+
+      live "/extensions", ExtensionsLive
 
       live "/routes", RoutesLive
       live "/status", StatusLive

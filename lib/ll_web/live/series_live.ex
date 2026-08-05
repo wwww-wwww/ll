@@ -31,7 +31,7 @@ defmodule LLWeb.SeriesLive do
           <img src={~p"/thumbnail/#{Path.basename(@entry.thumbnail_path)}"} />
         </div>
 
-        <div class="info">
+        <div class="details">
           <h1>
             <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{@entry.title} (Multi)</.link>
             <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{@entry.title}</.link>
@@ -224,8 +224,11 @@ defmodule LLWeb.SeriesLive do
         </div>
       </div>
 
-      <div class="tags">{@entry.genre}</div>
-      <div class="description">{raw(HtmlSanitizeEx.basic_html(@entry.description))}</div>
+      <div :if={@entry.genre} class="tags">
+        <span :for={t <- @entry.genre |> String.split(", ")}>{t}</span>
+      </div>
+      <div :if={@entry.description} class="description">{raw(HtmlSanitizeEx.basic_html(@entry.description))}</div>
+
       <div :if={LL.User.mod?(@current_scope)} class="actions">
         <button phx-click="refresh_chapters">Refresh chapters</button>
         <button phx-click="download_all">Download all</button>

@@ -8,15 +8,15 @@
         align-items: center;
         padding: 0;
 
-        > .inner {
+        >.inner {
             width: 1000px;
             max-width: 100%;
         }
     }
 
     .inner {
-        background-color: rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(2px);
+        // background-color: rgba(255, 255, 255, 0.2);
+        // backdrop-filter: blur(2px);
         box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
         padding: 0.5em;
         display: flex;
@@ -39,14 +39,14 @@
         overflow: hidden;
         box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
 
-        > img {
+        >img {
             object-fit: cover;
             width: 100%;
             height: 100%;
         }
     }
 
-    .info {
+    .details {
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -62,7 +62,7 @@
         }
 
         div {
-            > span {
+            >span {
                 display: block;
             }
         }
@@ -71,23 +71,15 @@
             font-weight: bold;
         }
 
-        > div {
+        >div {
             display: flex;
             flex-wrap: wrap;
             gap: 0.5em;
 
-            > div {
+            >div {
                 display: flex;
                 flex-direction: column;
                 gap: 0.5em;
-
-                > div {
-                    background-color: rgba(255, 255, 255, 0.8);
-                    backdrop-filter: blur(5px);
-                    box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
-                    padding: 0.5em;
-                    border-radius: 4px;
-                }
             }
         }
 
@@ -95,6 +87,29 @@
             font-size: 17px;
             padding: 0;
             vertical-align: text-bottom;
+        }
+    }
+
+    .description,
+    .details>div>div>div {
+        background-color: rgba(255, 255, 255, 0.5);
+        // backdrop-filter: blur(5px);
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+        padding: 0.5em;
+        border-radius: 4px;
+    }
+
+    .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25em;
+
+        span {
+            background-color: rgba(255, 255, 255, 0.5);
+            // backdrop-filter: blur(5px);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+            padding: 0.25em;
+            border-radius: 4px;
         }
     }
 
