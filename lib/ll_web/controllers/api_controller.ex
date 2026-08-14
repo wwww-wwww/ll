@@ -12,12 +12,12 @@ defmodule LLWeb.ApiController do
           %MultiSeries{series: series} ->
             %{
               url: ~p"/multi/#{entry.id}",
-              title: series.title,
-              artist: series.artist,
-              author: series.author,
-              genre: series.genre,
-              status: series.status,
-              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
+              title: entry.title,
+              artist: entry.artist,
+              author: entry.author,
+              genre: entry.genre,
+              status: entry.status || -1,
+              thumbnail_url: ~p"/thumbnail/#{Path.basename(entry.thumbnail_path)}",
               multi: true
             }
 
@@ -28,13 +28,58 @@ defmodule LLWeb.ApiController do
               artist: series.artist,
               author: series.author,
               genre: series.genre,
-              status: series.status,
+              status: series.status || -1,
               thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
             }
         end
       end)
 
     json(conn, entries)
+  end
+
+  def all_multi(conn, %{"multi_id" => multi_id}) do
+    Repo.get(MultiSeries, multi_id)
+    |> Repo.preload(series: :source, children: :source)
+    |> case do
+      nil ->
+        conn |> json(%{success: 0, reason: "chapter not found"})
+
+      multi ->
+        json(conn, [
+          %{
+            url: ~p"/multi/#{multi.id}",
+            title: multi.title,
+            artist: multi.artist,
+            author: multi.author,
+            genre: multi.genre,
+            status: multi.status || -1,
+            thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.thumbnail_path)}",
+            multi: true
+          }
+        ])
+    end
+  end
+
+  def all_series(conn, %{"series_id" => series_id}) do
+    Repo.get(Series, series_id)
+    |> Repo.preload(:chapters)
+    |> case do
+      nil ->
+        conn |> json(%{success: 0, reason: "chapter not found"})
+
+      series ->
+        json(conn, [
+          %{
+            url: ~p"/series/#{series.id}",
+            title: series.title,
+            artist: series.artist,
+            author: series.author,
+            genre: series.genre,
+            status: series.status || -1,
+            thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
+          }
+        ])
+    end
   end
 
   def map_tags(tags) do
@@ -75,8 +120,7 @@ defmodule LLWeb.ApiController do
           end)
           |> Enum.uniq_by(& &1.number)
 
-        conn
-        |> json(%{
+        json(conn, %{
           success: 1,
           url: ~p"/multi/#{multi.id}",
           title: multi.series.title,
@@ -84,7 +128,7 @@ defmodule LLWeb.ApiController do
           author: multi.series.author || "",
           description: multi.series.description,
           genre: multi.series.genre,
-          status: multi.series.status,
+          status: multi.series.status || -1,
           thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.series.thumbnail_path)}",
           chapters: chapters,
           multi: true
@@ -122,8 +166,7 @@ defmodule LLWeb.ApiController do
             }
           end)
 
-        conn
-        |> json(%{
+        json(conn, %{
           success: 1,
           url: ~p"/series/#{series.id}",
           title: series.title,
@@ -131,7 +174,7 @@ defmodule LLWeb.ApiController do
           author: series.author || "",
           description: series.description,
           genre: series.genre,
-          status: series.status,
+          status: series.status || -1,
           thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
           chapters: chapters
         })
@@ -150,8 +193,7 @@ defmodule LLWeb.ApiController do
             ~p"/page/#{chapter.id}/#{i + 1}"
           end)
 
-        conn
-        |> json(%{
+        json(conn, %{
           success: 1,
           url: ~p"/series/#{chapter.series_id}/#{chapter.id}",
           title: chapter.title,

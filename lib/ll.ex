@@ -20,17 +20,22 @@ defmodule LL do
   end
 
   def migrate_chapters() do
-    Repo.transact(fn ->
-      Repo.all(Chapter)
-      |> Enum.filter(fn c -> c.files != nil and Enum.all?(c.files, &File.exists?(&1)) end)
-      |> Enum.each(fn c ->
-        chapter_path = LL.Paths.get(c)
+    Repo.all(Chapter)
+    |> Enum.filter(fn c -> c.files != nil end)
+    |> Enum.sort_by(fn c -> c.series_id end)
+    |> Enum.each(fn c ->
+      if Enum.all?(c.files, &File.exists?(&1)) do
+        chapter_path = LL.Paths.get(c) |> IO.inspect()
         :ok = File.mkdir_p(chapter_path)
 
         files =
           Enum.map(c.files, fn f ->
             new_path = Path.join(chapter_path, Path.basename(f))
-            :ok = File.cp(f, new_path)
+
+            if f != new_path do
+              :ok = File.rename(f, new_path)
+            end
+
             new_path
           end)
 
@@ -38,9 +43,7 @@ defmodule LL do
           files: files
         })
         |> Repo.update()
-      end)
-
-      {:ok, nil}
+      end
     end)
   end
 
@@ -92,6 +95,7 @@ defmodule LL do
 
   def pagedetect_missing() do
     LL.Repo.all(LL.Chapter)
+    |> Enum.filter(& &1.page_order == nil)
     |> Enum.filter(&LL.Chapter.downloaded?/1)
     |> Enum.each(&LL.PageDetect.detect/1)
   end
@@ -144,6 +148,20 @@ defmodule LL do
     |> Enum.filter(&(&1.files != nil))
     |> Enum.filter(fn c ->
       c.files |> Enum.any?(fn f -> f == "" end)
+    end)
+  end
+
+  def tag_position() do
+    # [LL.Repo.get(LL.Chapter, 11949)]
+    LL.Repo.all(LL.Chapter)
+    |> Enum.filter(fn c -> c.files != nil end)
+    |> Enum.sort_by(fn c -> c.series_id end)
+    # |> Enum.take(1)
+    |> Enum.each(fn c ->
+      if c.page_order != nil and Enum.all?(c.files, &File.exists?(&1)) do
+        IO.inspect(c.files |> Enum.at(0))
+        LL.PageDetect.write_exif(c.files, c.page_order)
+      end
     end)
   end
 end

@@ -4,8 +4,13 @@ defmodule LL.Paths do
   def root(), do: Application.get_env(:ll, :downloads_root)
 
   def get(%Series{} = series) do
+    source =
+      if not is_nil(series.source_id),
+        do: "#{series.source.lang}-#{series.source.name}-",
+        else: ""
+
     name =
-      "#{series.title}-#{series.source.lang}-#{series.source.name}-#{series.id}"
+      "#{series.title}-#{source}#{series.id}"
       |> String.replace(~r/[^ a-zA-Z0-9\.\-\_]/, "")
       |> String.trim()
 
@@ -34,6 +39,5 @@ defmodule LL.Paths do
     |> Repo.preload(:source)
     |> get()
     |> Path.join(name)
-    |> String.downcase()
   end
 end

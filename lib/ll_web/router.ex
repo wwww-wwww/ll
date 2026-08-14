@@ -28,6 +28,8 @@ defmodule LLWeb.Router do
     pipe_through :api
 
     get "/all.json", ApiController, :all
+    get "/all/multi/:multi_id", ApiController, :all_multi
+    get "/all/series/:series_id", ApiController, :all_series
     get "/multi/:multi_id", ApiController, :multi
     get "/series/:series_id", ApiController, :series
     get "/series/:series_id/:chapter_id", ApiController, :chapter

@@ -50,7 +50,7 @@ defmodule LLWeb.SeriesLive do
                 <span>Status: <span class="status">{status(@entry)}</span></span>
                 <span>
                   Source:
-                  <span class="source">
+                  <span :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi} class="source">
                     <span :if={@is_multi}>Multi</span>
                     <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
                       {@entry.source.name} ({@entry.source.lang})
@@ -371,7 +371,7 @@ defmodule LLWeb.SeriesLive do
       ExtensionManager.series_details(series)
     end
 
-    if series.chapters_updated == nil do
+    if series.chapters_updated == nil and series.source_id != nil do
       ExtensionManager.series_chapters(series)
     end
 

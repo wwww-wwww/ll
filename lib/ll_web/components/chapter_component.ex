@@ -6,7 +6,7 @@ defmodule LLWeb.ChapterComponent do
   def render(assigns) do
     ~H"""
     <div class={["ChapterComponent", assigns[:selected] && "selected", @chapter.hidden && "hidden"]}>
-      <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, &File.exists?/1) %>
+      <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, & &1 |> String.starts_with?("/")) %>
       <div :if={@chapter.files == nil or length(downloaded) != length(@chapter.files)} class="extra">
         <span :if={@chapter.files}>{length(downloaded)}/{length(@chapter.files)}</span>
         <button
@@ -43,6 +43,7 @@ defmodule LLWeb.ChapterComponent do
           <button phx-click="delete" phx-target={@myself}>Delete</button>
         <% end %>
         <.link
+          :if={not is_nil(@source)}
           class="button material-symbols-rounded"
           target="_blank"
           href={Path.join(@source.base_url, @chapter.url)}

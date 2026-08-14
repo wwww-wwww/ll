@@ -266,24 +266,12 @@ export class Viewer extends HTMLCanvasElement {
                 this.invalidate()
             })
 
+            let long_press_timeout = 0
+            let click_timeout: any = null
+
             let past_slop = false
-            this.addEventListener("pointerdown", e => {
-                if (e.button != 0) return
 
-                const rect = this.getBoundingClientRect()
-                const x = (e.clientX - rect.x) / rect.width
-                const y = (e.clientY - rect.y) / rect.height
-
-                this.setPointerCapture(e.pointerId)
-                e.preventDefault()
-                this.classList.toggle("grabbing", true)
-
-                past_slop = false
-                last_pos = [x, y]
-                start = [e.clientX, e.clientY]
-            })
-
-            this.addEventListener("pointermove", e => {
+            const pointermove = (e: PointerEvent) => {
                 // update_cursor(e)
 
                 if (!this.hasPointerCapture(e.pointerId)) return
@@ -304,11 +292,14 @@ export class Viewer extends HTMLCanvasElement {
                 last_pos = [x, y]
 
                 pan(offx, offy)
-            })
 
-            let click_timeout: any = null
-            this.addEventListener("pointerup", e => {
+                window.removeEventListener("pointermove", pointermove)
+            }
+
+            const pointerup = (e: PointerEvent) => {
                 if (e.button != 0) return
+
+                clearTimeout(long_press_timeout)
 
                 if (!this.hasPointerCapture(e.pointerId)) return
                 this.releasePointerCapture(e.pointerId)
@@ -330,7 +321,33 @@ export class Viewer extends HTMLCanvasElement {
                         }, DOUBLE_CLICK_DELAY)
                     }
                 }
+
+                window.removeEventListener("pointerup", pointerup)
+            }
+
+            this.addEventListener("pointerdown", e => {
+                if (e.button != 0) return
+
+                const rect = this.getBoundingClientRect()
+                const x = (e.clientX - rect.x) / rect.width
+                const y = (e.clientY - rect.y) / rect.height
+
+                this.setPointerCapture(e.pointerId)
+                e.preventDefault()
+                this.classList.toggle("grabbing", true)
+
+                long_press_timeout = setTimeout(() => {
+                    this.requestFullscreen()
+                }, 1000)
+
+                past_slop = false
+                last_pos = [x, y]
+                start = [e.clientX, e.clientY]
+
+                window.addEventListener("pointermove", pointermove)
+                window.addEventListener("pointerup", pointerup)
             })
+
         }
     }
 

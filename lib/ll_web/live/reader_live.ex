@@ -202,6 +202,8 @@ defmodule LLWeb.ReaderLive do
         Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
         |> Repo.update()
 
+        LL.PageDetect.write_exif(socket.assigns.chapter.files, order)
+
         send(self(), "update_files")
         {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
 
