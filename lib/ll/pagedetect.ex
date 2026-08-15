@@ -13,7 +13,7 @@ defmodule LL.PageDetect do
 
     with {:ok, %{body: body}} <- HTTPoison.post("http://localhost:14010", body),
          {:ok, j} <- Jason.decode(body) do
-      write_exif(files, j)
+      write_exif(chapter.files, j)
 
       Ecto.Changeset.change(chapter, %{page_order: j})
       |> Repo.update()
