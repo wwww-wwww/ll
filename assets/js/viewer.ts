@@ -293,7 +293,6 @@ export class Viewer extends HTMLCanvasElement {
 
                 pan(offx, offy)
 
-                window.removeEventListener("pointermove", pointermove)
             }
 
             const pointerup = (e: PointerEvent) => {
@@ -322,6 +321,7 @@ export class Viewer extends HTMLCanvasElement {
                     }
                 }
 
+                window.removeEventListener("pointermove", pointermove)
                 window.removeEventListener("pointerup", pointerup)
             }
 
