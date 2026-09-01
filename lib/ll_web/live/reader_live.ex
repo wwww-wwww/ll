@@ -124,7 +124,6 @@ defmodule LLWeb.ReaderLive do
           <feColorMatrix type="matrix" values="100 0 0 0 -75 0 100 0 0 -75 0 0 100 0 -75 0 0 0 0.3 0" />
         </filter>
       </svg>
-      <div class="interstitial"></div>
       <div class="info">
         <span class="page"></span>
         <span class="zoom"></span>

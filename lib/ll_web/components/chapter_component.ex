@@ -5,7 +5,12 @@ defmodule LLWeb.ChapterComponent do
 
   def render(assigns) do
     ~H"""
-    <div class={["ChapterComponent", assigns[:selected] && "selected", @chapter.hidden && "hidden"]}>
+    <div
+      class={["ChapterComponent", assigns[:selected] && "selected", @chapter.hidden && "hidden"]}
+      data-chapter-id={@chapter.id}
+      data-pages={page_count(@chapter)}
+      data-order={page_order(@chapter)}
+    >
       <% downloaded =
         @chapter.files != nil && Enum.filter(@chapter.files, &(&1 |> String.starts_with?("/"))) %>
       <div :if={@chapter.files == nil or length(downloaded) != length(@chapter.files)} class="extra">
@@ -21,7 +26,7 @@ defmodule LLWeb.ChapterComponent do
         </button>
       </div>
 
-      <% available = downloaded != false and length(downloaded) == length(@chapter.files) %>
+      <% available = readable?(@chapter) %>
       <div class="body">
         <.link patch={if available, do: @href} disabled={not available}>
           <div><span class="title">{@chapter.title}</span></div>
@@ -54,6 +59,23 @@ defmodule LLWeb.ChapterComponent do
       </div>
     </div>
     """
+  end
+
+  @doc """
+  Whether every one of [chapter]'s files is downloaded, and so whether it can be read at all.
+  """
+  def readable?(chapter) do
+    chapter.files != nil and
+      length(Enum.filter(chapter.files, &String.starts_with?(&1, "/"))) == length(chapter.files)
+  end
+
+  # The two the reader needs to open a chapter without asking the server - see `chapterPages` in
+  # hooks.ts. Left off a chapter that is not fully downloaded, which is the same answer its dead
+  # link gives.
+  defp page_count(chapter), do: readable?(chapter) && length(chapter.files)
+
+  defp page_order(chapter) do
+    readable?(chapter) && chapter.page_order && Jason.encode!(chapter.page_order)
   end
 
   def update(assigns, socket) do

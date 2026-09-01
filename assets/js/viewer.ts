@@ -211,12 +211,12 @@ class ViewerPage {
     progress: (ProgressPage | null)[] = []
 
     constructor(
-        /** Index into the viewer's page list. */
-        readonly index: number,
+        /** Index into the viewer's page list. Shifted by [Viewer.prependPages]. */
+        public index: number,
         /** URLs this page draws, in `[left, right]` or `[single]` order. */
         readonly urls: (string | null)[],
         /** First file index this page covers, for the hook's page counter and URL. */
-        readonly fileIndex: number,
+        public fileIndex: number,
         /**
          * Which half of a spread this page needs, for pairing. A page holding *both* halves is
          * [SpreadPosition.Single]: it is already whole, so it must not go looking for a partner.
@@ -631,52 +631,117 @@ export class Viewer extends ImageViewerElement {
      */
     setPages(urls: string[], order: number[] | null = null, startFileIndex: number = 0) {
         this.dropCache()
-        this.pageList = []
-
-        const grouping = this.config.continuous ? null : order
-
-        if (grouping === null) {
-            urls.forEach((url, i) =>
-                this.pageList.push(
-                    this.makePage(this.pageList.length, [url], i, SpreadPosition.Single),
-                ),
-            )
-        } else {
-            const remaining = [...grouping]
-            let file = 0
-            while (remaining.length > 0) {
-                const o = remaining.shift()
-                const at = file
-                const push = (slots: (string | null)[], position: SpreadPosition) =>
-                    this.pageList.push(this.makePage(this.pageList.length, slots, at, position))
-
-                // `urls` per page is always [left slot, right slot], since that is the order
-                // ImageSpread takes its sides in and the order they are drawn in. The file list is
-                // in *reading* order, which right-to-left means the right half comes first - hence
-                // the pair below storing its second file in slot 0.
-                if (o === 0) {
-                    if (remaining[0] === 1 && this.config.dualPage) {
-                        remaining.shift()
-                        const right = urls[file++]
-                        const left = urls[file++]
-                        // Both halves in one page, so it is already whole - see
-                        // [ViewerPage.spreadPosition].
-                        push([left, right], SpreadPosition.Single)
-                    } else {
-                        push([null, urls[file++]], SpreadPosition.Right)
-                    }
-                } else if (o === 1) {
-                    push([urls[file++], null], SpreadPosition.Left)
-                } else {
-                    push([urls[file++]], SpreadPosition.Single)
-                }
-            }
-        }
+        this.pageList = this.buildPages(urls, order, 0, 0)
+        this.fileCount = urls.length
 
         this.currentIndex = Math.max(0, this.pageIndexOfFile(startFileIndex))
         invalidateCache()
         this.preloadAround(this.currentIndex)
         this.state.invalidate()
+    }
+
+    /** Files across the whole list - where [appendPages] carries on numbering from. */
+    private fileCount = 0
+
+    /**
+     * Add [urls] to the end of the list, keeping everything already decoded.
+     *
+     * Nothing already handed out moves, so the page cache, the decode queue and the transition
+     * cache all stay valid - which is what lets a turn carry on into the next chapter instead of
+     * swapping the list out from under the reader. See [prependPages] for the other direction.
+     */
+    appendPages(urls: string[], order: number[] | null = null) {
+        if (urls.length === 0) return
+        this.pageList.push(...this.buildPages(urls, order, this.pageList.length, this.fileCount))
+        this.fileCount += urls.length
+        this.preloadAround(this.currentIndex)
+        this.state.invalidate()
+    }
+
+    /**
+     * Add [urls] to the front of the list, shifting what is already there along.
+     *
+     * Indices do move here, so every page's own index and the cache's keys are shifted with them -
+     * the pages themselves are kept, decoded images and all. The decode queue and the transition
+     * cache hold pages rather than indices, so neither needs touching.
+     */
+    prependPages(urls: string[], order: number[] | null = null) {
+        if (urls.length === 0) return
+        const pages = this.buildPages(urls, order, 0, 0)
+
+        for (const page of this.pageList) {
+            page.index += pages.length
+            page.fileIndex += urls.length
+        }
+        const cached = [...this.pageCache.values()]
+        this.pageCache.clear()
+        for (const page of cached) this.pageCache.set(page.index, page)
+
+        this.pageList = [...pages, ...this.pageList]
+        this.fileCount += urls.length
+        this.currentIndex += pages.length
+        this.preloadAround(this.currentIndex)
+        this.state.invalidate()
+    }
+
+    /**
+     * [urls] as pages, numbered from [indexOffset] and [fileOffset] - `order` pairs the spreads.
+     */
+    private buildPages(
+        urls: string[],
+        order: number[] | null,
+        indexOffset: number,
+        fileOffset: number,
+    ): ViewerPage[] {
+        const pages: ViewerPage[] = []
+        const grouping = this.config.continuous ? null : order
+
+        if (grouping === null) {
+            urls.forEach((url, i) =>
+                pages.push(
+                    this.makePage(
+                        indexOffset + pages.length,
+                        [url],
+                        fileOffset + i,
+                        SpreadPosition.Single,
+                    ),
+                ),
+            )
+            return pages
+        }
+
+        const remaining = [...grouping]
+        let file = 0
+        while (remaining.length > 0) {
+            const o = remaining.shift()
+            const at = file
+            const push = (slots: (string | null)[], position: SpreadPosition) =>
+                pages.push(
+                    this.makePage(indexOffset + pages.length, slots, fileOffset + at, position),
+                )
+
+            // `urls` per page is always [left slot, right slot], since that is the order
+            // ImageSpread takes its sides in and the order they are drawn in. The file list is
+            // in *reading* order, which right-to-left means the right half comes first - hence
+            // the pair below storing its second file in slot 0.
+            if (o === 0) {
+                if (remaining[0] === 1 && this.config.dualPage) {
+                    remaining.shift()
+                    const right = urls[file++]
+                    const left = urls[file++]
+                    // Both halves in one page, so it is already whole - see
+                    // [ViewerPage.spreadPosition].
+                    push([left, right], SpreadPosition.Single)
+                } else {
+                    push([null, urls[file++]], SpreadPosition.Right)
+                }
+            } else if (o === 1) {
+                push([urls[file++], null], SpreadPosition.Left)
+            } else {
+                push([urls[file++]], SpreadPosition.Single)
+            }
+        }
+        return pages
     }
 
     private makePage(

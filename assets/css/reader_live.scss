@@ -161,25 +161,6 @@
             gap: 0.5em;
         }
 
-        .interstitial {
-            position: absolute;
-            left: 0;
-            top: 0;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            // background: rgba(255, 255, 255, 0.5);
-            backdrop-filter: blur(10px);
-            font-size: 2em;
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
-
-            &:not(.visible) {
-                display: none;
-            }
-        }
     }
 
     #page_container {
