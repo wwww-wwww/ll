@@ -73,6 +73,7 @@ export {
     TransitionBasicVerticalInstance,
     TransitionCube,
     TransitionCubeOuter,
+    TransitionDualFlip,
     TransitionFade,
     TransitionFadeWhite,
     TransitionFlipLeft,

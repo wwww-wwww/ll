@@ -5,36 +5,24 @@ import { Lut3d } from "./lut3d"
 /**
  * Colour-managing the WebGPU canvas by hand, since Firefox does not.
  *
- * Firefox transforms the content it presents into the display's profile - images, CSS colours, a 2D
- * canvas - but a WebGPU canvas is handed to the compositor as-is. So on a display whose profile is
- * not sRGB the reader's frame is the one thing on screen that skipped the transform, and it does
- * not match the browser around it or the same page in another engine.
+ * Firefox transforms what it presents into the display's profile - images, CSS colours, a 2D
+ * canvas - but hands a WebGPU canvas to the compositor as-is, so on a non-sRGB display the reader's
+ * frame is the one surface on the page that skipped the transform.
  *
- * There is no flag to ask for it. But the transform can be measured, because a path that does get
- * it will report what it did: fill a lattice of known colours onto a 2D canvas, read it straight
- * back, and the values that come back are those colours in display space - see [probeCanvas]. That
- * is the transform, sampled on a grid, which is a 3D LUT; applying it to the frame puts the WebGPU
- * canvas where every other surface on the page already is.
+ * No flag asks for it, but a path that does get it reports what it did: fill known colours onto a
+ * 2D canvas, read them back, and that is the transform on a grid - see [probeCanvas].
  *
- * Applied as an output filter, over the finished frame, rather than per page on the way in: it is
- * one fullscreen pass either way round, against a 3D LUT interpolation over every pixel of every
- * mip level on the CPU. The cost of that placement is that the tile shaders and the upscaler work
- * in the untransformed values - which is the right way round anyway, since blending and resampling
- * belong before a display transform rather than after it.
+ * An output filter over the finished frame, so the tile shaders and the upscaler work in the
+ * untransformed values - where blending and resampling belong.
  */
 
 /**
- * Points per axis in the probe, which is also the LUT's own resolution - the measurement is applied
- * as taken, so one number sets both.
+ * Points per axis in the probe, which is the LUT's own resolution too - it is applied as measured.
  *
- * 65 is the conventional cube size and a 2.2MB `rgba16float` texture, at 275k one-pixel fills once.
- * The gap between entries is just under 4 code values, which the GPU's trilinear filtering covers
- * comfortably even where the transform has a gamma curve in it.
- *
- * 64 does not divide 255, so a lattice value is not generally a whole code value and the canvas
- * stores the nearest one - see [level]. That puts each grid point up to half a code value away from
- * where this LUT says it is, against a transform whose slope is around 1: an eighth of the error the
- * grid spacing itself carries, and not worth picking a size like 52 to avoid.
+ * 65 is the conventional cube size: a 2.2MB `rgba16float` texture, 275k one-pixel fills once, and
+ * entries just under 4 code values apart for the GPU to interpolate between. 64 does not divide 255,
+ * so a lattice value lands on the nearest whole code value - see [level] - half a step out against
+ * the 4 the spacing itself carries.
  */
 const PROBE_SIZE = 65
 
@@ -60,11 +48,9 @@ const IDENTITY_TOLERANCE = 1.5 / 255
 /**
  * True on Firefox, the only engine that leaves a WebGPU canvas unmanaged.
  *
- * A UA test, since the behaviour it stands for cannot be feature-detected: what the probe measures
- * is the display transform, which every engine will report, and whether the compositor also applies
- * it to this canvas is not visible from script. Getting this wrong either way is safe in one
- * direction only - a browser that does manage its canvas would be transformed twice, so the test
- * gates the whole thing rather than the probe deciding alone.
+ * A UA test: the probe measures the display transform, which every engine reports, but whether the
+ * compositor applies it here too is invisible from script. A browser that does manage its canvas
+ * would be transformed twice, so this gates the whole thing rather than the probe deciding alone.
  */
 export function isFirefox(): boolean {
     return typeof navigator !== "undefined" && /\bGecko\/|\bFirefox\//.test(navigator.userAgent)
@@ -74,13 +60,9 @@ export function isFirefox(): boolean {
  * The lattice rendered onto a canvas and read straight back: for each of [PROBE_SIZE]^3 known
  * colours, the value the canvas gives back for it.
  *
- * A `<canvas>` of its own, never in the document - what a readback returns does not depend on the
- * canvas being laid out or painted, and an off-document one costs no reflow. `willReadFrequently`
- * keeps it in system memory, so `getImageData` is CPU work rather than a synchronous readback
- * through the compositor.
- *
- * Laid out one row per blue slice, red fastest along x - the order [Lut3d.data] wants, so the
- * result needs no reshuffling.
+ * An off-document `<canvas>` - a readback needs no layout - with `willReadFrequently`, which keeps
+ * it in system memory so `getImageData` is CPU work rather than a compositor round-trip. One row per
+ * blue slice, red fastest along x: [Lut3d.data]'s order, so nothing needs reshuffling.
  */
 export function probeCanvas(size = PROBE_SIZE): ColorProbe | null {
     if (typeof document === "undefined") return null
@@ -203,20 +185,16 @@ async function measure(): Promise<Lut3d | null> {
 /**
  * Turn the correction on or off over [chain], measuring it the first time it is asked for.
  *
- * [wanted] rather than a boolean: the measurement is asynchronous and the setting is a checkbox, so
- * by the time there is a LUT to install the answer may have changed. Re-read at the point of use,
- * it cannot install a pass the reader has since switched off.
+ * [wanted] rather than a boolean: the measurement is async, so it is re-read at the point of use
+ * and cannot install a pass the reader has since switched off.
  *
- * Off leaves the filter in the chain, disabled - [FilterChain] skips an inactive filter entirely,
- * so the pass costs nothing, and switching back on then needs no upload. Nothing is installed on an
- * engine that manages its own canvas, or on a display that wants no transform: [displayCorrection]
- * resolves to null and this does nothing at all.
+ * Off disables the filter but leaves it in the chain - [FilterChain] skips an inactive one, so
+ * switching back needs no upload. Nothing is installed where [displayCorrection] resolves to null.
  */
 export function applyDisplayCorrection(chain: FilterChain, wanted: () => boolean): void {
     const existing = () => chain.filters.find(f => f instanceof FilterLut3d) as FilterLut3d | undefined
 
-    // Immediate, and without waiting on a probe that may never have been asked for: the reader
-    // switching this off should not start a measurement to find out there was nothing to stop.
+    // Immediate, and without starting a probe just to find out there was nothing to stop.
     if (!wanted()) {
         const filter = existing()
         if (filter) filter.enabled = false
@@ -227,8 +205,7 @@ export function applyDisplayCorrection(chain: FilterChain, wanted: () => boolean
         if (!lut || !wanted()) return
         const filter = existing()
         if (filter) {
-            // Set both: this is also the path a second chain takes, and one built while the
-            // setting was off is sitting here with no table.
+            // Both: a filter built while the setting was off is sitting here with no table.
             filter.lut = lut
             filter.enabled = true
             return

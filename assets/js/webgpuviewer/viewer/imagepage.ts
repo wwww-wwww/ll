@@ -129,6 +129,36 @@ export class ImagePage {
     }
 
     /**
+     * One half of this page, normalised like [pageRect] - for `TransitionDualFlip`. [ImageSpread]
+     * gives that side's own rect; everything else splits [pageRect] down the middle, so a single
+     * page turns like a spread.
+     */
+    leafRect(dst: GPUTexture, left: boolean): Float32Array | null {
+        const r = this.pageRect(dst)
+        if (!r) return null
+        const mid = (r[0] + r[2]) * 0.5
+        return left ?
+            new Float32Array([r[0], r[1], mid, r[3]])
+            : new Float32Array([mid, r[1], r[2], r[3]])
+    }
+
+    /** Where this page's two [leafRect] halves meet - the spine a page flip turns about. */
+    spineX(dst: GPUTexture): number | null {
+        const r = this.pageRect(dst)
+        if (!r) return null
+        return (r[0] + r[2]) * 0.5
+    }
+
+    /**
+     * Everything this page covers, normalised like [pageRect] - both sides of an [ImageSpread],
+     * where [pageRect] gives whichever it finds first. What a transition treating it as one sheet
+     * wants.
+     */
+    wholeRect(dst: GPUTexture): Float32Array | null {
+        return this.pageRect(dst)
+    }
+
+    /**
      * The colour a transition should blend/fade toward for this page as a whole. Null (nothing to
      * fill/blend toward) by default.
      */
@@ -297,9 +327,8 @@ export class ImagePage {
         this.fadePending = false
         this.fadeJob?.cancel()
 
-        // Against the scaled duration, since that is how long the fade will really take - the
-        // clock here is wall time, and [animate] is what applies the scale to the rest of it. Also
-        // what makes a scale of 0 land this on 1 outright.
+        // The scaled duration is how long the fade really takes - this clock is wall time, and
+        // [animate] scales the rest. Also what lands a scale of 0 on 1 outright.
         const elapsed = performance.now() - this.fadeStartMillis
         const total = this.fadeMillis * animationScale()
         if (elapsed >= total) {
@@ -741,17 +770,19 @@ export class RenderPageBase extends ImagePage {
         this.renderWith(encoder, this.x, this.y, this.scale, tex)
     }
 
-    // render() treats dst as entirely its own canvas - so unlike an image page, whose real
-    // content only ever occupies part of dst, this page's rect within a flat render of it IS the
-    // whole thing, just panned/zoomed by its own live x/y/scale. Without this, the warp
-    // transitions - which bail out on a null pageRect rather than treating it as screen-shaped -
-    // would never draw this page at all.
+    // The rect [fillPage] fills, not all of [dst] - a page smaller than the surface would
+    // otherwise warp stretched to a height it never asked for. Non-null, so transitions that bail
+    // on a null pageRect still draw a Render page.
     override pageRect(dst: GPUTexture): Float32Array {
+        const halfWidthFrac = (this.scale * this.width) / (2 * dst.width)
+        const halfHeightFrac = (this.scale * this.height) / (2 * dst.height)
+        const cx = 0.5 + this.scale * this.x
+        const cy = 0.5 + this.scale * this.y
         return new Float32Array([
-            0.5 + this.scale * (this.x - 0.5),
-            0.5 + this.scale * (this.y - 0.5),
-            0.5 + this.scale * (this.x + 0.5),
-            0.5 + this.scale * (this.y + 0.5),
+            cx - halfWidthFrac,
+            cy - halfHeightFrac,
+            cx + halfWidthFrac,
+            cy + halfHeightFrac,
         ])
     }
 
@@ -1556,6 +1587,46 @@ export class ImageSpread extends ImageSingle {
             }
         })
         return found
+    }
+
+    /** That side's own rect, so a spread turns one real page rather than half of a sheet. */
+    override leafRect(dst: GPUTexture, left: boolean): Float32Array | null {
+        const side = left ? this.left : this.right
+        if (!side) return null
+        const placeX = this.x + ((left ? -0.5 : 0.5) * side.width) / dst.width
+        const image = side instanceof ImageSingle ? side.currentImage : null
+        if (image && image.mipmaps.length > 0) {
+            return image.placement(dst, placeX, this.y, this.scale)
+        }
+        // A render side has no image to place - [sideColumn]'s fallback, plus the y axis.
+        if (!(side instanceof RenderPageBase)) return null
+        const cx = 0.5 + this.scale * (placeX + WebGpuRenderer.offsetX)
+        const cy = 0.5 + this.scale * (this.y + WebGpuRenderer.offsetY)
+        const hw = (this.scale * 0.5 * side.width) / dst.width
+        const hh = (this.scale * 0.5 * side.height) / dst.height
+        return new Float32Array([cx - hw, cy - hh, cx + hw, cy + hh])
+    }
+
+    /** The seam, not the midpoint - the two sides can be different widths. */
+    override spineX(dst: GPUTexture): number | null {
+        const l = this.leafRect(dst, true)
+        if (l) return l[2]
+        const r = this.leafRect(dst, false)
+        if (r) return r[0]
+        return null
+    }
+
+    /** Both sides at once - the spread as one sheet, rather than [pageRect]'s single page. */
+    override wholeRect(dst: GPUTexture): Float32Array | null {
+        const l = this.leafRect(dst, true)
+        const r = this.leafRect(dst, false)
+        if (!l || !r) return l ?? r
+        return new Float32Array([
+            Math.min(l[0], r[0]),
+            Math.min(l[1], r[1]),
+            Math.max(l[2], r[2]),
+            Math.max(l[3], r[3]),
+        ])
     }
 
     override get backgroundColor(): number | null {

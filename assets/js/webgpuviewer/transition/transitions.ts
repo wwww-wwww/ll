@@ -6,6 +6,7 @@ import { Transition, beginClearedPass, blitCached, getCachedTexture } from "./tr
 // The rest of the family lives in files of its own; re-exported here so callers have one
 // place to reach every transition, as the Kotlin package does.
 export { TransitionCube, TransitionCubeOuter } from "./cube"
+export { TransitionDualFlip } from "./dualflip"
 export { TransitionFadeWhite } from "./fadewhite"
 export { TransitionFlipLeft, TransitionFlipRight } from "./flip"
 export { TransitionSphere } from "./sphere"

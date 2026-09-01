@@ -16,6 +16,9 @@ import { Transition, blendBackgroundColor, getCachedTexture } from "./transition
  * surface. A page zoomed past the surface clips to the whole of it, so the cache is taken exactly
  * as drawn, pan and zoom included - nothing undoes the page's transform. A page smaller than the
  * surface wraps just its own rect, so the sphere is the page rather than the letterbox around it.
+ *
+ * That rect is `ImagePage.wholeRect`, not `pageRect`, so a spread wraps as one sheet with both its
+ * pages rather than turning one side and dropping the other.
  */
 
 /** Tessellated 32x32 grid, six vertices per quad. */
@@ -212,7 +215,7 @@ class TransitionSphereImpl extends Transition {
         isSecond: number,
     ) {
         if (!cachedView) return
-        const rect = page.pageRect(dst)
+        const rect = page.wholeRect(dst)
         if (!rect) return
 
         this.scratch.set([

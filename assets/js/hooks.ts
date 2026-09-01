@@ -132,14 +132,11 @@ class Reader extends ViewHook {
     }
 
     /**
-     * Wire one checkbox in `#reader-settings` to a viewer setting, remembering it across reloads.
+     * Wire one checkbox in `#reader-settings` to a viewer setting, remembered across reloads.
      *
-     * Storage wins over the markup, [fallback] over nothing stored - and the box is set from that
-     * answer rather than read for it. The panel is `phx-update="ignore"`, so a browser is free to
-     * restore whatever was ticked last time on a reload, which is not the same thing as what this
-     * reader was told to do.
-     *
-     * Missing markup is not an error: the settings panel is not on every page this hook runs on.
+     * Storage wins, then [fallback] - and the box is set from that answer rather than read for it,
+     * since the panel is `phx-update="ignore"` and a browser may restore whatever was ticked last.
+     * Missing markup is not an error: the panel is not on every page this hook runs on.
      */
     private bindSetting(id: string, apply: (on: boolean) => void, fallback: boolean) {
         const box = document.getElementById(id) as HTMLInputElement | null
@@ -155,8 +152,8 @@ class Reader extends ViewHook {
             apply(box.checked)
         }
         box.addEventListener("change", listener)
-        // The panel is outside this hook's element and survives it, so the listener has to come off
-        // in [destroyed] - left on, a re-mounted hook would stack another pointing at a dead viewer.
+        // The panel outlives this hook, so [destroyed] takes the listener off - left on, a
+        // re-mounted hook would stack another pointing at a dead viewer.
         this.unbind.push(() => box.removeEventListener("change", listener))
     }
 

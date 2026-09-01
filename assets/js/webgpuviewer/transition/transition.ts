@@ -418,3 +418,118 @@ export function blitCached(
     )
     pass.draw(6)
 }
+
+const REGION_SHADER = `
+struct Uniforms {
+    rect: vec4<f32>,
+}
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var src_tex: texture_2d<f32>;
+@group(0) @binding(2) var src_sampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 1.0)
+    );
+
+    let pos = mix(uniforms.rect.xy, uniforms.rect.zw, corners[vertex_index]);
+
+    var out: VertexOutput;
+    out.position = vec4<f32>(pos.x * 2.0 - 1.0, 1.0 - pos.y * 2.0, 0.0, 1.0);
+    // 1:1 - the cache renders the whole surface, so a region belongs at its own coordinates.
+    out.uv = pos;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(src_tex, src_sampler, in.uv);
+}
+`
+
+let regionPipeline: GPURenderPipeline | null = null
+
+/** As [getBlitPipeline], but drawing only a sub-rectangle - see [blitCachedRegion]. */
+function getRegionPipeline(): GPURenderPipeline {
+    if (regionPipeline) return regionPipeline
+    const module = device().createShaderModule({ code: REGION_SHADER })
+    regionPipeline = device().createRenderPipeline({
+        layout: "auto",
+        vertex: { module, entryPoint: "vs_main" },
+        fragment: {
+            module,
+            entryPoint: "fs_main",
+            targets: [
+                {
+                    format: "rgba8unorm",
+                    blend: {
+                        color: {
+                            srcFactor: "one",
+                            dstFactor: "one-minus-src-alpha",
+                            operation: "add",
+                        },
+                        alpha: {
+                            srcFactor: "one",
+                            dstFactor: "one-minus-src-alpha",
+                            operation: "add",
+                        },
+                    },
+                },
+            ],
+        },
+        primitive: { topology: "triangle-list" },
+    })
+    return regionPipeline
+}
+
+const regionScratch = new Float32Array(4)
+
+/**
+ * Blit one region of a cached texture into [pass] at those same coordinates - one side of a cached
+ * spread without the other. Null [cachedView] draws nothing.
+ */
+export function blitCachedRegion(
+    pass: GPURenderPassEncoder,
+    cachedView: GPUTextureView | null,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+) {
+    if (!cachedView || x2 <= x1 || y2 <= y1) return
+
+    regionScratch.set([x1, y1, x2, y2])
+
+    const uniformBuffer = device().createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    })
+    device().queue.writeBuffer(uniformBuffer, 0, regionScratch)
+
+    const pipeline = getRegionPipeline()
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(
+        0,
+        device().createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: cachedView },
+                { binding: 2, resource: getBlitSampler() },
+            ],
+        }),
+    )
+    pass.draw(6)
+}

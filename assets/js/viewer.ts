@@ -9,6 +9,7 @@ import {
     TransitionBasicVerticalInstance,
     TransitionCube,
     TransitionCubeOuter,
+    TransitionDualFlip,
     TransitionFade,
     TransitionFadeWhite,
     TransitionFlipLeft,
@@ -106,6 +107,7 @@ export type TransitionName =
     | "fade-white"
     | "flip-left"
     | "flip-right"
+    | "dual-flip"
     | "stack-up"
     | "stack-down"
     | "stack-left"
@@ -147,15 +149,12 @@ export interface ViewerConfig {
     /** Compose spreads out of `order`-paired files. */
     dualPage: boolean
     /**
-     * Apply the display's colour transform to the frame - see `filter/colormanagement.ts`.
+     * Apply the display's colour transform to the frame - see `filter/colormanagement.ts`. Only
+     * does anything on Firefox, and costs a probe the first time it is on.
      *
-     * Only ever does anything on Firefox, which hands a WebGPU canvas to the compositor
-     * untransformed. Costs a probe the first time it is switched on.
-     *
-     * Off here, on in the reader: the `chk_3dlut` setting is what a viewer in the page actually
-     * follows (see `bindSetting` in hooks.ts), and it is applied a moment after the element is
-     * built. Defaulting this on as well would start the probe for a reader whose saved setting is
-     * about to switch it off.
+     * Off here, on in the reader: `chk_3dlut` is what a viewer in the page follows (`bindSetting` in
+     * hooks.ts), applied just after the element is built. On here too would start the probe for a
+     * reader about to switch it off.
      */
     colorManagement: boolean
 }
@@ -173,7 +172,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
     // Most of a page's time is spent waiting rather than working, so a few at once fills the
     // preload window far sooner; past a handful the network is the limit anyway.
     decodeConcurrency: 3,
-    transition: "default",
+    transition: "dual-flip",
     reversed: false,
     vertical: false,
     continuous: false,
@@ -425,23 +424,18 @@ export class Viewer extends ImageViewerElement {
     private readonly upscaler = new UpscalerCatmullRom()
 
     /**
-     * Bring the output filter chain in line with [config]. Called from [bindState] and [configure],
-     * so it runs both when a state is bound and whenever a setting changes.
-     *
-     * The chain belongs to the renderer, so both states share one and this is idempotent by
-     * construction - see `ImageViewerState.filters`.
+     * Bring the output filter chain in line with [config], from [bindState] and [configure]. The
+     * chain belongs to the renderer, so both states share one and this is idempotent - see
+     * `ImageViewerState.filters`.
      */
     private applyFilters() {
         applyDisplayCorrection(this.state.filters, () => this.config.colorManagement)
     }
 
     /**
-     * [ViewerConfig.colorManagement], settable on its own.
-     *
-     * Not through [configure], which drops the page cache and re-decodes the preload window - the
-     * right thing for a setting that changes what a page decodes to, and far too much for one that
-     * only adds a pass over the finished frame. Nothing cached needs rebuilding, so this redraws
-     * and stops there.
+     * [ViewerConfig.colorManagement], settable on its own: [configure] drops the page cache and
+     * re-decodes, which a pass over the finished frame does not need. This redraws and stops
+     * there.
      */
     get colorManagement(): boolean {
         return this.config.colorManagement
@@ -585,6 +579,8 @@ export class Viewer extends ImageViewerElement {
                 return TransitionFlipLeft
             case "flip-right":
                 return TransitionFlipRight
+            case "dual-flip":
+                return TransitionDualFlip
             case "stack-up":
                 return TransitionStackUp
             case "stack-down":

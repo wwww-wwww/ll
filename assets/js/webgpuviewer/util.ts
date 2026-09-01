@@ -384,8 +384,7 @@ export function animate(
             const now = await nextFrame()
             job.ensureActive()
 
-            // Animations off - still a frame late rather than synchronous, so a caller that starts
-            // one and reads the value back gets the same ordering it does at any other scale.
+            // Animations off - a frame late rather than synchronous, so the ordering is unchanged.
             if (timeScale === 0) {
                 block(coerceIn(to, lowerBound, upperBound), 0)
                 return
