@@ -33,6 +33,9 @@ const BEND = 0.95
 /** Never zero - the arc's radius is length/bend. */
 const MIN_BEND = 0.04
 
+/** How much of each end of the turn eases back to flat lighting, matching the static halves. */
+const LIT_ENDS = 0.15
+
 // Along the leaf only - it does not bend vertically, so rows buy just a shorter diagonal.
 const COLS = 64
 const ROWS = 2
@@ -62,6 +65,13 @@ interface Leaf {
     /** Whether that face has a cached page to sample; blank if not. */
     hasFront: boolean
     hasBack: boolean
+    /** Shading strength, 0 at either end of the turn - see [LIT_ENDS]. */
+    shading: number
+}
+
+function smoothstep(x: number): number {
+    const e = Math.min(Math.max(x, 0), 1)
+    return e * e * (3 - 2 * e)
 }
 
 /** [rect] reflected across the spine - where the leaf's other face has to lie. */
@@ -211,6 +221,7 @@ class TransitionDualFlipImpl extends Transition {
             aspect: dst.width / dst.height,
             hasFront: rawFront !== null && cached1 !== null,
             hasBack: rawBack !== null && cached2 !== null,
+            shading: Math.min(smoothstep(t / LIT_ENDS), smoothstep((1 - t) / LIT_ENDS)),
         }
     }
 
@@ -238,7 +249,7 @@ class TransitionDualFlipImpl extends Transition {
                 leaf.aspect,
                 leaf.hasFront ? 1 : 0,
                 leaf.hasBack ? 1 : 0,
-                0,
+                leaf.shading,
                 0,
                 // Opaque, so premultiplied and straight agree.
                 ((blank >> 16) & 0xff) / 255,
@@ -286,7 +297,7 @@ struct Uniforms {
     geom: vec4<f32>,
     // sheet length, top y, bottom y, surface aspect
     span: vec4<f32>,
-    // front textured, back textured, unused, unused
+    // front textured, back textured, shading strength, unused
     flags: vec4<f32>,
     // What a face with no page behind it is painted, premultiplied.
     blank: vec4<f32>,
@@ -351,15 +362,17 @@ fn shadow_cast(p: vec3<f32>) -> vec2<f32> {
 
 /// How dark the shadow is where the point casting it sits [z] above the page.
 fn shadow_alpha(z: f32) -> f32 {
-    return SHADOW_DEPTH * exp(-SHADOW_FALLOFF * max(z, 0.0) / flip.span.x);
+    return flip.flags.z * SHADOW_DEPTH * exp(-SHADOW_FALLOFF * max(z, 0.0) / flip.span.x);
 }
 
 /// Lambert shading at [p], tangent angle [b]. The normal has no y - the sheet bends only about
 /// the spine - but the light does, so take the direction to it in full.
+/// Eased off at either end of the turn, so the leaf lands as lit as the static half it becomes.
 fn leaf_shade(p: vec3<f32>, b: f32, front: bool) -> f32 {
     var n = vec3<f32>(-flip.geom.y * sin(b), 0.0, cos(b));
     if (!front) { n = -n; }
-    return 0.42 + 0.58 * max(dot(n, normalize(light_pos() - p)), 0.0);
+    let lambert = 0.42 + 0.58 * max(dot(n, normalize(light_pos() - p)), 0.0);
+    return mix(1.0, lambert, flip.flags.z);
 }
 
 /// The face showing at a point of the sheet - whichever way the surface is turned.
