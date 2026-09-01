@@ -12,8 +12,7 @@ import { Transition, blendBackgroundColor, getCachedTexture } from "./transition
  * texture, so the flat render happens once per transition while only the fold is per-frame.
  *
  * The fold works in page-relative coordinates and reflects across the page's rect within the cache
- * - see `ImagePage.pageRect` - so a page narrower or shorter than the surface folds as itself,
- * rather than as a screen-sized sheet.
+ * - see `ImagePage.wholeRect` - so a small page folds as itself, and a spread folds as one sheet.
  *
  * The crease angle comes from the drag itself: the vertical travel between where the gesture
  * started and where it is now tilts the fold, so dragging from a corner creases diagonally.
@@ -227,7 +226,7 @@ class TransitionFlip extends Transition {
         foldAngle: number,
     ) {
         if (!cachedView) return
-        const rect = page.pageRect(dst)
+        const rect = page.wholeRect(dst)
         if (!rect) return
 
         this.scratch.set([rect[0], rect[1], rect[2], rect[3], frac, foldAngle, 0, 0])

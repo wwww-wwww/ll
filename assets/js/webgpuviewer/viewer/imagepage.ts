@@ -1577,16 +1577,9 @@ export class ImageSpread extends ImageSingle {
         })
     }
 
+    /** Via [leafRect], so a spread of two render sides still has a rect. */
     override pageRect(dst: GPUTexture): Float32Array | null {
-        let found: Float32Array | null = null
-        this.forEachSide((side, offsetX) => {
-            if (found) return
-            const image = side instanceof ImageSingle ? side.currentImage : null
-            if (image && image.mipmaps.length > 0) {
-                found = image.placement(dst, this.x + offsetX / dst.width, this.y, this.scale)
-            }
-        })
-        return found
+        return this.leafRect(dst, true) ?? this.leafRect(dst, false)
     }
 
     /** That side's own rect, so a spread turns one real page rather than half of a sheet. */

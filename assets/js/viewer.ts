@@ -1,4 +1,4 @@
-import { Job, closeTo, coerceIn, launch } from "./webgpuviewer/util"
+import { Job, alphaOf, closeTo, coerceIn, launch } from "./webgpuviewer/util"
 import { DecodeAborted, ImageDecoder, closeLevels } from "./webgpuviewer/decoder"
 import { MIPMAP_TILE_SIZE, Image } from "./webgpuviewer/renderer/image"
 import { applyDisplayCorrection } from "./webgpuviewer/filter/colormanagement"
@@ -239,31 +239,62 @@ class ViewerPage {
     }
 }
 
+/** What a placeholder measures itself against, read live - see [PlaceholderPage]. */
+interface Viewport {
+    readonly width: number
+    readonly height: number
+}
+
+/**
+ * A page drawn in a real page's place, sized from the viewport every time it is asked.
+ *
+ * Read live rather than fixed at construction: these are built before the surface has a size, and
+ * they outlive a resize - which is what a rotation is. Fixed, each one had to be rebuilt on every
+ * viewport change, and a placeholder built too early was 1px wide for good.
+ *
+ * [half] sizes it to one side of a spread, so a ring or a message is scaled for the space it
+ * occupies rather than for the whole screen.
+ */
+class PlaceholderPage extends RenderPageBase {
+    constructor(
+        private readonly viewport: () => Viewport,
+        private readonly half: boolean,
+    ) {
+        super(0, 0)
+        this.minScale = 1
+        this.maxScale = 1
+        this.homeScale = 1
+    }
+
+    override get width(): number {
+        const width = this.viewport().width
+        return Math.max(1, Math.round(this.half ? (width || 2) / 2 : width || 1))
+    }
+
+    override get height(): number {
+        return Math.max(1, this.viewport().height)
+    }
+}
+
 /**
  * The loading ring shown in a page's place - `WebGpuViewer.ProgressPage`.
- *
- * Sized to its own half when it stands in for one side of a spread, so the ring is scaled for the
- * space it occupies rather than for the whole screen.
  *
  * The background is transparent by default: a page that has not arrived yet should leave whatever
  * is behind the canvas showing, rather than painting a slab over it. The ring itself carries its
  * own contrast.
  */
-export class ProgressPage extends RenderPageBase {
+export class ProgressPage extends PlaceholderPage {
     private _progress = 0
     private _background: number
 
     constructor(
-        width: number,
-        height: number,
+        viewport: () => Viewport,
+        half: boolean,
         background: number,
         public foreground: number,
     ) {
-        super(width, height)
+        super(viewport, half)
         this._background = background
-        this.minScale = 1
-        this.maxScale = 1
-        this.homeScale = 1
     }
 
     get progress(): number {
@@ -280,6 +311,12 @@ export class ProgressPage extends RenderPageBase {
     }
 
     override render(dst: GPUTexture, x: number, y: number, scale: number) {
+        // Its own footprint, so the page carries its background wherever a transition puts it -
+        // skipped for the transparent default, which is there to show what is behind the canvas.
+        if (alphaOf(this._background) > 0) {
+            this.fillPage(dst, x, y, scale, this._background)
+        }
+
         const cx = dst.width * (0.5 + scale * x)
         const cy = dst.height * (0.5 + scale * y)
 
@@ -295,23 +332,20 @@ export class ProgressPage extends RenderPageBase {
 }
 
 /** A failed page, with the reason on it - `WebGpuViewer.ErrorPage`. */
-export class ErrorPage extends RenderPageBase {
+export class ErrorPage extends PlaceholderPage {
     private _message: string
     private _background: number
 
     constructor(
-        width: number,
-        height: number,
+        viewport: () => Viewport,
+        half: boolean,
         background: number,
         public foreground: number,
         message: string,
     ) {
-        super(width, height)
+        super(viewport, half)
         this._message = message
         this._background = background
-        this.minScale = 1
-        this.maxScale = 1
-        this.homeScale = 1
     }
 
     get message(): string {
@@ -496,8 +530,9 @@ export class Viewer extends ImageViewerElement {
             this.pageCache.forEach(page => {
                 page.spreadPage?.cleanup()
                 page.spreadPage = null
-                if (page.progress.length > 0) this.resizePlaceholder(page)
-                else page.imagePage.resetHome()
+                // Placeholders take their size from the viewport as it is now - see
+                // [PlaceholderPage] - so like a decoded page they only need re-homing.
+                page.imagePage.resetHome()
             })
             invalidateCache()
             this.state.invalidate()
@@ -603,8 +638,13 @@ export class Viewer extends ImageViewerElement {
         }
     }
 
+    /**
+     * Everything [preloadAround] reaches, plus slack. Sized exactly, a spread partner evicts a page
+     * the next fetch asks for and it decodes again.
+     */
     private get cacheSize(): number {
-        return 1 + this.config.preloadAhead + this.config.preloadBehind
+        const dual = this.config.dualPage && !this.config.continuous
+        return 1 + this.config.preloadAhead + this.config.preloadBehind + (dual ? 3 : 1)
     }
 
     // -----------------------------------------------------------------------------------------
@@ -776,32 +816,20 @@ export class Viewer extends ImageViewerElement {
         }
     }
 
-    /**
-     * Re-size a still-loading page's rings to the new viewport, keeping their progress.
-     *
-     * A [ProgressPage] is sized in screen pixels rather than content pixels, so unlike a decoded
-     * page it cannot simply be re-homed - it has to be rebuilt at the new size.
-     */
-    private resizePlaceholder(page: ViewerPage) {
-        const progress = page.progress.map(ring => ring?.progress ?? 0)
-        const old = page.imagePage
-        this.resetPlaceholder(page)
-        page.progress.forEach((ring, slot) => {
-            if (ring) ring.progress = progress[slot] ?? 0
-        })
-        old.cleanup()
-    }
-
     /** True when a page occupies the whole viewport rather than one half of a spread. */
     private isFullWidth(page: ViewerPage): boolean {
         return page.spreadPosition === SpreadPosition.Single && !page.pair
     }
 
     /** A placeholder sized to the space it will occupy - half the screen for a spread side. */
+    // The state, not its size: [bindState] swaps which one is live, and a placeholder outlives
+    // that as readily as it outlives a resize.
+    private readonly viewport = () => this.state
+
     private newProgressPage(half: boolean): ProgressPage {
         return new ProgressPage(
-            Math.max(1, Math.round(half ? (this.state.width || 2) / 2 : this.state.width || 1)),
-            Math.max(1, this.state.height),
+            this.viewport,
+            half,
             this.progressBackground,
             this.themeForeground,
         )
@@ -809,8 +837,8 @@ export class Viewer extends ImageViewerElement {
 
     private newErrorPage(half: boolean, message: string): ErrorPage {
         return new ErrorPage(
-            Math.max(1, Math.round(half ? (this.state.width || 2) / 2 : this.state.width || 1)),
-            Math.max(1, this.state.height),
+            this.viewport,
+            half,
             this.themeBackground,
             this.themeForeground,
             message,
