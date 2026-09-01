@@ -11,8 +11,13 @@ defmodule LLWeb.MainLibraryLive do
 
   def render(assigns) do
     ~H"""
-    <div :if={get_connect_info(@socket, :user_agent) |> String.downcase() |> String.contains?("android")}>
-      <.link href={{:mihon, "//extension-store?url=https%3A%2F%2Fgithub.com%2Fwwww-wwww%2Ftachiyomi-extensions%2Fraw%2Frefs%2Fheads%2Frepo%2Findex.json"}}>
+    <div :if={
+      get_connect_info(@socket, :user_agent) |> String.downcase() |> String.contains?("android")
+    }>
+      <.link href={
+        {:mihon,
+         "//extension-store?url=https%3A%2F%2Fgithub.com%2Fwwww-wwww%2Ftachiyomi-extensions%2Fraw%2Frefs%2Fheads%2Frepo%2Findex.json"}
+      }>
         Add to Mihon
       </.link>
     </div>

@@ -12,6 +12,8 @@ defmodule LL.MultiSeries do
     field :thumbnail_path, :string
     field :details_updated, :utc_datetime
 
+    field :reading_mode, Ecto.Enum, values: [:rtl, :ltr, :continuous], default: :rtl
+
     belongs_to :series, LL.Series
 
     has_many :children, LL.Series

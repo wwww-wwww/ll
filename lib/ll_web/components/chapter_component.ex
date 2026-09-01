@@ -6,7 +6,8 @@ defmodule LLWeb.ChapterComponent do
   def render(assigns) do
     ~H"""
     <div class={["ChapterComponent", assigns[:selected] && "selected", @chapter.hidden && "hidden"]}>
-      <% downloaded = @chapter.files != nil && Enum.filter(@chapter.files, & &1 |> String.starts_with?("/")) %>
+      <% downloaded =
+        @chapter.files != nil && Enum.filter(@chapter.files, &(&1 |> String.starts_with?("/"))) %>
       <div :if={@chapter.files == nil or length(downloaded) != length(@chapter.files)} class="extra">
         <span :if={@chapter.files}>{length(downloaded)}/{length(@chapter.files)}</span>
         <button

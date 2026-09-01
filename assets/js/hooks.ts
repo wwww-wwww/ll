@@ -1,102 +1,59 @@
 import { ViewHook } from "phoenix_live_view"
 import { Viewer } from "./viewer"
 
-const TILESIZE = 4096
-const PRELOAD_COUNT = 5
-
 class Reader extends ViewHook {
-    private device!: GPUDevice
-
-    private files: HTMLImageElement[] = []
-    private pages: (HTMLImageElement | null)[][] = []
-
-    create_shader(code: string) {
-        const module = this.device!.createShaderModule({ code })
-        const log = async () => {
-            const info = await module.getCompilationInfo()
-
-            for (const message of info.messages) {
-                console.error(`Line ${message.lineNum}:${message.linePos} - ${message.message}`)
-            }
-        }
-        log()
-
-        return module
-    }
-
-    crop_image(
-        im: ImageBitmap | HTMLImageElement | HTMLCanvasElement,
-        x: number,
-        y: number,
-        width: number,
-        height: number,
-    ) {
-        const canvas = document.createElement("canvas")
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext("2d")
-        ctx!.drawImage(im, x, y, width, height, 0, 0, width, height)
-        return canvas
-    }
-
-    async create_tiles(
-        im: ImageBitmap | HTMLImageElement | HTMLCanvasElement,
-    ): Promise<GPUTexture[][]> {
-        console.log("Create tiles", im.width, im.height)
-        const tiles = []
-        for (let y = 0; y < im.height; y += TILESIZE) {
-            const row = []
-            for (let x = 0; x < im.width; x += TILESIZE) {
-                console.log("Tile", x, y)
-                const width = Math.min(TILESIZE, im.width - x)
-                const height = Math.min(TILESIZE, im.height - y)
-                const im2 = this.crop_image(im, x, y, width, height)
-
-                let texture = this.device.createTexture({
-                    size: [width, height, 1],
-                    format: "rgba8unorm",
-                    usage:
-                        GPUTextureUsage.STORAGE_BINDING |
-                        GPUTextureUsage.TEXTURE_BINDING |
-                        GPUTextureUsage.COPY_DST |
-                        GPUTextureUsage.RENDER_ATTACHMENT,
-                })
-                row.push(texture)
-
-                this.device.queue.copyExternalImageToTexture(
-                    { source: im2 },
-                    { texture: texture },
-                    [width, height],
-                )
-            }
-            tiles.push(row)
-        }
-
-        return tiles
-    }
-
     viewer!: Viewer
 
-    get_page(n: number) {
-        const file = this.files[n]
-        return this.pages.find(v => v.find(f => f == file)) ?? null
-    }
+    /**
+     * The chapter's image URLs.
+     *
+     * Just the URLs now: creating an `<img>` per page here and setting `src` on all of them is
+     * what made opening a chapter start every download at once. The viewer owns loading, and only
+     * fetches inside its preload window.
+     */
+    private files: string[] = []
 
-    async init() {
-        this.viewer = await Viewer.new()
+    /** Continuous (webtoon) reading - scrolls rather than turns. */
+    private continuous = false
+
+    async init(continuous: boolean = false) {
+        this.viewer = await Viewer.new(continuous)
         this.el.appendChild(this.viewer)
 
-        this.viewer.fetch_pages = (n: number) => {
-            let i = n + 1
-            let preload_next = () => {
-                if (i >= n + PRELOAD_COUNT) return
-                if (i >= this.files.length) return
-                this.files[i++].decode().then(preload_next)
+        // Mihon routes a tap through `config.navigator.getAction`, which splits the screen into
+        // menu / next / prev regions. This is the same idea with yuriyomi's own bindings: the
+        // outer thirds turn the page (right-to-left, so the left edge advances), the middle keeps
+        // the existing toggle.
+        //
+        // Continuous reading scrolls instead of turning - `WebGpuViewerContinuous` overrides
+        // moveRight/moveLeft to half a viewport, and jumping a whole page on a tap would skip
+        // past most of a webtoon strip.
+        this.viewer.onTap = x => {
+            if (x >= 0.33 && x <= 0.67) {
+                document.getElementById("series_details_toggle")?.click()
+            } else if (this.continuous) {
+                if (x < 0.33) this.viewer.moveLeft()
+                else this.viewer.moveRight()
+            } else {
+                this.turn(x < 0.33 ? 1 : -1)
             }
+        }
 
-            preload_next()
+        // The old viewer went fullscreen on a one-second hold; the gesture layer reports the hold
+        // as a long tap instead of hard-coding what it does.
+        this.viewer.onLongTap = () => {
+            if (!document.fullscreenElement) this.viewer.requestFullscreen().catch(() => { })
+            else document.exitFullscreen().catch(() => { })
+        }
 
-            return this.get_page(n)
+        // Fires for a swipe, a tap-to-turn and a programmatic move alike, so guard against the
+        // re-entrant case: set_page below moves the viewer, which reports the move straight back.
+        let notified = -1
+        this.viewer.onPageChange = page => {
+            if (page === notified) return
+            notified = page
+            this.set_page(page)
+            notified = -1
         }
     }
 
@@ -149,7 +106,19 @@ class Reader extends ViewHook {
 
         this.viewer.set_page(Math.max(Math.min(page, this.files.length - 1), 0))
         this.e_page.textContent = `${this.viewer.page + 1}/${this.files.length}`
-        this.viewer?.invalidate()
+        this.viewer.invalidate()
+    }
+
+    /**
+     * Turn one page in [direction], or fall off the end into the chapter interstitial.
+     *
+     * The viewer steps by page, so a spread's two halves count as one - which is what the old
+     * hand-rolled "is the next file the same page?" check here was for.
+     */
+    private turn(direction: number) {
+        const next = this.viewer.stepFileIndex(direction)
+        if (next !== null) this.set_page(next)
+        else this.set_page(direction > 0 ? this.files.length : -1)
     }
 
     private key_event!: ((e: KeyboardEvent) => void) | null
@@ -161,11 +130,7 @@ class Reader extends ViewHook {
         this.e_interstitial.onclick = e => {
             const rect = this.e_interstitial.getBoundingClientRect()
             const x = (e.clientX - rect.x) / rect.width
-            if (x < 0.5) {
-                this.viewer.set_page(this.viewer.page + 1)
-            } else {
-                this.viewer.set_page(this.viewer.page - 1)
-            }
+            this.turn(x < 0.5 ? 1 : -1)
         }
 
         let mounted = false
@@ -181,43 +146,9 @@ class Reader extends ViewHook {
 
         const data = JSON.parse(this.el.dataset.files! || "{}")
 
-        function get_files(files_raw: HTMLImageElement[], order: number[]): (HTMLImageElement | null)[][] {
-            let i = 0
+        const reading_mode = this.el.dataset.readingMode
 
-            const files: (HTMLImageElement | null)[][] = []
-
-            while (order.length > 0) {
-                const o = order.shift()
-                if (o == 0) {
-                    if (order[0] == 1) {
-                        order.shift()
-                        files.push([files_raw[i++], files_raw[i++]])
-                    } else {
-                        files.push([files_raw[i++], null])
-                    }
-                }
-                if (o == 1) {
-                    files.push([null, files_raw[i++]])
-                }
-                if (o == 2) {
-                    files.push([files_raw[i++]])
-                }
-            }
-
-            return files
-        }
-
-        this.files = data.files.map((f: string) => {
-            const im = new Image()
-            im.src = f
-            return im
-        })
-
-        if (data.order) {
-            this.pages = get_files(this.files, data.order)
-        } else {
-            this.pages = this.files.map((e: HTMLImageElement) => [e])
-        }
+        this.files = data.files ?? []
 
         this.handleEvent("move", data => {
             this.set_page(data.index)
@@ -227,33 +158,27 @@ class Reader extends ViewHook {
             if (!mounted) return
             console.info("files", data, window.history.state)
 
-            this.viewer.pages.clear()
-
-            this.files = data.files.map((f: string) => {
-                const im = new Image()
-                im.src = f
-                return im
-            })
-            if (data.order) {
-                this.pages = get_files(this.files, data.order)
-            } else {
-                this.pages = this.files.map((e: HTMLImageElement) => [e])
-            }
+            this.files = data.files ?? []
 
             this.e_interstitial.classList.toggle("visible", false)
+
+            let start = window.history.state.page || 0
 
             if (chapters) {
                 const current_index = chapters.findIndex(e => e.classList.contains("selected"))
 
                 if (this.navigating && this.prev_chapter == chapters.at(current_index)) {
-                    this.viewer.set_page(this.files.length - 1)
-                } else {
-                    this.viewer.set_page(window.history.state.page || 0)
+                    start = this.files.length - 1
                 }
 
                 this.next_chapter = current_index > 0 ? chapters.at(current_index - 1)! : null
                 this.prev_chapter = chapters.at(current_index + 1)!
             }
+
+            // One call: the viewer needs the list and the starting position together, so it can
+            // open its preload window at the right place rather than at page 0 first.
+            this.viewer.setPages(this.files, data.order ?? null, start)
+            this.set_page(this.viewer.page, false)
 
             this.navigating = false
         })
@@ -261,33 +186,46 @@ class Reader extends ViewHook {
         const params = new URLSearchParams(window.location.search)
         const page = window.history.state.page || parseInt(params?.get("page")! ?? "1") - 1
 
-        this.init().then(() => {
-            this.viewer.set_page(page)
+        // Continuous (webtoon) reading stacks the pages and scrolls them as one document. Decided
+        // before the viewer is built: the mode picks a different state object, and its frame loop
+        // starts on connect.
+        const continuous = reading_mode === "continuous"
+        this.continuous = continuous
+
+        this.init(continuous).then(() => {
+            // Right-to-left, as the arrow-key bindings below have always assumed - but a
+            // continuous viewer scrolls top-to-bottom, and reversing it would send the arrow keys
+            // and the tap regions the wrong way.
+            this.viewer.configure({ reversed: !continuous })
+            this.viewer.setPages(this.files, data.order ?? null, page)
+            this.set_page(this.viewer.page)
             mounted = true
         })
 
         this.key_event = (e: KeyboardEvent) => {
-            if (document.activeElement?.tagName == "INPUT" || document.activeElement?.tagName == "TEXTAREA") {
-                return;
+            if (
+                document.activeElement?.tagName == "INPUT" ||
+                document.activeElement?.tagName == "TEXTAREA"
+            ) {
+                return
+            }
+
+            // Continuous scrolls on the vertical axis it actually reads along; the horizontal
+            // arrows keep turning pages so a jump is still reachable.
+            if (this.continuous && (e.key == "ArrowDown" || e.key == "ArrowUp")) {
+                e.preventDefault()
+                if (e.key == "ArrowDown") this.viewer.moveRight()
+                else this.viewer.moveLeft()
+                return
             }
 
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
-
-                if (this.get_page(this.viewer.page + 1) == this.get_page(this.viewer.page)) {
-                    this.set_page(this.viewer.page + 2)
-                } else {
-                    this.set_page(this.viewer.page + 1)
-                }
+                this.turn(1)
             }
             if (e.key == "ArrowRight") {
                 e.preventDefault()
-
-                if (this.get_page(this.viewer.page - 1) == this.get_page(this.viewer.page)) {
-                    this.set_page(this.viewer.page - 2)
-                } else {
-                    this.set_page(this.viewer.page - 1)
-                }
+                this.turn(-1)
             }
         }
 

@@ -95,7 +95,7 @@ defmodule LL do
 
   def pagedetect_missing() do
     LL.Repo.all(LL.Chapter)
-    |> Enum.filter(& &1.page_order == nil)
+    |> Enum.filter(&(&1.page_order == nil))
     |> Enum.filter(&LL.Chapter.downloaded?/1)
     |> Enum.each(&LL.PageDetect.detect/1)
   end

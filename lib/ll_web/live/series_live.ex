@@ -50,7 +50,10 @@ defmodule LLWeb.SeriesLive do
                 <span>Status: <span class="status">{status(@entry)}</span></span>
                 <span>
                   Source:
-                  <span :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi} class="source">
+                  <span
+                    :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi}
+                    class="source"
+                  >
                     <span :if={@is_multi}>Multi</span>
                     <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
                       {@entry.source.name} ({@entry.source.lang})
@@ -62,6 +65,7 @@ defmodule LLWeb.SeriesLive do
                   Last chapter refresh:
                   <span class="updated">{relative_time(@entry.chapters_updated)}</span>
                 </span>
+                <span>Reading mode: <span class="reading-mode">{@entry.reading_mode}</span></span>
               </div>
 
               <div :if={LL.User.mod?(@current_scope)} class="anilist-details">
@@ -227,7 +231,9 @@ defmodule LLWeb.SeriesLive do
       <div :if={@entry.genre} class="tags">
         <span :for={t <- @entry.genre |> String.split(", ")}>{t}</span>
       </div>
-      <div :if={@entry.description} class="description">{raw(HtmlSanitizeEx.basic_html(@entry.description))}</div>
+      <div :if={@entry.description} class="description">
+        {raw(HtmlSanitizeEx.basic_html(@entry.description))}
+      </div>
 
       <div :if={LL.User.mod?(@current_scope)} class="actions">
         <button phx-click="refresh_chapters">Refresh chapters</button>
