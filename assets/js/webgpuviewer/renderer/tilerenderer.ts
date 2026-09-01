@@ -863,9 +863,7 @@ export class TileRenderer {
     private buildBlitPipeline(depthStencil?: GPUDepthStencilState): GPURenderPipeline {
         const module = device().createShaderModule({ code: BLIT_SHADER })
         return device().createRenderPipeline({
-            layout: device().createPipelineLayout({
-                bindGroupLayouts: [this.blitBindGroupLayout],
-            }),
+            layout: device().createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
             vertex: {
                 module,
                 entryPoint: "vs_main",
@@ -939,12 +937,12 @@ export class TileRenderer {
     // force the GPU to serialize each frame's clear/write against the previous frame's, still in
     // flight - silently undoing the swapchain's own buffering and showing up as tiles trailing
     // the current pan/scroll position.
-    private readonly stencilTextures: (GPUTexture | null)[] = new Array(
-        STENCIL_BUFFER_COUNT,
-    ).fill(null)
-    private readonly stencilViews: (GPUTextureView | null)[] = new Array(
-        STENCIL_BUFFER_COUNT,
-    ).fill(null)
+    private readonly stencilTextures: (GPUTexture | null)[] = new Array(STENCIL_BUFFER_COUNT).fill(
+        null,
+    )
+    private readonly stencilViews: (GPUTextureView | null)[] = new Array(STENCIL_BUFFER_COUNT).fill(
+        null,
+    )
     private stencilWidth = 0
     private stencilHeight = 0
 
@@ -1015,8 +1013,7 @@ export class TileRenderer {
         const effectivePageScale = goingHome ? page.homeScale : page.scale
         const pageScale = effectivePageScale * scale
         const anchorX =
-            dst.width / 2 +
-            pageScale * ((effectivePageX + x + WebGpuRenderer.offsetX) * dst.width)
+            dst.width / 2 + pageScale * ((effectivePageX + x + WebGpuRenderer.offsetX) * dst.width)
         const anchorY =
             dst.height / 2 +
             pageScale * ((effectivePageY + y + WebGpuRenderer.offsetY) * dst.height)
@@ -1081,12 +1078,7 @@ export class TileRenderer {
     }
 
     /** True if tile ([txi], [tyi]) of [gp]'s grid actually overlaps [dst]'s visible bounds. */
-    private tileVisible(
-        gp: GridPlacement,
-        dst: GPUTexture,
-        txi: number,
-        tyi: number,
-    ): boolean {
+    private tileVisible(gp: GridPlacement, dst: GPUTexture, txi: number, tyi: number): boolean {
         const ts = gp.ts
         const px = gp.snapX + txi * ts
         const py = gp.snapY + tyi * ts
@@ -1109,8 +1101,7 @@ export class TileRenderer {
         const pageScaleAtZoom1 = dst.width / page.width
         const pageScale = pageScaleAtZoom1 * scale
         const anchorX =
-            dst.width / 2 +
-            scale * (viewerOffsetX * dst.width + WebGpuRenderer.offsetX * dst.width)
+            dst.width / 2 + scale * (viewerOffsetX * dst.width + WebGpuRenderer.offsetX * dst.width)
         const anchorY =
             dst.height / 2 - scale * cameraDocY + scale * WebGpuRenderer.offsetY * dst.height
         const pageHeightDoc = page.height * pageScaleAtZoom1
@@ -1406,11 +1397,7 @@ export class TileRenderer {
      * Blit [st]'s cached tiles as one instanced draw. A frame that only moved the grid uploads
      * nothing - that lives in the uniform.
      */
-    private drawInstanced(
-        pass: GPURenderPassEncoder,
-        st: PageTiles,
-        useStencilMask: boolean,
-    ) {
+    private drawInstanced(pass: GPURenderPassEncoder, st: PageTiles, useStencilMask: boolean) {
         if (st.instancesDirty) this.uploadInstances(st)
         const instances = st.instances
         if (!instances) return
@@ -1795,11 +1782,7 @@ export class TileRenderer {
      * yet right here rather than leaving it queued - for callers that can't show less than fully
      * complete. [blitAvailableTiles] is the partial/progressive counterpart.
      */
-    renderFullyTiled(
-        pass: GPURenderPassEncoder,
-        page: ImageSingle,
-        dst: GPUTexture,
-    ): boolean {
+    renderFullyTiled(pass: GPURenderPassEncoder, page: ImageSingle, dst: GPUTexture): boolean {
         const st = this.drawGridForFullPage(pass, page, dst)
         if (!st) return false
         if (st.pending.size === 0) return true
@@ -1817,11 +1800,7 @@ export class TileRenderer {
      * Blit whatever's already cached into [dst], queuing anything missing for the background
      * worker rather than force-generating it.
      */
-    blitAvailableTiles(
-        pass: GPURenderPassEncoder,
-        page: ImageSingle,
-        dst: GPUTexture,
-    ): boolean {
+    blitAvailableTiles(pass: GPURenderPassEncoder, page: ImageSingle, dst: GPUTexture): boolean {
         return this.drawGridForFullPage(pass, page, dst) !== null
     }
 
@@ -1948,12 +1927,7 @@ export class TileRenderer {
     ): GPURenderPassDescriptor {
         return {
             colorAttachments: [
-                {
-                    view,
-                    loadOp: "clear",
-                    storeOp: "store",
-                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                },
+                { view, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } },
             ],
             ...(timestampWrites ? { timestampWrites } : {}),
         }

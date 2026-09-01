@@ -171,8 +171,7 @@ export function findAllCpu(
 
     // Same max -> exclusive-edge conversion the GPU readback does.
     return bounds.map(
-        b =>
-            new Rect(b.minX, b.minY, Math.min(b.maxX + 1, width), Math.min(b.maxY + 1, height)),
+        b => new Rect(b.minX, b.minY, Math.min(b.maxX + 1, width), Math.min(b.maxY + 1, height)),
     )
 }
 
@@ -319,7 +318,7 @@ export function detectBackgroundCpu(
         const inv = 1 / nonWhiteCount
         const channel = (i: number) =>
             Math.max(0, Math.min(255, Math.floor(linearToSrgb(linearSum[i] * inv) * 255 + 0.5)))
-        return ((0xff000000 | (channel(0) << 16) | (channel(1) << 8) | channel(2)) | 0)
+        return 0xff000000 | (channel(0) << 16) | (channel(1) << 8) | channel(2) | 0
     }
 
     if (whiteCount > 0) return 0xffffffff | 0

@@ -194,8 +194,8 @@ class TransitionFlip extends Transition {
 
         // One background rect for the whole frame, easing between the two pages' colours.
         const t = frac > 0 ? frac : -frac
-        const bg1 = page1.backgroundColor ?? (0xff000000 | 0)
-        const bg2 = page2.backgroundColor ?? (0xff000000 | 0)
+        const bg1 = page1.backgroundColor ?? 0xff000000 | 0
+        const bg2 = page2.backgroundColor ?? 0xff000000 | 0
         Draw.rectInto(encoder, dst, 0, 0, 1, 1, blendBackgroundColor(bg1, bg2, t))
 
         // The page that is not folding is drawn flat (`0`) underneath the one that is.
@@ -239,9 +239,7 @@ class TransitionFlip extends Transition {
         this.device.queue.writeBuffer(uniform, 0, this.scratch)
 
         const pass = encoder.beginRenderPass({
-            colorAttachments: [
-                { view: dst.createView(), loadOp: "load", storeOp: "store" },
-            ],
+            colorAttachments: [{ view: dst.createView(), loadOp: "load", storeOp: "store" }],
         })
 
         const pipeline = this.pipeline

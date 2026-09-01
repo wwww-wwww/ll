@@ -85,11 +85,7 @@ class TransitionFadeWhiteImpl extends Transition {
             this.pipelineOrNull = this.device.createRenderPipeline({
                 layout: "auto",
                 vertex: { module, entryPoint: "vs_main" },
-                fragment: {
-                    module,
-                    entryPoint: "fs_main",
-                    targets: [{ format: "rgba8unorm" }],
-                },
+                fragment: { module, entryPoint: "fs_main", targets: [{ format: "rgba8unorm" }] },
                 primitive: { topology: "triangle-list" },
             })
         }

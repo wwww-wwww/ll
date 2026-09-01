@@ -61,7 +61,12 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         return encoder.beginRenderPass({
             label,
             colorAttachments: [
-                { view: dst, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 0 } },
+                {
+                    view: dst,
+                    loadOp: "clear",
+                    storeOp: "store",
+                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                },
             ],
         })
     },

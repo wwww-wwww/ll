@@ -100,6 +100,14 @@ defmodule LLWeb.ReaderLive do
             />
           <% end %>
         </div>
+
+        <div id="reader-settings" phx-update="ignore">
+          <h2>Settings</h2>
+          <div>
+            <label for="chk_3dlut">3dlut</label>
+            <input id="chk_3dlut" type="checkbox" checked />
+          </div>
+        </div>
       </div>
     </div>
 

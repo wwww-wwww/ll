@@ -438,11 +438,7 @@ function getMaskedRectPipeline(): GPURenderPipeline {
             targets: [{ format: "rgba8unorm", blend: BLEND }],
         },
         primitive: { topology: "triangle-list" },
-        depthStencil: {
-            format: "stencil8",
-            depthWriteEnabled: false,
-            depthCompare: "always",
-        },
+        depthStencil: { format: "stencil8", depthWriteEnabled: false, depthCompare: "always" },
     })
     return maskedRectPipeline
 }

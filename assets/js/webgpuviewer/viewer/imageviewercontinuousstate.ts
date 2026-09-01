@@ -283,7 +283,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         targetScale: number,
         originX: number,
         originY: number,
-        spec: AnimationSpec = spring(STIFFNESS_MEDIUM, 0.002),
+        spec: AnimationSpec = spring(STIFFNESS_MEDIUM),
     ) {
         this.animationJob?.cancel()
 
@@ -482,8 +482,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         // Screen position of document space's origin - mirrors TileRenderer's continuous anchor
         // exactly, so the fast path, the tile cache and the render pages below all agree.
         const anchorX = dstW / 2 + s.scale * (s.offsetX * dstW + WebGpuRenderer.offsetX * dstW)
-        const anchorY =
-            dstH / 2 - s.scale * s.cameraDocY + s.scale * WebGpuRenderer.offsetY * dstH
+        const anchorY = dstH / 2 - s.scale * s.cameraDocY + s.scale * WebGpuRenderer.offsetY * dstH
 
         if (hasImagePage) {
             this.renderPass(encoder, texture, pass => {
@@ -517,8 +516,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
                         page.forEachImage((image, srcOffsetX) => {
                             if (image.mipmaps.length === 0) return
                             const docCenterX = pageScale * (srcOffsetX + image.x)
-                            const docCenterY =
-                                vp.docTop + 0.5 * vp.pageHeight + pageScale * image.y
+                            const docCenterY = vp.docTop + 0.5 * vp.pageHeight + pageScale * image.y
                             const [x, y] = solveImagePlacement(
                                 anchorX + s.scale * docCenterX,
                                 anchorY + s.scale * docCenterY,

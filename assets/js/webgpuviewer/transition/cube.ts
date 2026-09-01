@@ -273,9 +273,7 @@ class TransitionCubeImpl extends Transition {
         this.device.queue.writeBuffer(uniform, 0, matrix)
 
         const pass = encoder.beginRenderPass({
-            colorAttachments: [
-                { view: dst.createView(), loadOp: "load", storeOp: "store" },
-            ],
+            colorAttachments: [{ view: dst.createView(), loadOp: "load", storeOp: "store" }],
         })
 
         const pipeline = this.pipeline

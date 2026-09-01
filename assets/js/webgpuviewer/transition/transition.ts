@@ -262,7 +262,7 @@ export function blendBackgroundColor(bg1: number, bg2: number, t: number): numbe
         const blended = linearToSrgb(c1 + (c2 - c1) * t)
         return Math.max(0, Math.min(255, Math.trunc(blended * 255)))
     }
-    return ((0xff000000 | (channel(16) << 16) | (channel(8) << 8) | channel(0)) | 0)
+    return 0xff000000 | (channel(16) << 16) | (channel(8) << 8) | channel(0) | 0
 }
 
 /** Invalidate the transition cache. Keeps textures allocated for reuse. */

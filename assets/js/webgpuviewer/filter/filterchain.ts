@@ -126,9 +126,9 @@ export class FilterChain {
                     outHeight === surface.height
 
                 const dstSlot =
-                    direct ?
-                        null
-                        : this.acquire(outWidth, outHeight, filter.outputFormat, filter.usesCompute)
+                    direct ? null : (
+                        this.acquire(outWidth, outHeight, filter.outputFormat, filter.usesCompute)
+                    )
                 const dst = dstSlot?.view ?? surface.createView()
 
                 filter.run(this, encoder, src, width, height, dst, outWidth, outHeight)
@@ -239,7 +239,7 @@ export class FilterChain {
 
     private releaseAll() {
         this.sceneSlot = null
-        for (const slots of this.pool.values()) for (const slot of slots) (slot.inUse = false)
+        for (const slots of this.pool.values()) for (const slot of slots) slot.inUse = false
     }
 
     private destroyPool() {

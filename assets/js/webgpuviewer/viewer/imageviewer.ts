@@ -2,7 +2,6 @@ import {
     Job,
     Offset,
     STIFFNESS_MEDIUM,
-    STIFFNESS_MEDIUM_LOW,
     animate,
     animateDecay,
     animateDecay2d,
@@ -57,7 +56,6 @@ const WHEEL_ZOOM_DECADES = 0.05
  */
 const WHEEL_SCROLL_FRACTION = 0.15
 
-
 /**
  * How many notches [e] is worth, sign included.
  *
@@ -69,8 +67,10 @@ const WHEEL_SCROLL_FRACTION = 0.15
  */
 function wheelNotches(e: WheelEvent): number {
     const notches =
-        e.deltaMode === 1 ? e.deltaY // lines
-            : e.deltaMode === 2 ? e.deltaY * 10 // pages
+        e.deltaMode === 1 ?
+            e.deltaY // lines
+            : e.deltaMode === 2 ?
+                e.deltaY * 10 // pages
                 : e.deltaY / 100 // pixels - ~100px is one notch in every engine that reports them
     return coerceIn(notches, -3, 3)
 }
@@ -253,12 +253,9 @@ export class ImageViewerElement extends HTMLCanvasElement {
 
         const rect = this.getBoundingClientRect()
         page.animateTo({
-            origin: {
-                x: (e.clientX - rect.x) / rect.width,
-                y: (e.clientY - rect.y) / rect.height,
-            },
+            origin: { x: (e.clientX - rect.x) / rect.width, y: (e.clientY - rect.y) / rect.height },
             targetScale,
-            spec: spring(STIFFNESS_MEDIUM, 0.002),
+            spec: spring(STIFFNESS_MEDIUM),
         })
     }
 
@@ -296,7 +293,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 target,
                 (e.clientX - rect.x) / rect.width - 0.5,
                 (e.clientY - rect.y) / rect.height - 0.5,
-                spring(STIFFNESS_MEDIUM, 0.002),
+                spring(STIFFNESS_MEDIUM),
             )
             return
         }
@@ -409,15 +406,10 @@ export class ImageViewerElement extends HTMLCanvasElement {
             if (!secondDown) {
                 pageTurnJob?.cancel()
                 if (state.pageOffset !== 0) {
-                    state.animationJob = animate(
-                        state.pageOffset,
-                        0,
-                        spring(STIFFNESS_MEDIUM_LOW, 0.002),
-                        value => {
-                            state.pageOffset = value
-                            state.invalidate()
-                        },
-                    )
+                    state.animationJob = animate(state.pageOffset, 0, spring(), value => {
+                        state.pageOffset = value
+                        state.invalidate()
+                    })
                 }
                 page.animateTo({ origin: { x: 0.5, y: 0.5 } })
                 if (!stoppedMotion) {
@@ -493,8 +485,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                         const px = origin.x / state.width - 0.5
                         const py = origin.y / state.height - 0.5
 
-                        page.scale =
-                            originalScale * Math.pow(10, (2 * totalDeltaY) / state.height)
+                        page.scale = originalScale * Math.pow(10, (2 * totalDeltaY) / state.height)
                         const diff = 1 / page.scale - 1 / originalScale
 
                         page.setPos(orZero(originalX + px * diff), orZero(originalY + py * diff))
@@ -545,9 +536,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 page.isScaleAnimating = false
             })
         } else {
-            page.animateTo({
-                origin: { x: origin.x / state.width, y: origin.y / state.height },
-            })
+            page.animateTo({ origin: { x: origin.x / state.width, y: origin.y / state.height } })
         }
     }
 
@@ -617,10 +606,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                     if (!pageTurning) {
                         velocityTracker.add(event.raw.timeStamp, change.current)
                         single = false
-                        scaleOrigin = {
-                            x: centroid.x / state.width,
-                            y: centroid.y / state.height,
-                        }
+                        scaleOrigin = { x: centroid.x / state.width, y: centroid.y / state.height }
                     }
                 } else if (single) {
                     velocityTracker.add(event.raw.timeStamp, change.current)
@@ -672,8 +658,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                             if (single) {
                                 const clampedX = coerceIn(x, minX, maxX)
                                 const clampedY = coerceIn(y, minY, maxY)
-                                const overflow =
-                                    state.isVertical ? y - clampedY : x - clampedX
+                                const overflow = state.isVertical ? y - clampedY : x - clampedX
                                 const isBiased =
                                     state.isVertical ?
                                         Math.abs(acc.y) > Math.abs(acc.x)
@@ -730,7 +715,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             state.animationJob = animate(
                 state.pageOffset,
                 target,
-                spring(STIFFNESS_MEDIUM_LOW, 0.002),
+                spring(),
                 value => {
                     state.pageOffset = value
                     state.invalidate()

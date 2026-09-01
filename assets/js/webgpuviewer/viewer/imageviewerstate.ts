@@ -2,7 +2,6 @@ import {
     Job,
     OFFSET_ZERO,
     Offset,
-    STIFFNESS_MEDIUM_LOW,
     animate,
     coerceAtLeast,
     coerceAtMost,
@@ -14,11 +13,7 @@ import { TileRenderer } from "../renderer/tilerenderer"
 import { FilterChain } from "../filter/filterchain"
 import { WebGpuRenderer } from "../renderer/renderer"
 import { Mipmap } from "../renderer/mipmap"
-import {
-    Transition,
-    invalidateCache,
-    rotateCacheOnPageChange,
-} from "../transition/transition"
+import { Transition, invalidateCache, rotateCacheOnPageChange } from "../transition/transition"
 import { TransitionBasic, TransitionBasicVerticalInstance } from "../transition/transitions"
 import { ImagePage, ImageSingle } from "./imagepage"
 
@@ -159,15 +154,10 @@ export class ImageViewerState {
         this.animationJob?.cancel()
         this.setPageOffsetDirect(direction)
         this.invalidate()
-        const job = animate(
-            direction,
-            0,
-            spring(STIFFNESS_MEDIUM_LOW, 0.002),
-            value => {
-                this.setPageOffsetDirect(value)
-                this.invalidate()
-            },
-        )
+        const job = animate(direction, 0, spring(), value => {
+            this.setPageOffsetDirect(value)
+            this.invalidate()
+        })
         this.animationJob = job
         job.promise.then(() => {
             // Only if this turn is still the current one. A cancelled job's promise still settles,

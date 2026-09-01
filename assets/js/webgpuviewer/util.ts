@@ -66,7 +66,7 @@ export class Rect {
 
 /** Colours are ARGB ints, the same 0xAARRGGBB packing the Kotlin uses throughout. */
 export function argb(a: number, r: number, g: number, b: number): number {
-    return ((a << 24) | (r << 16) | (g << 8) | b) | 0
+    return (a << 24) | (r << 16) | (g << 8) | b | 0
 }
 
 export function alphaOf(color: number): number {
@@ -215,13 +215,17 @@ export function launch(body: (job: Job) => Promise<void>): Job {
 /** Compose's `Spring.StiffnessMedium` / `StiffnessMediumLow` / `StiffnessLow`. */
 export const STIFFNESS_MEDIUM = 1500
 export const STIFFNESS_MEDIUM_LOW = 400
-export const STIFFNESS_LOW = 200
 
-/** `Spring.DampingRatioNoBouncy` and friends. */
-export const DAMPING_NO_BOUNCY = 1
-export const DAMPING_LOW_BOUNCY = 0.75
-export const DAMPING_MEDIUM_BOUNCY = 0.5
-export const DAMPING_HIGH_BOUNCY = 0.2
+let scale = 0.5
+
+export function animationScale(): number {
+    return scale
+}
+
+export function setAnimationScale(value: number) {
+    if (!Number.isFinite(value)) return
+    scale = value
+}
 
 /** One animation's state at a point in time. */
 export interface AnimationFrame {
@@ -260,8 +264,8 @@ export type AnimationSpec = (
  */
 export function spring(
     stiffness: number = STIFFNESS_MEDIUM_LOW,
-    visibilityThreshold: number = 0.002,
-    dampingRatio: number = DAMPING_NO_BOUNCY,
+    visibilityThreshold: number = 0.0005,
+    dampingRatio: number = 1,
 ): AnimationSpec {
     const omega = Math.sqrt(stiffness)
     const zeta = Math.max(0, dampingRatio)
@@ -281,10 +285,7 @@ export function spring(
             const c = v0 + omega * d0
             solve = t => {
                 const decay = Math.exp(-omega * t)
-                return {
-                    offset: (d0 + c * t) * decay,
-                    velocity: (v0 - omega * c * t) * decay,
-                }
+                return { offset: (d0 + c * t) * decay, velocity: (v0 - omega * c * t) * decay }
             }
         } else if (zeta < 1) {
             // Underdamped: oscillates toward the target inside an exponential envelope.
@@ -298,8 +299,7 @@ export function spring(
                 return {
                     offset: decay * (a * cos + b * sin),
                     velocity:
-                        decay *
-                        (-zeta * omega * (a * cos + b * sin) + wd * (b * cos - a * sin)),
+                        decay * (-zeta * omega * (a * cos + b * sin) + wd * (b * cos - a * sin)),
                 }
             }
         } else {
@@ -375,13 +375,23 @@ export function animate(
 
     const solve = spec(from, to, initialVelocity)
 
+    // Fixed for this run: see [setAnimationScale].
+    const timeScale = animationScale()
+
     return launch(async job => {
         const start = performance.now()
         while (true) {
             const now = await nextFrame()
             job.ensureActive()
 
-            const frame = solve((now - start) / 1000)
+            // Animations off - still a frame late rather than synchronous, so a caller that starts
+            // one and reads the value back gets the same ordering it does at any other scale.
+            if (timeScale === 0) {
+                block(coerceIn(to, lowerBound, upperBound), 0)
+                return
+            }
+
+            const frame = solve((now - start) / 1000 / timeScale)
 
             if (frame.value <= lowerBound) {
                 block(lowerBound, 0)
@@ -415,12 +425,18 @@ export function animateDecay(
     absVelocityThreshold: number = 0.1,
 ): Job {
     const k = -4.2 * frictionMultiplier
+    const timeScale = animationScale()
     return launch(async job => {
         const start = performance.now()
         while (true) {
             const now = await nextFrame()
             job.ensureActive()
-            const decay = Math.exp(k * ((now - start) / 1000))
+            // Animations off - the glide's whole distance at once, x(inf) = -v0/k.
+            if (timeScale === 0) {
+                block(-initialVelocity / k, 0)
+                return
+            }
+            const decay = Math.exp(k * ((now - start) / 1000 / timeScale))
             const velocity = initialVelocity * decay
             // x(t) = v0 / k * (e^(kt) - 1)
             block((initialVelocity / k) * (decay - 1), velocity)
@@ -443,10 +459,7 @@ export function animateDecay2d(
             const t = (now - start) / 1000
             const decay = Math.exp(k * t)
             const v = { x: velocity.x * decay, y: velocity.y * decay }
-            const value = {
-                x: (velocity.x / k) * (decay - 1),
-                y: (velocity.y / k) * (decay - 1),
-            }
+            const value = { x: (velocity.x / k) * (decay - 1), y: (velocity.y / k) * (decay - 1) }
             block(value, v)
             if (distance(v) < 1) return
         }

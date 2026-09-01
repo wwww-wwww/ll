@@ -356,7 +356,13 @@ export class Image {
             try {
                 for (const level of levels) {
                     image.mipmaps.push(
-                        await Mipmap.create(level.pixels, level.w, level.h, level.scale, MIPMAP_TILE_SIZE),
+                        await Mipmap.create(
+                            level.pixels,
+                            level.w,
+                            level.h,
+                            level.scale,
+                            MIPMAP_TILE_SIZE,
+                        ),
                     )
                 }
             } catch (e) {
@@ -407,18 +413,10 @@ export class Image {
      * The mip level, 2x2 window and placement the filtered shader needs, or null if nothing has
      * been uploaded yet.
      */
-    prepareForRender(
-        dst: GPUTexture,
-        x: number,
-        y: number,
-        scale: number,
-    ): MipMapForDraw | null {
+    prepareForRender(dst: GPUTexture, x: number, y: number, scale: number): MipMapForDraw | null {
         if (this.mipmaps.length === 0) return null
 
-        let level = Math.max(
-            0,
-            Math.min(Math.floor(Math.log2(1 / scale)), this.mipmaps.length - 1),
-        )
+        let level = Math.max(0, Math.min(Math.floor(Math.log2(1 / scale)), this.mipmaps.length - 1))
 
         // Scale alone isn't enough: getQuad only promises half a tile either side of the view
         // centre, so the viewport must fit in one tile's texels. A <=2x2 grid binds in one go
@@ -450,9 +448,7 @@ export class Image {
         return {
             mipmap,
             quad,
-            x:
-                (0.5 / scale + adjustedX) * mipmap.scale +
-                (quad.x - 0.5 * mipmap.width) / dst.width,
+            x: (0.5 / scale + adjustedX) * mipmap.scale + (quad.x - 0.5 * mipmap.width) / dst.width,
             y:
                 (0.5 / scale + adjustedY) * mipmap.scale +
                 (quad.y - 0.5 * mipmap.height) / dst.height,
@@ -466,12 +462,7 @@ export class Image {
      * silently drop content once the viewport needs more than that window covers. No coarse-level
      * guard is needed here since any viewport is just whichever tiles it happens to overlap.
      */
-    prepareTilesForRender(
-        dst: GPUTexture,
-        x: number,
-        y: number,
-        scale: number,
-    ): TileForDraw[] {
+    prepareTilesForRender(dst: GPUTexture, x: number, y: number, scale: number): TileForDraw[] {
         if (this.mipmaps.length === 0) return []
 
         const level = Math.max(
@@ -490,23 +481,19 @@ export class Image {
         const halfW = (dst.width * mipmap.scale) / (2 * scale)
         const halfH = (dst.height * mipmap.scale) / (2 * scale)
 
-        return mipmap
-            .tilesInRect(cx - halfW, cy - halfH, cx + halfW, cy + halfH)
-            .map(tile => ({
-                // Same reconstruction prepareForRender uses for quad.x/quad.y, evaluated at this
-                // tile's own offset instead - the formula was already general, it just happened
-                // to only ever be evaluated at one window's offset before.
-                texture: tile.texture,
-                view: tile.view,
-                uniform: tile.uniform,
-                x:
-                    (0.5 / scale + adjustedX) * mipmap.scale +
-                    (tile.x - 0.5 * mipmap.width) / dst.width,
-                y:
-                    (0.5 / scale + adjustedY) * mipmap.scale +
-                    (tile.y - 0.5 * mipmap.height) / dst.height,
-                scale: scale / mipmap.scale,
-            }))
+        return mipmap.tilesInRect(cx - halfW, cy - halfH, cx + halfW, cy + halfH).map(tile => ({
+            // Same reconstruction prepareForRender uses for quad.x/quad.y, evaluated at this
+            // tile's own offset instead - the formula was already general, it just happened
+            // to only ever be evaluated at one window's offset before.
+            texture: tile.texture,
+            view: tile.view,
+            uniform: tile.uniform,
+            x: (0.5 / scale + adjustedX) * mipmap.scale + (tile.x - 0.5 * mipmap.width) / dst.width,
+            y:
+                (0.5 / scale + adjustedY) * mipmap.scale +
+                (tile.y - 0.5 * mipmap.height) / dst.height,
+            scale: scale / mipmap.scale,
+        }))
     }
 }
 

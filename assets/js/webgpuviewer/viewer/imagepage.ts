@@ -2,9 +2,9 @@ import {
     AnimationSpec,
     Job,
     Offset,
-    STIFFNESS_MEDIUM_LOW,
     alphaOf,
     animate,
+    animationScale,
     closeTo,
     coerceIn,
     colorToFloats,
@@ -77,13 +77,7 @@ export class ImagePage {
      * clear [dst] itself, as this default does: `getCurrentTexture` rotates buffers, so leaving it
      * alone shows stale content from several frames back.
      */
-    renderWith(
-        encoder: GPUCommandEncoder,
-        x: number,
-        y: number,
-        scale: number,
-        dst: GPUTexture,
-    ) {
+    renderWith(encoder: GPUCommandEncoder, x: number, y: number, scale: number, dst: GPUTexture) {
         Draw.clear(encoder, dst, 0)
     }
 
@@ -303,15 +297,19 @@ export class ImagePage {
         this.fadePending = false
         this.fadeJob?.cancel()
 
+        // Against the scaled duration, since that is how long the fade will really take - the
+        // clock here is wall time, and [animate] is what applies the scale to the rest of it. Also
+        // what makes a scale of 0 land this on 1 outright.
         const elapsed = performance.now() - this.fadeStartMillis
-        if (elapsed >= this.fadeMillis) {
+        const total = this.fadeMillis * animationScale()
+        if (elapsed >= total) {
             this._fade = 1
             return
         }
-        const from = elapsed / this.fadeMillis
+        const from = elapsed / total
         this._fade = from
 
-        this.fadeJob = animate(from, 1, tween(this.fadeMillis - elapsed), value => {
+        this.fadeJob = animate(from, 1, tween(this.fadeMillis * (1 - from)), value => {
             this._fade = value
             // invalidate(), not onInvalidate: its frameVersion bump re-seeds a transition's
             // cached copy, which would otherwise hold the veil at whatever it was seeded with.
@@ -579,14 +577,16 @@ export class ImagePage {
         this.animateTo({ targetScale: this.homeScale })
     }
 
-    animateTo(options: {
-        origin?: Offset | null
-        targetX?: number
-        targetY?: number
-        targetScale?: number
-        /** Defaults to the viewer's usual spring - wheel zoom wants a snappier one. */
-        spec?: AnimationSpec
-    } = {}) {
+    animateTo(
+        options: {
+            origin?: Offset | null
+            targetX?: number
+            targetY?: number
+            targetScale?: number
+            /** Defaults to the viewer's usual spring - wheel zoom wants a snappier one. */
+            spec?: AnimationSpec
+        } = {},
+    ) {
         const origin = options.origin ?? null
         const targetX = options.targetX ?? this.homeX
         const targetY = options.targetY ?? this.homeY
@@ -632,10 +632,11 @@ export class ImagePage {
 
         // The animate job itself, not a wrapper around it: cancelling `animationJob` has to stop
         // the frame callbacks, and a wrapper's cancel would only unblock its own await.
-        const job = animate(0, 1, options.spec ?? spring(STIFFNESS_MEDIUM_LOW, 0.002), value => {
+        const job = animate(0, 1, options.spec ?? spring(), value => {
             const currentScale = startScale + (targetScale - startScale) * value
             const c =
-                scaleChanging ? coerceIn((1 / currentScale - 1 / startScale) / diffEnd, 0, 1)
+                scaleChanging ?
+                    coerceIn((1 / currentScale - 1 / startScale) / diffEnd, 0, 1)
                     : value
 
             this.setPos(
@@ -731,20 +732,12 @@ export class RenderPageBase extends ImagePage {
     // Unlike the base default (a fixed "home" position, right for DummyPage - it has nothing
     // pan-worthy anyway), this page's own render() gets its *live* pan/zoom transform, so its
     // drawn content can track a drag/pinch the way an image page's would.
-    override drawLive(
-        encoder: GPUCommandEncoder,
-        dst: GPUTexture,
-        tiles: TileRenderer,
-    ): boolean {
+    override drawLive(encoder: GPUCommandEncoder, dst: GPUTexture, tiles: TileRenderer): boolean {
         this.renderWith(encoder, this.x, this.y, this.scale, dst)
         return false
     }
 
-    override renderCacheSeed(
-        encoder: GPUCommandEncoder,
-        tex: GPUTexture,
-        tiles: TileRenderer,
-    ) {
+    override renderCacheSeed(encoder: GPUCommandEncoder, tex: GPUTexture, tiles: TileRenderer) {
         this.renderWith(encoder, this.x, this.y, this.scale, tex)
     }
 
@@ -792,13 +785,7 @@ export class RenderPageBase extends ImagePage {
      * page's own declared width/height plus the same x/y/scale [render] received. Matters once
      * dst is shared with other pages (the continuous viewer) instead of being this page's own.
      */
-    protected fillPage(
-        dst: GPUTexture,
-        x: number,
-        y: number,
-        scale: number,
-        color: number,
-    ) {
+    protected fillPage(dst: GPUTexture, x: number, y: number, scale: number, color: number) {
         const halfWidthFrac = (scale * this.width) / (2 * dst.width)
         const halfHeightFrac = (scale * this.height) / (2 * dst.height)
         const cx = 0.5 + scale * x
@@ -849,13 +836,7 @@ export class RenderPageBase extends ImagePage {
      * since there [dst] is one screen texture shared by several visible pages at once. [render]
      * is responsible for painting over every pixel of its own footprint here.
      */
-    renderLoaded(
-        encoder: GPUCommandEncoder,
-        x: number,
-        y: number,
-        scale: number,
-        dst: GPUTexture,
-    ) {
+    renderLoaded(encoder: GPUCommandEncoder, x: number, y: number, scale: number, dst: GPUTexture) {
         this.openPassAndRender(encoder, x, y, scale, dst, false)
     }
 
@@ -1087,10 +1068,7 @@ export class ImageSingle extends ImagePage {
     }
 
     /** Opens a clearing pass on [tex], no stencil - a transition's cache is never masked. */
-    private beginCachePass(
-        encoder: GPUCommandEncoder,
-        tex: GPUTexture,
-    ): GPURenderPassEncoder {
+    private beginCachePass(encoder: GPUCommandEncoder, tex: GPUTexture): GPURenderPassEncoder {
         return encoder.beginRenderPass({
             colorAttachments: [
                 {
@@ -1109,11 +1087,7 @@ export class ImageSingle extends ImagePage {
      * to the plain [renderWith]; everything else goes through the tile cache, backfilling with
      * [renderPage] wherever it isn't covered yet.
      */
-    override drawLive(
-        encoder: GPUCommandEncoder,
-        dst: GPUTexture,
-        tiles: TileRenderer,
-    ): boolean {
+    override drawLive(encoder: GPUCommandEncoder, dst: GPUTexture, tiles: TileRenderer): boolean {
         if (this.isAnimated) {
             const pass = this.beginLivePass(encoder, dst, tiles)
             try {
@@ -1143,11 +1117,7 @@ export class ImageSingle extends ImagePage {
         }
     }
 
-    override renderCacheSeed(
-        encoder: GPUCommandEncoder,
-        tex: GPUTexture,
-        tiles: TileRenderer,
-    ) {
+    override renderCacheSeed(encoder: GPUCommandEncoder, tex: GPUTexture, tiles: TileRenderer) {
         if (this.isAnimated) {
             const pass = this.beginCachePass(encoder, tex)
             try {
@@ -1174,10 +1144,7 @@ export class ImageSingle extends ImagePage {
         }
     }
 
-    override newlyAvailableTileKeys(
-        tiles: TileRenderer,
-        tex: GPUTexture,
-    ): Set<number> | null {
+    override newlyAvailableTileKeys(tiles: TileRenderer, tex: GPUTexture): Set<number> | null {
         return !this.highQuality || this.isAnimated ? null : tiles.availableTileKeys(this, tex)
     }
 
@@ -1298,12 +1265,7 @@ export class ImageSingle extends ImagePage {
             return coerceIn(1 - deltaPixels / fadeDistancePixels, 0, 1)
         }
 
-        const boundProximity = (
-            value: number,
-            lo: number,
-            hi: number,
-            pixelsPerUnit: number,
-        ) => {
+        const boundProximity = (value: number, lo: number, hi: number, pixelsPerUnit: number) => {
             let overflow: number
             if (value < lo) overflow = lo - value
             else if (value > hi) overflow = value - hi
@@ -1333,7 +1295,8 @@ export class ImageSingle extends ImagePage {
 
         const bgAlpha =
             parent ?
-                currentScale > minScale ? boundsProximityAt(currentScale)
+                currentScale > minScale ?
+                    boundsProximityAt(currentScale)
                     : Math.max(
                         Math.min(proximity(homeScale), boundsProximityAt(homeScale)),
                         Math.min(proximity(minScale), boundsProximityAt(minScale)),
@@ -1341,14 +1304,14 @@ export class ImageSingle extends ImagePage {
                 : 1
 
         const bg = image.backgroundColor
-        const a = Math.trunc((((bg >>> 24) & 0xff)) * bgAlpha)
+        const a = Math.trunc(((bg >>> 24) & 0xff) * bgAlpha)
         if (a <= 0) return
 
         const x1 = this.backgroundSpansFullWidth ? 0 : rect[0]
         const x2 = this.backgroundSpansFullWidth ? 1 : rect[2]
         // Alpha only. Both pipelines already blend with SrcAlpha, so scaling rgb applied the fade
         // twice and took the crossfade through black on the way.
-        const bgColor = ((a << 24) | (bg & 0xffffff)) | 0
+        const bgColor = (a << 24) | (bg & 0xffffff) | 0
         if (maskedBackground) RenderPage.drawMaskedRect(pass, x1, 0, x2, 1, bgColor)
         else Draw.rect(pass, x1, 0, x2, 1, bgColor)
     }
@@ -1384,7 +1347,13 @@ export class ImageSingle extends ImagePage {
                 const placeX = this.x + x + srcOffsetX / dst.width
                 const placeY = this.y + y
                 const placeScale = this.scale * scale
-                action(img, img.placement(dst, placeX, placeY, placeScale), placeX, placeY, placeScale)
+                action(
+                    img,
+                    img.placement(dst, placeX, placeY, placeScale),
+                    placeX,
+                    placeY,
+                    placeScale,
+                )
             }
         })
     }
@@ -1515,21 +1484,13 @@ export class ImageSpread extends ImageSingle {
         return this.left === null || this.right === null
     }
 
-    override drawLive(
-        encoder: GPUCommandEncoder,
-        dst: GPUTexture,
-        tiles: TileRenderer,
-    ): boolean {
+    override drawLive(encoder: GPUCommandEncoder, dst: GPUTexture, tiles: TileRenderer): boolean {
         const covered = super.drawLive(encoder, dst, tiles)
         this.drawRenderSides(encoder, dst)
         return covered
     }
 
-    override renderCacheSeed(
-        encoder: GPUCommandEncoder,
-        tex: GPUTexture,
-        tiles: TileRenderer,
-    ) {
+    override renderCacheSeed(encoder: GPUCommandEncoder, tex: GPUTexture, tiles: TileRenderer) {
         super.renderCacheSeed(encoder, tex, tiles)
         this.drawRenderSides(encoder, tex)
     }
@@ -1621,11 +1582,7 @@ export class ImageSpread extends ImageSingle {
      * side. An image side goes through `Image.placement` so its own `Image.x` counts; a render
      * side has no such offset and gets the same formula without it.
      */
-    private sideColumn(
-        side: ImagePage,
-        srcOffsetX: number,
-        dst: GPUTexture,
-    ): [number, number] {
+    private sideColumn(side: ImagePage, srcOffsetX: number, dst: GPUTexture): [number, number] {
         if (this.backgroundSpansFullWidth) return [0, 1]
         const placeX = this.x + srcOffsetX / dst.width
         const image = side instanceof ImageSingle ? side.currentImage : null

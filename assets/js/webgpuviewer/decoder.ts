@@ -330,9 +330,7 @@ export class ImageDecoder {
     static shared(): ImageDecoder | null {
         if (ImageDecoder.instance !== undefined) return ImageDecoder.instance
         try {
-            const url = URL.createObjectURL(
-                new Blob([WORKER_SOURCE], { type: "text/javascript" }),
-            )
+            const url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }))
             const worker = new Worker(url)
             // The worker holds its own reference once constructed.
             URL.revokeObjectURL(url)

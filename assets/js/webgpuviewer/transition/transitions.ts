@@ -194,11 +194,7 @@ class TransitionFadeImpl extends Transition {
             this.blendPipelineOrNull = this.device.createRenderPipeline({
                 layout: "auto",
                 vertex: { module, entryPoint: "vs_main" },
-                fragment: {
-                    module,
-                    entryPoint: "fs_main",
-                    targets: [{ format: "rgba8unorm" }],
-                },
+                fragment: { module, entryPoint: "fs_main", targets: [{ format: "rgba8unorm" }] },
                 primitive: { topology: "triangle-list" },
             })
         }
@@ -275,8 +271,8 @@ class TransitionFadeImpl extends Transition {
         // blend: 0 = fully page1, 1 = fully page2
         const blend = frac > 0 ? frac : -frac
 
-        const bg1 = page1.backgroundColor ?? (0xff000000 | 0)
-        const bg2 = page2.backgroundColor ?? (0xff000000 | 0)
+        const bg1 = page1.backgroundColor ?? 0xff000000 | 0
+        const bg2 = page2.backgroundColor ?? 0xff000000 | 0
 
         this.blendCached(encoder, dst, cached1, cached2, bg1, bg2, blend)
     }

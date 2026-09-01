@@ -456,7 +456,12 @@ export class Mipmap {
 
         const t00 = this.textures[r0 + c0]
         const quad = new Quad(
-            [this.textures[r0 + c0], this.textures[r0 + c1], this.textures[r1 + c0], this.textures[r1 + c1]],
+            [
+                this.textures[r0 + c0],
+                this.textures[r0 + c1],
+                this.textures[r1 + c0],
+                this.textures[r1 + c1],
+            ],
             [
                 this.textureViews[r0 + c0],
                 this.textureViews[r0 + c1],

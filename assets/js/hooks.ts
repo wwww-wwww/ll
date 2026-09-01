@@ -123,6 +123,45 @@ class Reader extends ViewHook {
 
     private key_event!: ((e: KeyboardEvent) => void) | null
 
+    get_storage(name: string): string | null {
+        return window.localStorage.getItem(`${this.constructor.name}-${name}`)
+    }
+
+    set_storage(name: string, value: string | number) {
+        window.localStorage.setItem(`${this.constructor.name}-${name}`, value.toString())
+    }
+
+    /**
+     * Wire one checkbox in `#reader-settings` to a viewer setting, remembering it across reloads.
+     *
+     * Storage wins over the markup, [fallback] over nothing stored - and the box is set from that
+     * answer rather than read for it. The panel is `phx-update="ignore"`, so a browser is free to
+     * restore whatever was ticked last time on a reload, which is not the same thing as what this
+     * reader was told to do.
+     *
+     * Missing markup is not an error: the settings panel is not on every page this hook runs on.
+     */
+    private bindSetting(id: string, apply: (on: boolean) => void, fallback: boolean) {
+        const box = document.getElementById(id) as HTMLInputElement | null
+        if (!box) return
+
+        const saved = this.get_storage(id)
+        const on = saved === null ? fallback : saved === "true"
+        box.checked = on
+        apply(on)
+
+        const listener = () => {
+            this.set_storage(id, box.checked.toString())
+            apply(box.checked)
+        }
+        box.addEventListener("change", listener)
+        // The panel is outside this hook's element and survives it, so the listener has to come off
+        // in [destroyed] - left on, a re-mounted hook would stack another pointing at a dead viewer.
+        this.unbind.push(() => box.removeEventListener("change", listener))
+    }
+
+    private readonly unbind: (() => void)[] = []
+
     mounted() {
         this.e_page = this.el.querySelector(".info>.page")!
         this.e_interstitial = this.el.querySelector(".interstitial")!
@@ -193,6 +232,8 @@ class Reader extends ViewHook {
         this.continuous = continuous
 
         this.init(continuous).then(() => {
+            this.bindSetting("chk_3dlut", on => (this.viewer.colorManagement = on), true)
+
             // Right-to-left, as the arrow-key bindings below have always assumed - but a
             // continuous viewer scrolls top-to-bottom, and reversing it would send the arrow keys
             // and the tap regions the wrong way.
@@ -234,6 +275,8 @@ class Reader extends ViewHook {
 
     destroyed() {
         window.removeEventListener("keydown", this.key_event!)
+        this.unbind.forEach(off => off())
+        this.unbind.length = 0
     }
 }
 

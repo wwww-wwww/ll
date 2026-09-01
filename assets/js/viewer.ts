@@ -1,8 +1,8 @@
 import { Job, closeTo, coerceIn, launch } from "./webgpuviewer/util"
 import { DecodeAborted, ImageDecoder, closeLevels } from "./webgpuviewer/decoder"
 import { MIPMAP_TILE_SIZE, Image } from "./webgpuviewer/renderer/image"
+import { applyDisplayCorrection } from "./webgpuviewer/filter/colormanagement"
 import { WebGpuRenderer } from "./webgpuviewer/renderer/renderer"
-import { UpscalerArtCnn } from "./webgpuviewer/renderer/upscalerartcnn"
 import { Transition, invalidateCache } from "./webgpuviewer/transition/transition"
 import {
     TransitionBasic,
@@ -29,6 +29,7 @@ import {
 } from "./webgpuviewer/viewer/imagepage"
 import { ImageViewerElement } from "./webgpuviewer/viewer/imageviewer"
 import { ImageViewerContinuousState } from "./webgpuviewer/viewer/imageviewercontinuousstate"
+import { UpscalerCatmullRom } from "./webgpuviewer"
 
 /**
  * yuriyomi's reader - the port of Mihon's `WebGpuViewer.kt` onto this app's page model.
@@ -81,10 +82,7 @@ const DOWNLOAD_SHARE = 0.9
 
 /** True for the rejection an [AbortController] produces, which is a cancellation, not a failure. */
 function isAbort(e: unknown): boolean {
-    return (
-        e instanceof DecodeAborted ||
-        (e instanceof DOMException && e.name === "AbortError")
-    )
+    return e instanceof DecodeAborted || (e instanceof DOMException && e.name === "AbortError")
 }
 
 /** Page processing state, as `WebGpuViewer.PageState`. */
@@ -148,6 +146,18 @@ export interface ViewerConfig {
     continuous: boolean
     /** Compose spreads out of `order`-paired files. */
     dualPage: boolean
+    /**
+     * Apply the display's colour transform to the frame - see `filter/colormanagement.ts`.
+     *
+     * Only ever does anything on Firefox, which hands a WebGPU canvas to the compositor
+     * untransformed. Costs a probe the first time it is switched on.
+     *
+     * Off here, on in the reader: the `chk_3dlut` setting is what a viewer in the page actually
+     * follows (see `bindSetting` in hooks.ts), and it is applied a moment after the element is
+     * built. Defaulting this on as well would start the probe for a reader whose saved setting is
+     * about to switch it off.
+     */
+    colorManagement: boolean
 }
 
 const DEFAULT_CONFIG: ViewerConfig = {
@@ -168,6 +178,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
     vertical: false,
     continuous: false,
     dualPage: true,
+    colorManagement: false,
 }
 
 /**
@@ -408,16 +419,45 @@ export class Viewer extends ImageViewerElement {
      * draws nothing at all.
      */
     /**
-     * The upscaler both states share - see `Rescaler`. One instance, since it owns the network's
+     * The upscaler both states share - see `Rescaler`. One instance, since a rescaler can own GPU
      * intermediates and [bindState] runs again for the continuous state.
      */
-    private readonly upscaler = new UpscalerArtCnn()
+    private readonly upscaler = new UpscalerCatmullRom()
+
+    /**
+     * Bring the output filter chain in line with [config]. Called from [bindState] and [configure],
+     * so it runs both when a state is bound and whenever a setting changes.
+     *
+     * The chain belongs to the renderer, so both states share one and this is idempotent by
+     * construction - see `ImageViewerState.filters`.
+     */
+    private applyFilters() {
+        applyDisplayCorrection(this.state.filters, () => this.config.colorManagement)
+    }
+
+    /**
+     * [ViewerConfig.colorManagement], settable on its own.
+     *
+     * Not through [configure], which drops the page cache and re-decodes the preload window - the
+     * right thing for a setting that changes what a page decodes to, and far too much for one that
+     * only adds a pass over the finished frame. Nothing cached needs rebuilding, so this redraws
+     * and stops there.
+     */
+    get colorManagement(): boolean {
+        return this.config.colorManagement
+    }
+
+    set colorManagement(on: boolean) {
+        if (this.config.colorManagement === on) return
+        this.config.colorManagement = on
+        this.applyFilters()
+        this.state.invalidate()
+    }
 
     private bindState() {
-        // Kept off the fast path either way, and it declines any tile with less than 2x of zoom to
-        // give it - so ordinary fit-width reading resolves through Catmull-Rom exactly as before.
         this.state.upscaler = this.upscaler
 
+        this.applyFilters()
 
         // A pure lookup, as in Mihon's own `fetchPage`: admission belongs to [preloadAround].
         //
@@ -528,6 +568,7 @@ export class Viewer extends ImageViewerElement {
         this.state.isReversed = this.config.reversed
         this.state.isVertical = this.config.vertical
         this.state.transition = this.transitionFor(this.config.transition)
+        this.applyFilters()
 
         this.dropCache()
         this.preloadAround(this.currentIndex)
@@ -600,7 +641,9 @@ export class Viewer extends ImageViewerElement {
 
         if (grouping === null) {
             urls.forEach((url, i) =>
-                this.pageList.push(this.makePage(this.pageList.length, [url], i, SpreadPosition.Single)),
+                this.pageList.push(
+                    this.makePage(this.pageList.length, [url], i, SpreadPosition.Single),
+                ),
             )
         } else {
             const remaining = [...grouping]
@@ -778,9 +821,7 @@ export class Viewer extends ImageViewerElement {
         if (!pinned) return false
         const image = page.imagePage
         if (pinned === image) return true
-        return (
-            pinned instanceof ImageSpread && (pinned.left === image || pinned.right === image)
-        )
+        return pinned instanceof ImageSpread && (pinned.left === image || pinned.right === image)
     }
 
     /**
@@ -1243,10 +1284,7 @@ export class Viewer extends ImageViewerElement {
         const image = page.image
         if (!image) return false
 
-        const aspectRatio = Math.min(
-            page.trimWidth / page.trimHeight,
-            image.width / image.height,
-        )
+        const aspectRatio = Math.min(page.trimWidth / page.trimHeight, image.width / image.height)
 
         // Wide page: half the image width is wider than the screen aspect ratio.
         if (aspectRatio <= (2 * screenW) / screenH) return false
@@ -1327,8 +1365,7 @@ export class Viewer extends ImageViewerElement {
         if (page.imagePage instanceof ImageSpread) return page.imagePage
 
         const anchor = this.config.reversed ? SpreadPosition.Right : SpreadPosition.Left
-        const partnerPosition =
-            this.config.reversed ? SpreadPosition.Left : SpreadPosition.Right
+        const partnerPosition = this.config.reversed ? SpreadPosition.Left : SpreadPosition.Right
 
         // Only the anchor side looks for a partner on the next page. A partner-tagged page only
         // reaches here directly when it has no anchor before it - a lone right half at a chapter

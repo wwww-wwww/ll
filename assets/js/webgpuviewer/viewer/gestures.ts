@@ -80,9 +80,7 @@ export class GestureEvent {
     }
 
     positionChanged(): boolean {
-        return this.changes.some(
-            c => c.current.x !== c.previous.x || c.current.y !== c.previous.y,
-        )
+        return this.changes.some(c => c.current.x !== c.previous.x || c.current.y !== c.previous.y)
     }
 }
 

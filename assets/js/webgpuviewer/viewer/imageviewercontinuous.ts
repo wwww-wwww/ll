@@ -1,7 +1,6 @@
 import {
     Job,
     Offset,
-    STIFFNESS_MEDIUM_LOW,
     VelocityTracker,
     animate,
     animateDecay,
@@ -39,7 +38,10 @@ const PAN_FLING_VELOCITY = 400
 /** Raised to end a fling that is pinned on both axes - see the pan fling below. */
 class FlingStalled extends Error { }
 
-export async function handleContinuousGesture(host: ContinuousGestureHost, firstEvent: GestureEvent) {
+export async function handleContinuousGesture(
+    host: ContinuousGestureHost,
+    firstEvent: GestureEvent,
+) {
     const { state, stream } = host
     const firstDownId = firstEvent.raw.pointerId
     const firstDown = firstEvent.changes.find(c => c.id === firstDownId)!
@@ -58,8 +60,8 @@ export async function handleContinuousGesture(host: ContinuousGestureHost, first
 
     let longPressed = false
     const longPressJob: Job | null =
-        stoppedMotion ? null
-            : launch(async job => {
+        stoppedMotion ? null : (
+            launch(async job => {
                 await delay(host.longPressTimeout)
                 job.ensureActive()
                 longPressed = true
@@ -68,13 +70,9 @@ export async function handleContinuousGesture(host: ContinuousGestureHost, first
                     y: firstPosition.y / state.height,
                 })
             })
+        )
 
-    const cleanUp = await waitForCleanUp(
-        stream,
-        firstDownId,
-        host.doubleTapTimeout,
-        host.touchSlop,
-    )
+    const cleanUp = await waitForCleanUp(stream, firstDownId, host.doubleTapTimeout, host.touchSlop)
 
     if (cleanUp !== null) {
         longPressJob?.cancel()
@@ -129,7 +127,7 @@ function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
             : position.x / state.width - 0.5
 
     state.isScaleAnimating = true
-    const job = animate(0, 1, spring(STIFFNESS_MEDIUM_LOW, 0.002), t => {
+    const job = animate(0, 1, spring(), t => {
         const newScale = startScale + (target - startScale) * t
         // Against the live scale, not the start: each step moves by what this frame changed.
         const diff = 1 / newScale - 1 / state.scale
@@ -233,7 +231,7 @@ function animateScaleTo(
     const startScale = state.scale
     const startOffsetX = state.offsetX
     state.isScaleAnimating = true
-    const job = animate(0, 1, spring(STIFFNESS_MEDIUM_LOW, 0.002), t => {
+    const job = animate(0, 1, spring(), t => {
         state.scale = startScale + (targetScale - startScale) * t
         state.offsetX = startOffsetX + (targetOffsetX - startOffsetX) * t
         state.invalidate()
@@ -348,7 +346,7 @@ async function dragGesture(
     if (clampedX === state.offsetX) return
 
     const startX = state.offsetX
-    state.animationJob = animate(0, 1, spring(STIFFNESS_MEDIUM_LOW, 0.002), t => {
+    state.animationJob = animate(0, 1, spring(), t => {
         state.offsetX = startX + (clampedX - startX) * t
         state.invalidate()
     })
