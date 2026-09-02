@@ -46,6 +46,14 @@ interface WindowChapter {
     /** First file index of this chapter within the viewer's list, and how many files it has. */
     start: number
     count: number
+    /** The order its pages were grouped by - what a later one from the server is checked against. */
+    order: number[]
+}
+
+/** Whether [order] from the server groups the same way [used] already did. */
+function sameOrder(used: number[], order: number[] | null): boolean {
+    if (order === null || order.length !== used.length) return used.every(o => o === 2)
+    return order.every((o, i) => o === used[i])
 }
 
 class Reader extends ViewHook {
@@ -234,7 +242,7 @@ class Reader extends ViewHook {
         const edge =
             direction > 0 ?
                 this.chapterWindow[this.chapterWindow.length - 1]
-            :   this.chapterWindow[0]
+                : this.chapterWindow[0]
         if (!edge || edge.at < 0) return
 
         const at = edge.at - direction
@@ -250,12 +258,18 @@ class Reader extends ViewHook {
                 at: at,
                 start: edge.start + edge.count,
                 count: pages.files.length,
+                order: pages.order,
             })
             this.files = [...this.files, ...pages.files]
         } else {
             this.viewer.prependPages(pages.files, pages.order)
             for (const c of this.chapterWindow) c.start += pages.files.length
-            this.chapterWindow.unshift({ at: at, start: 0, count: pages.files.length })
+            this.chapterWindow.unshift({
+                at: at,
+                start: 0,
+                count: pages.files.length,
+                order: pages.order,
+            })
             this.files = [...pages.files, ...this.files]
         }
     }
@@ -283,7 +297,7 @@ class Reader extends ViewHook {
         // The viewer needs the list and the starting position together, so it can open its preload
         // window at the right place rather than at page 0 first.
         this.viewer.setPages(pages.files, own, page)
-        this.chapterWindow = [{ at: at, start: 0, count: pages.files.length }]
+        this.chapterWindow = [{ at: at, start: 0, count: pages.files.length, order: own }]
         this.reading = this.chapterWindow[0]
         this.files = [...pages.files]
 
@@ -300,7 +314,9 @@ class Reader extends ViewHook {
      * neighbour from.
      */
     private openSingle(files: string[], order: number[] | null, page: number) {
-        this.chapterWindow = [{ at: -1, start: 0, count: files.length }]
+        this.chapterWindow = [
+            { at: -1, start: 0, count: files.length, order: order ?? new Array(files.length).fill(2) },
+        ]
         this.reading = this.chapterWindow[0]
         this.files = files
         this.viewer.setPages(files, order, page)
@@ -383,17 +399,29 @@ class Reader extends ViewHook {
         this.handleEvent("files", data => {
             if (!mounted) return
 
-            // The patch behind a boundary turn: that chapter is in the list already, read past by
-            // now, and rebuilding for it would drop every page decoded on the way in.
-            if (this.ownPatches > 0) {
-                this.ownPatches--
+            const at = this.selectedChapter()
+            const order = data.order ?? null
+            // The patch behind a boundary turn, rather than a jump from the chapter list.
+            const own = this.ownPatches > 0
+            if (own) this.ownPatches--
+
+            if (at === null) {
+                if (!own) this.openSingle(data.files ?? [], order, window.history.state?.page ?? 0)
                 return
             }
 
-            const at = this.selectedChapter()
-            const page = window.history.state?.page ?? 0
-            if (at === null) this.openSingle(data.files ?? [], data.order ?? null, page)
-            else this.openWindow(at, page, data.order ?? null)
+            // That chapter is in the list already, read past by now, and rebuilding for it drops
+            // every page decoded on the way in - so only its order can be worth taking, and only
+            // when it is not the order the list already gave us. The list can be behind: an order
+            // detected or saved this session reaches this hook here first.
+            const reading = this.reading
+            const same = reading !== null && reading.at === at
+            if (own && same && sameOrder(reading.order, order)) return
+
+            const page =
+                own && same ? this.viewer.page - reading.start
+                    : (window.history.state?.page ?? 0)
+            this.openWindow(at, page, order)
         })
 
         const params = new URLSearchParams(window.location.search)
