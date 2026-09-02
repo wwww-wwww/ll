@@ -1,8 +1,10 @@
 defmodule LL.PageDetect do
   alias LL.{Repo, Chapter}
 
+  require Logger
+
   def detect(%Chapter{files: files} = chapter) do
-    IO.inspect(Enum.at(files, 0))
+    Logger.info("Detecting #{Enum.at(files, 0)}")
 
     files =
       Enum.map(files, fn path ->
@@ -22,7 +24,38 @@ defmodule LL.PageDetect do
     end
   end
 
-  def write_exif(files, order) do
+  def write_exif(file, pos, retry \\ true) when is_binary(file) do
+    Logger.info("Writing exif #{file}")
+
+    case System.cmd(
+           "exiv2",
+           ["-M", "set Exif.Image.PageName #{pos}", file],
+           stderr_to_stdout: true
+         ) do
+      {_, 0} ->
+        true
+
+      {out, 1} ->
+        if String.contains?(out, "Size of XMP JPEG segment is larger than 65535 bytes") do
+          Logger.warning(out)
+
+          if retry do
+            System.cmd("exiv2", ["-M", "del Xmp.xmpMM.History", file], stderr_to_stdout: true)
+            |> inspect()
+            |> Logger.info()
+
+            write_exif(file, pos, false)
+          else
+            false
+          end
+        else
+          Logger.warning(out)
+          false
+        end
+    end
+  end
+
+  def write_exif(files, order, _) do
     order =
       Enum.map(order, fn order ->
         case order do
@@ -33,9 +66,6 @@ defmodule LL.PageDetect do
       end)
 
     Enum.zip(files, order)
-    |> Enum.each(fn {f, pos} ->
-      IO.inspect(f)
-      {_, 0} = System.cmd("exiv2", ["-M", "set Exif.Image.PageName #{pos}", f])
-    end)
+    |> Enum.each(fn {f, pos} -> write_exif(f, pos) end)
   end
 end

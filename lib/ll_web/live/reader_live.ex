@@ -241,6 +241,10 @@ defmodule LLWeb.ReaderLive do
     {n, _} = Integer.parse(n)
     order = socket.assigns.files.order |> List.replace_at(index, n)
 
+    socket.assigns.chapter.files
+    |> Enum.at(index)
+    |> LL.PageDetect.write_exif(order)
+
     Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
     |> Repo.update()
 
@@ -260,6 +264,8 @@ defmodule LLWeb.ReaderLive do
     Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
     |> Repo.update()
 
+    LL.PageDetect.write_exif(socket.assigns.chapter.files, order)
+
     send(self(), "update_files")
     {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}
   end
@@ -270,6 +276,8 @@ defmodule LLWeb.ReaderLive do
 
     Ecto.Changeset.change(socket.assigns.chapter, %{page_order: order})
     |> Repo.update()
+
+    LL.PageDetect.write_exif(socket.assigns.chapter.files, order)
 
     send(self(), "update_files")
     {:noreply, socket |> assign(files: %{socket.assigns.files | order: order})}

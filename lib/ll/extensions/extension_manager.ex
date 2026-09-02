@@ -514,6 +514,10 @@ defmodule LL.ExtensionManager do
       {:ok, chapter} ->
         Endpoint.broadcast("chapter:#{chapter.id}", "update", chapter)
 
+        if Chapter.downloaded?(chapter) do
+          LL.PageDetect.detect(chapter)
+        end
+
       err ->
         Message.error(err)
     end
