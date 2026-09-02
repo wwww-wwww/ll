@@ -7,9 +7,8 @@ interface ChapterPages {
     /**
      * Which half of a spread each page is.
      *
-     * Never null, unlike the server's own: a chapter with no detected order gets all 2s, the
-     * "single page" the viewer reads it as anyway, so several chapters' orders concatenate into
-     * the one list the viewer holds.
+     * Never null, unlike the server's own: a chapter with no detected order gets all 2s, which is
+     * the "single page" the viewer reads it as anyway.
      */
     order: number[]
 }
@@ -172,7 +171,17 @@ class Reader extends ViewHook {
     private pageChanged(index: number) {
         const chapter = this.chapterWindow.find(c => index >= c.start && index < c.start + c.count)
         if (!chapter) return
-        if (chapter !== this.reading) this.enterChapter(chapter)
+
+        if (chapter !== this.reading) {
+            const forward = this.reading !== null && chapter.at < this.reading.at
+            this.reading = chapter
+            // Posted, not run here. This fires from inside the turn that crossed the boundary,
+            // before it has set its animation up - and following the reader means a patch and a
+            // change to the page list, either of which lands in the middle of that. The viewer
+            // posts its own tail out of this callback for the same reason.
+            queueMicrotask(() => this.enterChapter(chapter, forward))
+        }
+
         this.showPage(index - chapter.start)
     }
 
@@ -181,11 +190,12 @@ class Reader extends ViewHook {
      * chapter is being read, and only a patch moves them.
      *
      * Extends the window past it at the same time, so its far boundary is another page turn rather
-     * than a stop.
+     * than a stop. [forward] is which way the reader crossed, since by the time this runs
+     * [reading] is already the chapter it arrived in.
      */
-    private enterChapter(chapter: WindowChapter) {
-        const forward = this.reading !== null && chapter.at < this.reading.at
-        this.reading = chapter
+    private enterChapter(chapter: WindowChapter, forward: boolean) {
+        // Left behind by a jump that landed elsewhere before this ran.
+        if (chapter !== this.reading) return
 
         const link = this.chapterAt(chapter.at)?.querySelector("a")
         if (link) {
@@ -217,6 +227,8 @@ class Reader extends ViewHook {
      * The list runs newest first, so reading forward walks it backwards. Appending disturbs no
      * index the viewer has handed out; prepending shifts them, which [Viewer.prependPages] does
      * without losing a decode.
+     *
+     * One chapter per call, which is also what keeps its spreads its own - see [openWindow].
      */
     private extend(direction: number) {
         const edge =
@@ -252,36 +264,33 @@ class Reader extends ViewHook {
      * Build the window around the chapter at [at] and open it at [page].
      *
      * A load, or a jump from the chapter list to somewhere the window does not reach - the only
-     * points where dropping what is decoded costs nothing. Both neighbours come too, since a turn
-     * has to find them already there.
+     * points where dropping what is decoded costs nothing. Both neighbours follow through
+     * [extend], since a turn has to find them already there.
+     *
+     * One chapter per call into the viewer, never a concatenated list: pairing happens within a
+     * call, so a spread can never take the last page of one chapter and the first of the next.
      */
     private openWindow(at: number, page: number, order: number[] | null) {
-        const parts: { at: number; pages: ChapterPages }[] = []
-        // Reading order: the list runs newest first, so the previous chapter is the next entry.
-        for (const near of [at + 1, at, at - 1]) {
-            const element = this.chapterAt(near)
-            const pages = element && chapterPages(element)
-            if (pages) parts.push({ at: near, pages: pages })
-        }
-        if (!parts.some(part => part.at === at)) return
+        const element = this.chapterAt(at)
+        const pages = element && chapterPages(element)
+        if (!pages) return
 
-        const files: string[] = []
-        const grouping: number[] = []
-        this.chapterWindow = parts.map(part => {
-            const start = files.length
-            files.push(...part.pages.files)
-            // The chapter being read takes the server's order over the list's: an order just saved
-            // reaches this hook that way before the list catches up.
-            const own = part.at === at && order !== null && order.length === part.pages.files.length
-            grouping.push(...(own ? order! : part.pages.order))
-            return { at: part.at, start: start, count: part.pages.files.length }
-        })
-        this.reading = this.chapterWindow.find(c => c.at === at)!
-        this.files = files
+        // The chapter being read takes the server's order over the list's: an order just saved
+        // reaches this hook that way before the list catches up.
+        const own =
+            order !== null && order.length === pages.files.length ? order : pages.order
 
-        // One call: the viewer needs the list and the starting position together, so it can open
-        // its preload window at the right place rather than at page 0 first.
-        this.viewer.setPages(files, grouping, this.reading.start + page)
+        // The viewer needs the list and the starting position together, so it can open its preload
+        // window at the right place rather than at page 0 first.
+        this.viewer.setPages(pages.files, own, page)
+        this.chapterWindow = [{ at: at, start: 0, count: pages.files.length }]
+        this.reading = this.chapterWindow[0]
+        this.files = [...pages.files]
+
+        // Reading order: the list runs newest first, so forward is the entry before this one.
+        this.extend(1)
+        this.extend(-1)
+
         this.showPage(page, false)
     }
 
@@ -312,8 +321,9 @@ class Reader extends ViewHook {
             next = this.viewer.stepFileIndex(direction)
         }
         if (next === null) return
+        // set_page reports the move through onPageChange, which is where the chapter it lands in
+        // is worked out - nothing more to do here.
         this.viewer.set_page(next)
-        this.pageChanged(next)
         this.viewer.invalidate()
     }
 

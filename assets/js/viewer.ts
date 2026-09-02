@@ -689,6 +689,9 @@ export class Viewer extends ImageViewerElement {
      * Nothing already handed out moves, so the page cache, the decode queue and the transition
      * cache all stay valid - which is what lets a turn carry on into the next chapter instead of
      * swapping the list out from under the reader. See [prependPages] for the other direction.
+     *
+     * [order] pairs spreads within this call only, so pages added here never pair with pages
+     * already in the list - a chapter added this way keeps its spreads to itself.
      */
     appendPages(urls: string[], order: number[] | null = null) {
         if (urls.length === 0) return
@@ -726,6 +729,9 @@ export class Viewer extends ImageViewerElement {
 
     /**
      * [urls] as pages, numbered from [indexOffset] and [fileOffset] - `order` pairs the spreads.
+     *
+     * Pairing is closed over this call: a page can only ever pair with another from the same
+     * [urls], which is what [appendPages] and [prependPages] rely on.
      */
     private buildPages(
         urls: string[],
