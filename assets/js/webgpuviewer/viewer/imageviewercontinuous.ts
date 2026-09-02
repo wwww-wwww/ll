@@ -232,7 +232,7 @@ function animateScaleTo(
     const startOffsetX = state.offsetX
     state.isScaleAnimating = true
     const job = animate(0, 1, spring(), t => {
-        state.scale = startScale + (targetScale - startScale) * t
+        state.scale = (1 - t) * startScale + t * targetScale
         state.offsetX = startOffsetX + (targetOffsetX - startOffsetX) * t
         state.invalidate()
     })

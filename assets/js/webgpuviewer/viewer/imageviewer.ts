@@ -5,6 +5,7 @@ import {
     animate,
     animateDecay,
     animateDecay2d,
+    closeTo,
     coerceIn,
     distance,
     launch,
@@ -248,8 +249,9 @@ export class ImageViewerElement extends HTMLCanvasElement {
             page.minScale,
             page.maxScale,
         )
-        // At a zoom limit: restarting the spring would cancel the fling for nothing.
-        if (targetScale === from) return
+        // At a zoom limit: restarting the spring would cancel the fling for nothing, and mark the
+        // tile grid unstable for the length of a zoom that goes nowhere.
+        if (closeTo(targetScale, from)) return
 
         const rect = this.getBoundingClientRect()
         page.animateTo({
@@ -284,8 +286,9 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 state.minScale,
                 state.maxScale,
             )
-            // At a zoom limit: restarting the spring would cancel a fling for nothing.
-            if (target === from) return
+            // At a zoom limit: restarting the spring would cancel a fling for nothing, and mark
+            // the tile grid unstable for the length of a zoom that goes nowhere.
+            if (closeTo(target, from)) return
 
             // Anchored on the pointer, the same inversion the pinch uses.
             const rect = this.getBoundingClientRect()

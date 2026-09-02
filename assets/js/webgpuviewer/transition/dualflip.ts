@@ -25,7 +25,8 @@ import {
  * attachment: height rises with the tangent angle while it stays inside PI, so strips emitted
  * spine-outwards land back to front.
  *
- * One divergence from the Kotlin, in [surfaceFill]: this canvas is transparent.
+ * Two divergences from the Kotlin, both because this canvas is transparent: [surfaceFill], and a
+ * blank face left unpainted rather than filled - see [blankFill].
  */
 
 const UNIFORM_SIZE = 96
@@ -87,7 +88,6 @@ function mirror(rect: Float32Array, spine: number): Float32Array {
  *
  * A page's background is ARGB 0 unless one was asked for and [blendBackgroundColor] forces its
  * result opaque, so filling outright blacks out a transparent canvas for the length of the turn.
- * The leaf's blank face still takes the blended colour - a sheet is a sheet.
  */
 function surfaceFill(page1: ImagePage, page2: ImagePage): boolean {
     const asks = (page: ImagePage) => {
@@ -97,9 +97,74 @@ function surfaceFill(page1: ImagePage, page2: ImagePage): boolean {
     return asks(page1) || asks(page2)
 }
 
+/**
+ * How opaque the leaf's blank face is - the one with no page behind it, on a first or last turn.
+ *
+ * 0 wherever the pages asked for no background, which cuts the face out of the frame instead of
+ * painting it: this canvas is transparent, so the document shows through the turning sheet. A cut
+ * rather than a blend, since blending cannot take back a page already drawn - see [punchPipeline].
+ */
+function blankFill(page1: ImagePage, page2: ImagePage): number {
+    return surfaceFill(page1, page2) ? 1 : 0
+}
+
 class TransitionFlipImpl extends Transition {
     override get premultipliedOutput(): boolean {
         return true
+    }
+
+    private punchPipelineOrNull: GPURenderPipeline | null = null
+    private punchLayoutOrNull: GPUBindGroupLayout | null = null
+
+    /**
+     * The pipeline that cuts a blank face out of the frame - see [blankFill].
+     *
+     * Its own, because only the blend can do this: zero over the destination, where the usual
+     * `src + dst * (1 - src.a)` has no output that returns an opaque page to transparent. Same
+     * module and uniforms as the leaf, entry point `fs_punch`.
+     *
+     * Its layout is spelled out, not derived: `fs_punch` samples nothing, so an inferred layout
+     * holds the uniform alone and rejects the leaf's own bind group - which fails the pass, and
+     * with it every draw in the frame.
+     */
+    private get punchPipeline(): GPURenderPipeline {
+        if (!this.punchPipelineOrNull) {
+            const module = this.device.createShaderModule({ code: this.code })
+            const zero: GPUBlendComponent = {
+                srcFactor: "zero",
+                dstFactor: "zero",
+                operation: "add",
+            }
+            this.punchPipelineOrNull = this.device.createRenderPipeline({
+                layout: this.device.createPipelineLayout({
+                    bindGroupLayouts: [this.punchLayout],
+                }),
+                vertex: { module, entryPoint: "vs_main" },
+                fragment: {
+                    module,
+                    entryPoint: "fs_punch",
+                    targets: [{ format: "rgba8unorm", blend: { color: zero, alpha: zero } }],
+                },
+                primitive: { topology: "triangle-list" },
+            })
+        }
+        return this.punchPipelineOrNull
+    }
+
+    /** [punchPipeline]'s bindings: the uniform, which is all `fs_punch` and `vs_main` read. */
+    private get punchLayout(): GPUBindGroupLayout {
+        if (!this.punchLayoutOrNull) {
+            this.punchLayoutOrNull = this.device.createBindGroupLayout({
+                entries: [
+                    {
+                        binding: 0,
+                        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                        buffer: { type: "uniform" },
+                    },
+                ],
+            })
+        }
+        return this.punchLayoutOrNull
     }
 
     private flipSamplerOrNull: GPUSampler | null = null
@@ -166,8 +231,47 @@ class TransitionFlipImpl extends Transition {
             colorAttachments: [{ view: dst.createView(), loadOp: "load", storeOp: "store" }],
         })
         try {
-            this.bind(leafPass, leaf, front, back, background)
-            leafPass.draw(VERTICES)
+            const blankAlpha = blankFill(page1, page2)
+            const uniforms = this.uniforms(leaf, background, blankAlpha)
+
+            const cutting = blankAlpha <= 0 && (!leaf.hasFront || !leaf.hasBack)
+
+            // The sheet folds over itself, so a pixel can be covered twice - by the part before
+            // vertical showing the front face, and the part past it showing the back. The second is
+            // always the nearer, height rising with the tangent angle.
+            //
+            // The cut belongs directly after whichever covers the pixel in front, which is the
+            // blank face's own side of the fold: earlier and the near face paints over a hole that
+            // should stay open, later and it takes a page really in front of that hole.
+            const cutLast = !leaf.hasBack
+
+            const cut = () => {
+                leafPass.setPipeline(this.punchPipeline)
+                leafPass.setBindGroup(
+                    0,
+                    this.device.createBindGroup({
+                        layout: this.punchLayout,
+                        entries: [{ binding: 0, resource: { buffer: uniforms } }],
+                    }),
+                )
+                leafPass.draw(SHEET_VERTICES, 1, SHEET_VERTICES)
+            }
+
+            if (!cutting || cutLast) {
+                this.attach(leafPass, this.pipeline, uniforms, front, back)
+                leafPass.draw(VERTICES)
+                // After the leaf, so the near face goes with the hole it stands in.
+                if (cutting) cut()
+                return
+            }
+
+            // Shadow first, so the cut takes it too - one hanging in the hole is cast by a
+            // sheet nobody can see.
+            this.attach(leafPass, this.pipeline, uniforms, front, back)
+            leafPass.draw(SHEET_VERTICES)
+            cut()
+            this.attach(leafPass, this.pipeline, uniforms, front, back)
+            leafPass.draw(SHEET_VERTICES, 1, SHEET_VERTICES)
         } finally {
             leafPass.end()
         }
@@ -195,9 +299,12 @@ class TransitionFlipImpl extends Transition {
         const dir = forward ? 1 : -1
         const rawFront = page1.leafRect(dst, !forward)
         const rawBack = page2.leafRect(dst, forward)
-        // A side with no page mirrors the other across the spine, to size its blank sheet by.
-        const frontRect = rawFront ?? (rawBack !== null ? mirror(rawBack, spine) : null)
-        if (frontRect === null) return null
+        // A side with no page mirrors the other across the spine, to size its blank sheet by, and
+        // with neither there the halves that stay put do it - otherwise nothing turns at all.
+        const sized =
+            rawFront ?? rawBack ?? page1.leafRect(dst, forward) ?? page2.leafRect(dst, !forward)
+        if (sized === null) return null
+        const frontRect = rawFront ?? mirror(sized, spine)
         const backRect = rawBack ?? mirror(frontRect, spine)
 
         const lenFront = forward ? frontRect[2] - spine : spine - frontRect[0]
@@ -228,14 +335,10 @@ class TransitionFlipImpl extends Transition {
 
     private readonly scratch = new Float32Array(UNIFORM_SIZE / 4)
 
-    /** Set [pipeline] and this frame's uniforms on [pass]. [blank] paints a face with no page. */
-    private bind(
-        pass: GPURenderPassEncoder,
-        leaf: Leaf,
-        front: GPUTextureView,
-        back: GPUTextureView,
-        blank: number,
-    ) {
+    /**
+     * This frame's uniforms. [blank] paints a face with no page, at [blankAlpha] - see [blankFill].
+     */
+    private uniforms(leaf: Leaf, blank: number, blankAlpha: number): GPUBuffer {
         this.scratch.set(leaf.frontRect, 0)
         this.scratch.set(leaf.backRect, 4)
         this.scratch.set(
@@ -252,11 +355,11 @@ class TransitionFlipImpl extends Transition {
                 leaf.hasBack ? 1 : 0,
                 leaf.shading,
                 0,
-                // Opaque, so premultiplied and straight agree.
-                ((blank >> 16) & 0xff) / 255,
-                ((blank >> 8) & 0xff) / 255,
-                (blank & 0xff) / 255,
-                1,
+                // Premultiplied, so the colour goes in scaled by its own alpha.
+                (((blank >> 16) & 0xff) / 255) * blankAlpha,
+                (((blank >> 8) & 0xff) / 255) * blankAlpha,
+                ((blank & 0xff) / 255) * blankAlpha,
+                blankAlpha,
             ],
             8,
         )
@@ -266,15 +369,24 @@ class TransitionFlipImpl extends Transition {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         })
         this.device.queue.writeBuffer(uniformBuffer, 0, this.scratch)
+        return uniformBuffer
+    }
 
-        const pipeline = this.pipeline
+    /** Set [pipeline] and its own bind group on [pass] - each pipeline's layout wants its own. */
+    private attach(
+        pass: GPURenderPassEncoder,
+        pipeline: GPURenderPipeline,
+        uniforms: GPUBuffer,
+        front: GPUTextureView,
+        back: GPUTextureView,
+    ) {
         pass.setPipeline(pipeline)
         pass.setBindGroup(
             0,
             this.device.createBindGroup({
                 layout: pipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 0, resource: { buffer: uniforms } },
                     { binding: 1, resource: front },
                     { binding: 2, resource: back },
                     { binding: 3, resource: this.flipSampler },
@@ -300,7 +412,7 @@ struct Uniforms {
     span: vec4<f32>,
     // front textured, back textured, shading strength, unused
     flags: vec4<f32>,
-    // What a face with no page behind it is painted, premultiplied.
+    // What a face with no page behind it is painted, premultiplied - alpha 0 to leave it unpainted.
     blank: vec4<f32>,
 }
 
@@ -325,7 +437,7 @@ const LIGHT_ABOVE: f32 = 0.0;
 // How fast a shadow fades with the sheet's lift, per leaf length, and how dark it is at contact.
 // Gentle: steeper, and it is spent before the curl lifts it clear of the leaf at all.
 const SHADOW_FALLOFF: f32 = 1.0;
-const SHADOW_DEPTH: f32 = 0.5;
+const SHADOW_DEPTH: f32 = 1.0;
 
 // How far the curl's far edge falls below the page it left - see [leaf_shade].
 const CURL_SHADE: f32 = 0.25;
@@ -334,7 +446,7 @@ const CURL_SHADE: f32 = 0.25;
 // leaf length of lift - what softens a rising shadow, since its depth barely thins it.
 const SOFT_ALONG: f32 = 0.08;
 const SOFT_DOWN: f32 = 0.05;
-const SOFT_SPREAD: f32 = 2.5;
+const SOFT_SPREAD: f32 = 1.0;
 
 fn leaf_radius() -> f32 { return flip.span.x / flip.geom.w; }
 
@@ -567,6 +679,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     if (!face.covers) { discard; }
 
+    // A blank face with nothing to paint it is not drawn at all, so a turn off the first or last
+    // page shows what is behind the canvas through the sheet - see [blankFill].
+    if (!face.textured && flip.blank.a <= 0.0) { discard; }
+
     var texel = flip.blank;
     if (face.textured) {
         if (face.front) {
@@ -578,6 +694,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Premultiplied throughout - see premultipliedOutput - so shading scales rgb alone.
     return vec4<f32>(texel.rgb * leaf_shade(b), texel.a);
+}
+
+/// The blank face alone, for the pipeline that cuts it out - see [blankFill]. What it returns is
+/// discarded by that blend, which takes zero of both sides.
+@fragment
+fn fs_punch(in: VertexOutput) -> @location(0) vec4<f32> {
+    let face = face_at(in.s, in.v, leaf_angle(in.s));
+    if (!face.covers || face.textured) { discard; }
+    return vec4<f32>(0.0);
 }
 `
     }

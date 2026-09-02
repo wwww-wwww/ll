@@ -292,7 +292,9 @@ export class ImageViewerContinuousState extends ImageViewerState {
         this.isScaleAnimating = true
 
         const job: Job = animate(0, 1, spec, t => {
-            const newScale = startScale + (targetScale - startScale) * t
+            // Weighted, so the last frame lands exactly on [targetScale] - see the note in
+            // `ImagePage.animateTo`.
+            const newScale = (1 - t) * startScale + t * targetScale
             const diff = 1 / newScale - 1 / this.scale
             // Clamped as it goes, not snapped back afterwards: a wheel has no end of gesture to
             // snap back at, and zooming out past the point where there is anything to pan would

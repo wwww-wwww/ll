@@ -637,7 +637,9 @@ export class ImagePage {
         const minY = this.minY(targetScale)
         const maxY = this.maxY(targetScale)
 
-        const scaleChanging = targetScale !== startScale
+        // Not an exact compare: a target a float's width from the scale is not a zoom, and
+        // treating one as a zoom suppresses tile generation for a spring that moves nothing.
+        const scaleChanging = !closeTo(targetScale, startScale)
         const diffEnd = scaleChanging ? 1 / targetScale - 1 / startScale : 1
 
         const endX =
@@ -662,7 +664,10 @@ export class ImagePage {
         // The animate job itself, not a wrapper around it: cancelling `animationJob` has to stop
         // the frame callbacks, and a wrapper's cancel would only unblock its own await.
         const job = animate(0, 1, options.spec ?? spring(), value => {
-            const currentScale = startScale + (targetScale - startScale) * value
+            // Weighted, not `start + (target - start) * value`: that form misses its endpoint by
+            // an ULP or two for one pair of scales in six, so a page settled at its zoom-out limit
+            // sits a hair off [minScale] and the next notch of the wheel reads as a fresh zoom.
+            const currentScale = (1 - value) * startScale + value * targetScale
             const c =
                 scaleChanging ?
                     coerceIn((1 / currentScale - 1 / startScale) / diffEnd, 0, 1)
