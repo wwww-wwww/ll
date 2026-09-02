@@ -204,8 +204,16 @@ export class WebGpuRenderer {
     /**
      * Record and submit one frame. Holds the render lock for the whole of it, so a tile
      * generation batch can never land halfway through a frame's recording.
+     *
+     * False when the canvas had no texture to draw into: nothing was drawn, and the frame is worth
+     * asking for again. The Kotlin reads a status off the surface and reconfigures on anything but
+     * `Lost`; a browser reconfigures its own swapchain, so the retry is all that is left of that -
+     * apart from re-configuring the context, which is what a canvas of no size needs.
      */
-    async render(fn: (encoder: GPUCommandEncoder, texture: GPUTexture) => void | Promise<void>) {
+    async render(
+        fn: (encoder: GPUCommandEncoder, texture: GPUTexture) => void | Promise<void>,
+    ): Promise<boolean> {
+        let drawn = false
         await WebGpuRenderer.withLock(async device => {
             const context = this.context
             if (!context) return
@@ -216,6 +224,11 @@ export class WebGpuRenderer {
                 texture = context.getCurrentTexture()
             } catch (e) {
                 console.warn("WebGpuRenderer: failed to get current texture", e)
+                // A context that has lost its configuration - a canvas resized to nothing and
+                // back, above all - gets it again rather than staying dark for good.
+                if (this.canvas && this.width > 0 && this.height > 0) {
+                    this.init(this.canvas, this.width, this.height)
+                }
                 return
             }
 
@@ -226,11 +239,13 @@ export class WebGpuRenderer {
                 await fn(encoder, this.filters.beginFrame(texture))
                 this.filters.endFrame(encoder, texture)
                 device.queue.submit([encoder.finish()])
+                drawn = true
             } catch (e) {
                 // Don't rethrow - allow the app to continue rendering next frame.
                 console.error("WebGpuRenderer: render error", e)
             }
         })
+        return drawn
     }
 
     cleanup() {

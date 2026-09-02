@@ -129,7 +129,7 @@ export class ImagePage {
     }
 
     /**
-     * One half of this page, normalised like [pageRect] - for `TransitionDualFlip`. [ImageSpread]
+     * One half of this page, normalised like [pageRect] - for `TransitionFlip`. [ImageSpread]
      * gives that side's own rect; everything else splits [pageRect] down the middle, so a single
      * page turns like a spread.
      */

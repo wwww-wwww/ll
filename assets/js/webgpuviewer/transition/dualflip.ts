@@ -11,7 +11,10 @@ import {
 } from "./transition"
 
 /**
- * A dual-page book turn - the port of `transition/TransitionDualFlip.kt`.
+ * A book page turn - the port of `transition/TransitionFlip.kt`.
+ *
+ * The file keeps its own name: `flip.ts` is the `TransitionFlipLeft`/`TransitionFlipRight` pair,
+ * which the Kotlin has in files of their own.
  *
  * One leaf lifts off the spine, curls, and lands on the other side. Forward, the leaf shows page 1's
  * right half in front and page 2's left behind, each at its own size; a side with no page is blank
@@ -95,7 +98,7 @@ function surfaceFill(page1: ImagePage, page2: ImagePage): boolean {
     return asks(page1) || asks(page2)
 }
 
-class TransitionDualFlipImpl extends Transition {
+class TransitionFlipImpl extends Transition {
     override get premultipliedOutput(): boolean {
         return true
     }
@@ -501,4 +504,4 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 }
 
-export const TransitionDualFlip = new TransitionDualFlipImpl()
+export const TransitionFlip = new TransitionFlipImpl()

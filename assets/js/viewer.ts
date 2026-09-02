@@ -9,7 +9,7 @@ import {
     TransitionBasicVerticalInstance,
     TransitionCube,
     TransitionCubeOuter,
-    TransitionDualFlip,
+    TransitionFlip,
     TransitionFade,
     TransitionFadeWhite,
     TransitionFlipLeft,
@@ -105,9 +105,9 @@ export type TransitionName =
     | "default"
     | "fade"
     | "fade-white"
+    | "flip"
     | "flip-left"
     | "flip-right"
-    | "dual-flip"
     | "stack-up"
     | "stack-down"
     | "stack-left"
@@ -172,7 +172,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
     // Most of a page's time is spent waiting rather than working, so a few at once fills the
     // preload window far sooner; past a handful the network is the limit anyway.
     decodeConcurrency: 3,
-    transition: "dual-flip",
+    transition: "flip",
     reversed: false,
     vertical: false,
     continuous: false,
@@ -612,10 +612,10 @@ export class Viewer extends ImageViewerElement {
                 return TransitionFadeWhite
             case "flip-left":
                 return TransitionFlipLeft
+            case "flip":
+                return TransitionFlip
             case "flip-right":
                 return TransitionFlipRight
-            case "dual-flip":
-                return TransitionDualFlip
             case "stack-up":
                 return TransitionStackUp
             case "stack-down":
@@ -639,11 +639,19 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
+     * `isDualPageMode` - whether pages pair into spreads at all. Never in continuous, which
+     * scrolls one column however wide the screen is.
+     */
+    private isDualPageMode(): boolean {
+        return this.config.dualPage && !this.config.continuous
+    }
+
+    /**
      * Everything [preloadAround] reaches, plus slack. Sized exactly, a spread partner evicts a page
      * the next fetch asks for and it decodes again.
      */
     private get cacheSize(): number {
-        const dual = this.config.dualPage && !this.config.continuous
+        const dual = this.isDualPageMode()
         return 1 + this.config.preloadAhead + this.config.preloadBehind + (dual ? 3 : 1)
     }
 
@@ -1169,8 +1177,13 @@ export class Viewer extends ImageViewerElement {
         imagePage.attach(this.state, () => this.state.invalidate())
 
         // Fit modes are about one image's dimensions, so a spread of two independently-sized
-        // halves is left at its own fitted scale.
-        if (imagePage instanceof ImageSingle && !(imagePage instanceof ImageSpread)) {
+        // halves is left at its own fitted scale - and in dual mode so is a half of one, which the
+        // spread it joins is what gets fitted.
+        if (
+            !this.isDualPageMode() &&
+            imagePage instanceof ImageSingle &&
+            !(imagePage instanceof ImageSpread)
+        ) {
             if (!this.applyWideZoom(imagePage)) this.applyFitMode(imagePage)
         }
 
@@ -1578,7 +1591,10 @@ export class Viewer extends ImageViewerElement {
             const minX = page.minX(page.scale)
             const maxX = page.maxX(page.scale)
             const currentX = page.animationJob ? (page.animationTargetX ?? page.x) : page.x
-            const x = coerceIn(currentX - screenDirection / page.scale, minX, maxX)
+            // Vertical with the zoom starting right reads a wide page from its right edge, so the
+            // pan runs the other way to meet it.
+            const reverse = this.config.vertical && this.config.zoomStart === "right" ? -1 : 1
+            const x = coerceIn(currentX - (reverse * screenDirection) / page.scale, minX, maxX)
 
             if (!closeTo(currentX, x)) {
                 page.animateTo({ targetX: x, targetY: page.y })

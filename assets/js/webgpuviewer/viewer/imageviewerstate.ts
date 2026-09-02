@@ -282,6 +282,10 @@ export class ImageViewerState {
             drawingActive = true
             drawing = this.renderer
                 .render((encoder, texture) => this.renderSnapshot(encoder, texture, snapshot))
+                // Nothing drawn - ask for the frame again.
+                .then(drawn => {
+                    if (!drawn) this.invalidate()
+                })
                 .finally(() => {
                     drawingActive = false
                 })
