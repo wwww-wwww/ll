@@ -185,9 +185,12 @@
         }
     }
 
-    #reader-settings {
+    .reader-settings {
         display: flex;
         flex-direction: column;
         padding: 0.5em;
+        gap: 0.5em;
+        overflow-y: auto;
+        max-height: min(50%, 16em);
     }
 }

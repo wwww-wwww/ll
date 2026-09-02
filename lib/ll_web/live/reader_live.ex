@@ -18,60 +18,6 @@ defmodule LLWeb.ReaderLive do
               <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
             <% end %>
           </h2>
-
-          <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>
-            <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
-            <div :if={not is_nil(@files.order)}>
-              <form phx-submit="order-save">
-                <textarea name="order">{inspect(@files.order)}</textarea>
-                <button>Save</button>
-              </form>
-              <div id="current_page"></div>
-              <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
-              <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
-              <table>
-                <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
-                  <td>
-                    <button
-                      phx-click="order-set"
-                      phx-value-index={i}
-                      phx-value-n="0"
-                      disabled={o == 0}
-                    >
-                      0
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      phx-click="order-set"
-                      phx-value-index={i}
-                      phx-value-n="1"
-                      disabled={o == 1}
-                    >
-                      1
-                    </button>
-                  </td>
-                  <td>
-                    <button
-                      phx-click="order-set"
-                      phx-value-index={i}
-                      phx-value-n="2"
-                      disabled={o == 2}
-                    >
-                      2
-                    </button>
-                  </td>
-                  <td>
-                    <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
-                  </td>
-                  <td>
-                    <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
-                  </td>
-                  <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
-                </tr>
-              </table>
-            </div>
-          </div>
         </div>
 
         <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
@@ -101,11 +47,80 @@ defmodule LLWeb.ReaderLive do
           <% end %>
         </div>
 
-        <div id="reader-settings" phx-update="ignore">
+        <div class="reader-settings">
           <h2>Settings</h2>
-          <div>
-            <label for="chk_3dlut">3dlut</label>
-            <input id="chk_3dlut" type="checkbox" checked />
+          <div id="reader-settings" phx-update="ignore">
+            <div>
+              <label for="chk_3dlut">3dlut</label>
+              <input id="chk_3dlut" type="checkbox" checked />
+            </div>
+          </div>
+
+          <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>
+            <style>
+              div:has(#chk_pagedetect:not(:checked)) + .pagedetect {
+                display: none;
+              }
+            </style>
+
+            <div>
+              <label for="chk_pagedetect">pagedetect</label>
+              <input id="chk_pagedetect" phx-update="ignore" type="checkbox" checked />
+            </div>
+
+            <div class="pagedetect">
+              <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
+              <div :if={not is_nil(@files.order)}>
+                <form phx-submit="order-save">
+                  <textarea name="order">{inspect(@files.order)}</textarea>
+                  <button>Save</button>
+                </form>
+                <div id="current_page"></div>
+                <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
+                <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
+                <table>
+                  <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
+                    <td>
+                      <button
+                        phx-click="order-set"
+                        phx-value-index={i}
+                        phx-value-n="0"
+                        disabled={o == 0}
+                      >
+                        0
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        phx-click="order-set"
+                        phx-value-index={i}
+                        phx-value-n="1"
+                        disabled={o == 1}
+                      >
+                        1
+                      </button>
+                    </td>
+                    <td>
+                      <button
+                        phx-click="order-set"
+                        phx-value-index={i}
+                        phx-value-n="2"
+                        disabled={o == 2}
+                      >
+                        2
+                      </button>
+                    </td>
+                    <td>
+                      <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
+                    </td>
+                    <td>
+                      <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
+                    </td>
+                    <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
+                  </tr>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
