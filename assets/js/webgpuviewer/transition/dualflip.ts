@@ -85,10 +85,9 @@ function mirror(rect: Float32Array, spine: number): Float32Array {
 /**
  * Whether the surface gets filled at all - not in the Kotlin, which always fills.
  *
- * This canvas is transparent and the document shows through it, while a page's own background is
- * ARGB 0 unless one was asked for and [blendBackgroundColor] forces its result opaque - so filling
- * outright would black out the letterbox for the length of the turn. The leaf's blank face still
- * takes the blended colour: a sheet is a sheet even where the surface behind it draws nothing.
+ * A page's background is ARGB 0 unless one was asked for and [blendBackgroundColor] forces its
+ * result opaque, so filling outright blacks out a transparent canvas for the length of the turn.
+ * The leaf's blank face still takes the blended colour - a sheet is a sheet.
  */
 function surfaceFill(page1: ImagePage, page2: ImagePage): boolean {
     const asks = (page: ImagePage) => {
@@ -175,9 +174,8 @@ class TransitionFlipImpl extends Transition {
     }
 
     /**
-     * The leaf at [t], or null when there is nothing to turn. The sheet takes in both faces and
-     * holds that size throughout, each drawn at its own size on it - so neither resizes into the
-     * other, and neither snaps at its own end.
+     * The leaf at [t], or null when there is nothing to turn. One sheet big enough for both faces,
+     * each drawn on it at its own size - so neither resizes into the other, nor snaps at its end.
      */
     private leaf(
         page1: ImagePage,
@@ -287,8 +285,8 @@ class TransitionFlipImpl extends Transition {
 
     /**
      * The cross-section is a circular arc of radius `len / bend` hinged on the spine, its tangent
-     * running `phi` to `phi + bend`, so the sheet swings and curls at once. Heights are width
-     * fractions like x, so the arc is round rather than stretched.
+     * running `phi` to `phi + bend` - so the sheet swings and curls at once. Heights are width
+     * fractions like x, keeping the arc round.
      */
     override get code(): string {
         return `
@@ -316,16 +314,27 @@ const PI: f32 = 3.14159265;
 // Eye distance, in the width fractions the geometry is measured in.
 const EYE: f32 = 2.6;
 
-// Key light height over the spine, in leaf lengths. Under EYE, or shadows hide under their caster.
-const LIGHT_HEIGHT: f32 = 2.8;
+// The key light: centred over the book, [LIGHT_DISTANCE] out from the page, [LIGHT_ABOVE] up, in
+// [EYE]'s own width fractions. Nearer than the eye on purpose - a light beyond it magnifies its
+// shadow less than the eye magnifies the sheet (1.09 against 1.15), so the shadow lands inside the
+// silhouette casting it and never shows. Nearer, it escapes on every side. Height is no substitute:
+// dropped straight down, a shadow hides behind a sheet that runs the height of the page.
+const LIGHT_DISTANCE: f32 = 1.25;
+const LIGHT_ABOVE: f32 = 0.0;
 
-// How fast a shadow fades as the leaf rises off the page, per leaf length.
-const SHADOW_FALLOFF: f32 = 2.6;
-const SHADOW_DEPTH: f32 = 0.6;
+// How fast a shadow fades with the sheet's lift, per leaf length, and how dark it is at contact.
+// Gentle: steeper, and it is spent before the curl lifts it clear of the leaf at all.
+const SHADOW_FALLOFF: f32 = 1.0;
+const SHADOW_DEPTH: f32 = 0.5;
 
-// Penumbra width, as a fraction of the face along the sheet and down it.
-const SOFT_ALONG: f32 = 0.06;
-const SOFT_DOWN: f32 = 0.04;
+// How far the curl's far edge falls below the page it left - see [leaf_shade].
+const CURL_SHADE: f32 = 0.25;
+
+// Penumbra width, as a fraction of the shadow's span and of its height, and how far it spreads per
+// leaf length of lift - what softens a rising shadow, since its depth barely thins it.
+const SOFT_ALONG: f32 = 0.08;
+const SOFT_DOWN: f32 = 0.05;
+const SOFT_SPREAD: f32 = 2.5;
 
 fn leaf_radius() -> f32 { return flip.span.x / flip.geom.w; }
 
@@ -344,19 +353,69 @@ fn leaf_point(b: f32, v: f32) -> vec3<f32> {
     );
 }
 
+/// One point of the sheet, as far as casting a shadow cares: how far out from the spine, how high.
+struct Cast {
+    out: f32,
+    z: f32,
+}
+
+fn cast_at(b: f32) -> Cast {
+    let r = leaf_radius();
+    let phi = flip.geom.z;
+    var c: Cast;
+    c.out = r * (sin(b) - sin(phi));
+    c.z = r * (cos(phi) - cos(b));
+    return c;
+}
+
+struct Span {
+    lo: Cast,
+    hi: Cast,
+}
+
+/// What the sheet shadows, as one span across the page - the two points that bound the rest.
+///
+/// Its strips stop running in footprint order once it leans past vertical: each one then retraces
+/// ground the ones before it covered. Cast strip by strip that band takes shadow twice over - two
+/// layers of paper block no more light than one - and creases where it turns back. Filling the span
+/// its extremes bound covers it once: the hinge, the far edge, and the crest at vertical.
+fn shadow_span() -> Span {
+    let phi = flip.geom.z;
+    let bend = flip.geom.w;
+
+    var lo = cast_at(phi);
+    var hi = cast_at(phi + bend);
+    if (hi.out < lo.out) {
+        let swap = lo;
+        lo = hi;
+        hi = swap;
+    }
+    if (phi < 0.5 * PI && phi + bend > 0.5 * PI) {
+        let crest = cast_at(0.5 * PI);
+        if (crest.out > hi.out) { hi = crest; }
+        if (crest.out < lo.out) { lo = crest; }
+    }
+
+    var span: Span;
+    span.lo = lo;
+    span.hi = hi;
+    return span;
+}
+
 /// Centred width fractions back to normalised surface coordinates, under perspective.
 fn project(p: vec3<f32>) -> vec2<f32> {
     let s = EYE / (EYE - p.z);
     return vec2<f32>(0.5 + p.x * s, 0.5 + p.y * s * flip.span.w);
 }
 
-/// A lamp on the spine, over the middle of the book. Point, not directional, so shadows run outward.
+/// The lamp - see [LIGHT_DISTANCE]. Fixed in the surface: one carried by the leaf would hold its
+/// shadow at the same offset all turn.
 fn light_pos() -> vec3<f32> {
-    let mid_y = (0.5 * (flip.span.y + flip.span.z) - 0.5) / flip.span.w;
-    return vec3<f32>(flip.geom.x - 0.5, mid_y, LIGHT_HEIGHT * flip.span.x);
+    return vec3<f32>(0.0, -LIGHT_ABOVE, LIGHT_DISTANCE);
 }
 
-/// Where a point on the leaf lays its shadow on the page. The clamp guards only a leaf as high as its light.
+/// Where a point on the leaf lays its shadow on the page. The clamp guards only a leaf risen as
+/// high as its own light.
 fn shadow_cast(p: vec3<f32>) -> vec2<f32> {
     let light = light_pos();
     let t = light.z / max(light.z - p.z, 0.25 * light.z);
@@ -368,14 +427,17 @@ fn shadow_alpha(z: f32) -> f32 {
     return flip.flags.z * SHADOW_DEPTH * exp(-SHADOW_FALLOFF * max(z, 0.0) / flip.span.x);
 }
 
-/// Lambert shading at [p], tangent angle [b]. The normal has no y - the sheet bends only about
-/// the spine - but the light does, so take the direction to it in full.
-/// Eased off at either end, so the leaf lands as lit as the static half it becomes.
-fn leaf_shade(p: vec3<f32>, b: f32, front: bool) -> f32 {
-    var n = vec3<f32>(-flip.geom.y * sin(b), 0.0, cos(b));
-    if (!front) { n = -n; }
-    let lambert = 0.42 + 0.58 * max(dot(n, normalize(light_pos() - p)), 0.0);
-    return mix(1.0, lambert, flip.flags.z);
+/// How dark the sheet is at tangent angle [b] - the curl's form, not a light in the world.
+///
+/// The halves either side are blitted from their caches unshaded, so flat paper is 1.0 by
+/// definition and the leaf has to meet that where it joins them. At the spine it is the same
+/// unoccluded sheet, so it stays 1.0 - which no Lambert term can manage, the sheet standing
+/// vertical there under a light that grazes it. This measures the turn from the hinge instead: 0
+/// there, most at the far edge, and continuous across the fold since it never asks which face
+/// shows. Eased off at both ends of the turn, so the leaf lands as lit as the half it becomes.
+fn leaf_shade(b: f32) -> f32 {
+    let turned = 1.0 - cos(b - flip.geom.z);
+    return mix(1.0, 1.0 - CURL_SHADE * turned, flip.flags.z);
 }
 
 /// The face showing at a point of the sheet - whichever way the surface is turned.
@@ -405,14 +467,17 @@ fn face_at(s: f32, v: f32, b: f32) -> Face {
     return f;
 }
 
-/// Fades the shadow towards the edges the leaf lifts from - a stand-in penumbra, never at the spine.
-fn shadow_softness(f: Face) -> f32 {
-    let outer = select(f.rect.x, f.rect.z, f.side > 0.0);
-    let soft_x = SOFT_ALONG * flip.span.x;
-    let soft_y = SOFT_DOWN * max(flip.span.z - flip.span.y, 1e-5);
-    return smoothstep(0.0, soft_x, abs(outer - f.uv.x)) *
-        smoothstep(0.0, soft_y, f.uv.y - f.rect.y) *
-        smoothstep(0.0, soft_y, f.rect.w - f.uv.y);
+/// Fades the shadow towards every edge - a stand-in penumbra, the end at the spine included: there
+/// the sheet meets the page as a fold, not a knife, and an unfeathered band reads as ink.
+///
+/// In the shadow's own [s] and [v], so it holds however the span was reached. Widens with the
+/// caster's height [z] - a contact shadow is crisp, one thrown from a lifted curl broad.
+fn shadow_softness(s: f32, v: f32, z: f32) -> f32 {
+    let spread = 1.0 + SOFT_SPREAD * max(z, 0.0) / flip.span.x;
+    let soft_s = min(SOFT_ALONG * spread, 0.5);
+    let soft_v = min(SOFT_DOWN * spread, 0.5);
+    return smoothstep(0.0, soft_s, s) * smoothstep(0.0, soft_s, 1.0 - s) *
+        smoothstep(0.0, soft_v, v) * smoothstep(0.0, soft_v, 1.0 - v);
 }
 
 struct VertexOutput {
@@ -456,14 +521,23 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
         default: { sv = vec2<f32>(s1, v1); }
     }
 
-    let world = leaf_point(leaf_angle(sv.x), sv.y);
-
+    var world: vec3<f32>;
     var screen: vec2<f32>;
     if (shadow) {
-        // Dropped through the light onto the page, landing at z = 0 - no perspective divide.
+        // Across the span the sheet shadows rather than along the sheet - see [shadow_span] - so
+        // the footprint runs in order and is covered once. Dropped through the light onto the page,
+        // landing at z = 0, so no perspective divide.
+        let span = shadow_span();
+        let y = mix(flip.span.y, flip.span.z, sv.y);
+        world = vec3<f32>(
+            (flip.geom.x - 0.5) + flip.geom.y * mix(span.lo.out, span.hi.out, sv.x),
+            (y - 0.5) / flip.span.w,
+            mix(span.lo.z, span.hi.z, sv.x),
+        );
         let flat = shadow_cast(world);
         screen = vec2<f32>(0.5 + flat.x, 0.5 + flat.y * flip.span.w);
     } else {
+        world = leaf_point(leaf_angle(sv.x), sv.y);
         screen = project(world);
     }
 
@@ -478,15 +552,20 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Premultiplied black, so the shadow multiplies what is under it down rather than tinting it.
+    // Not clipped to the sheet's own rect the way a face is: a shadow falls where it falls, and its
+    // span is already what bounds it.
+    if (in.shadow > 0.5) {
+        return vec4<f32>(
+            0.0, 0.0, 0.0,
+            shadow_alpha(in.world.z) * shadow_softness(in.s, in.v, in.world.z),
+        );
+    }
+
     let b = leaf_angle(in.s);
     let face = face_at(in.s, in.v, b);
 
     if (!face.covers) { discard; }
-
-    // Premultiplied black, so the shadow multiplies what is under it down rather than tinting it.
-    if (in.shadow > 0.5) {
-        return vec4<f32>(0.0, 0.0, 0.0, shadow_alpha(in.world.z) * shadow_softness(face));
-    }
 
     var texel = flip.blank;
     if (face.textured) {
@@ -498,7 +577,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Premultiplied throughout - see premultipliedOutput - so shading scales rgb alone.
-    return vec4<f32>(texel.rgb * leaf_shade(in.world, b, face.front), texel.a);
+    return vec4<f32>(texel.rgb * leaf_shade(b), texel.a);
 }
 `
     }
