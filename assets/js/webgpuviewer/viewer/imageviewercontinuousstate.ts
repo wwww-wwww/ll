@@ -4,8 +4,6 @@ import {
     STIFFNESS_MEDIUM,
     STIFFNESS_MEDIUM_LOW,
     animate,
-    coerceAtLeast,
-    coerceAtMost,
     coerceIn,
     spring,
 } from "../util"
@@ -16,7 +14,7 @@ import { solveImagePlacement } from "../renderer/tilerenderer"
 import { ImagePage, ImageSingle, RenderPageBase } from "./imagepage"
 import { ImageViewerState } from "./imageviewerstate"
 
-const MAX_VISIBLE_PAGES = 4
+export const MAX_VISIBLE_PAGES = 4
 
 /** Settle distance for a scroll spring: below half a device pixel nothing more is visible. */
 export const SCROLL_THRESHOLD_PX = 0.5
@@ -114,7 +112,16 @@ export class ImageViewerContinuousState extends ImageViewerState {
      */
     isFlinging = false
 
-    scrollY = 0
+    private _scrollY = 0
+
+    /**
+     * Position within the page [getPage] answers 0 with, in page-space pixels at zoom 1. Written
+     * only by [scrollBy] and the clamp below it, which are what walk page boundaries and hold the
+     * document's end - the Kotlin's `private set`.
+     */
+    get scrollY(): number {
+        return this._scrollY
+    }
 
     /**
      * Visual-only slide, animated to 0 by [animateSlideIn]. Kept out of [scrollY], which would
@@ -141,7 +148,33 @@ export class ImageViewerContinuousState extends ImageViewerState {
         return page.height * (this.width / pageWidth)
     }
 
-    currentPageHeight: number | null = null
+    /** Height page 0 was last measured at, to carry the position across a decode correcting it. */
+    private currentPageHeight: number | null = null
+
+    /**
+     * The page read through, reported when it changes: the deepest one whose bottom has reached
+     * the viewport's, or that covers its top. Where [onPageChange] means "reached this page's
+     * top", this means "read past it". Observation only - nothing here moves the scroll.
+     */
+    onPageScrolledThrough: ((page: ImagePage) => void) | null = null
+
+    private lastScrolledThrough: ImagePage | null = null
+
+    /**
+     * Pages the last frame reached below and above the current one. What the viewport actually
+     * shows depends on the zoom, so a caller's decode window has to follow this rather than a
+     * fixed count - a page on screen has to be decoded, not merely reserved.
+     */
+    private _pagesBelow = 0
+    private _pagesAbove = 0
+
+    get pagesBelow(): number {
+        return this._pagesBelow
+    }
+
+    get pagesAbove(): number {
+        return this._pagesAbove
+    }
 
     /**
      * Document-space top of whatever page sits at [scrollY] == 0, in screen pixels at zoom 1.
@@ -166,12 +199,12 @@ export class ImageViewerContinuousState extends ImageViewerState {
         if (!this.getPage(0)) return
         this.slideOffset = 0
 
-        this.scrollY += deltaPixels
+        this._scrollY += deltaPixels
 
         // Backwards, while the position sits above the top of the current page.
         while (this.scrollY < 0) {
             if (this.getPage(-1) === null) {
-                this.scrollY = 0
+                this._scrollY = 0
                 break
             }
             this.onPageChange?.(-1)
@@ -180,8 +213,13 @@ export class ImageViewerContinuousState extends ImageViewerState {
             const newHeight = this.getPageHeight(newPage)
             this.anchorDocY -= newHeight
             this.currentPageHeight = newHeight
-            if (newHeight <= 0) break
-            this.scrollY += newHeight
+            // No height to hold a position inside, so rest at its top rather than leave the
+            // position above it, which the next scroll would read as another step back.
+            if (newHeight <= 0) {
+                this._scrollY = 0
+                break
+            }
+            this._scrollY += newHeight
         }
 
         // Forwards, while it sits past the bottom. Stops at the last page rather than stepping off
@@ -192,7 +230,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
             const pageHeight = this.getPageHeight(page)
             if (this.scrollY <= pageHeight || pageHeight <= 0) break
             if (this.getPage(1) === null) {
-                this.scrollY = pageHeight
+                this._scrollY = pageHeight
                 break
             }
             this.onPageChange?.(1)
@@ -200,23 +238,23 @@ export class ImageViewerContinuousState extends ImageViewerState {
             const newPage = this.getPage(0)
             if (!newPage) return
             this.currentPageHeight = this.getPageHeight(newPage)
-            this.scrollY -= pageHeight
+            this._scrollY -= pageHeight
         }
 
-        const max = this.maxScrollY()
-        if (max !== null) this.scrollY = coerceAtMost(this.scrollY, max)
+        this.clampToDocumentEnd()
     }
 
     /**
      * Furthest [scrollY] may go: the last page's bottom stops at the viewport's, never above it.
      * Null when the document does not end within the pages this mode draws, so nothing to clamp.
+     * Negative when the end falls above page 0's own top - see [clampToDocumentEnd].
      */
     private maxScrollY(): number | null {
         const viewportHeight = this.height / this.scale
         let bottom = 0
         for (let i = 0; i <= MAX_VISIBLE_PAGES; i++) {
             const page = this.getPage(i)
-            if (!page) return coerceAtLeast(bottom - viewportHeight, 0)
+            if (!page) return bottom - viewportHeight
             const pageHeight = this.getPageHeight(page)
             if (pageHeight <= 0) break
             bottom += pageHeight
@@ -226,9 +264,59 @@ export class ImageViewerContinuousState extends ImageViewerState {
         return null
     }
 
+    /**
+     * Hold [scrollY] at the end of the document, which the walks above can overshoot. A last page
+     * shorter than the viewport ends above page 0's own top, and [scrollY] cannot hold a negative -
+     * the backward walk reads that as "step to the page above" - so step back to a page that can.
+     */
+    private clampToDocumentEnd() {
+        for (; ;) {
+            const max = this.maxScrollY()
+            if (max === null || this.scrollY <= max) return
+            if (max >= 0) {
+                this._scrollY = max
+                return
+            }
+            // Nothing above to measure from, so the document's top is as far as this goes.
+            if (this.getPage(-1) === null) {
+                this._scrollY = 0
+                return
+            }
+            this.onPageChange?.(-1)
+            const newPage = this.getPage(0)
+            if (!newPage) return
+            const newHeight = this.getPageHeight(newPage)
+            this.anchorDocY -= newHeight
+            this.currentPageHeight = newHeight
+            // No height yet to hold it either, so rest at its top.
+            if (newHeight <= 0) {
+                this._scrollY = 0
+                return
+            }
+            // The same document position, measured off the page now at 0.
+            this._scrollY = max + newHeight
+        }
+    }
+
+    /**
+     * Document-space position of the viewport's top, in page-space pixels at zoom 1. Where the
+     * reader is in a form that survives a page crossing, which [scrollY] on its own does not - so
+     * it is what to remember a position by, and [scrollTo] what to put it back with.
+     */
+    get documentY(): number {
+        return this.anchorDocY + this.scrollY
+    }
+
+    /** Put the viewport's top at [docY] - see [documentY]. */
+    scrollTo(docY: number) {
+        this.scrollBy(docY - this.documentY)
+    }
+
     /** Move to the top of the page [getPage] now answers 0 with, after the app jumps pages. */
     resetScroll() {
-        this.scrollY = 0
+        this._scrollY = 0
+        // A different page now: its own height is the baseline, not the page left behind.
+        this.currentPageHeight = null
     }
 
     /** Slide the current page into place after a jump - [direction] 1 when it came from below. */
@@ -368,17 +456,24 @@ export class ImageViewerContinuousState extends ImageViewerState {
     protected override captureRenderState(): unknown {
         const screenH = this.height
 
-        let y0 = 0
-        const current = this.getPage(0)
-        if (current) {
-            const pageHeight = this.getPageHeight(current)
+        const page0 = this.getPage(0)
+        if (page0) {
+            const pageHeight = this.getPageHeight(page0)
             // A decode correcting a placeholder's height holds the same fraction of the page: at
-            // its top nothing moves, near its bottom the pages below stay put.
+            // its top nothing moves, near its bottom the pages below stay put. Both heights have
+            // to be measured, and an unmeasured one is not a baseline to correct against later.
             const previous = this.currentPageHeight
-            if (previous !== null && previous > 0) this.scrollY *= pageHeight / previous
-            this.currentPageHeight = pageHeight
-            y0 = -this.scrollY + this.slideOffset
+            if (previous !== null && previous > 0 && pageHeight > 0) {
+                this._scrollY *= pageHeight / previous
+            }
+            if (pageHeight > 0) this.currentPageHeight = pageHeight
+            // A decode shortening the document under a position already at its end: only
+            // [scrollBy] used to notice, on the next scroll, as a jump.
+            this.clampToDocumentEnd()
         }
+
+        // After the clamp, which can step the page at 0 back.
+        const y0 = page0 ? -this.scrollY + this.slideOffset : 0
 
         // Document position at the viewport's centre - the point both the fast path and
         // TileRenderer's continuous overload zoom around, so they agree on where a page belongs.
@@ -389,22 +484,34 @@ export class ImageViewerContinuousState extends ImageViewerState {
         // Visible band in unscaled page space. Zoom is centred on the screen, so the viewport
         // covers screenH / scale of page space around the screen centre.
         const visTop = 0.5 * screenH - screenH / (2 * this.scale)
+        const screenBot = 0.5 * screenH + screenH / (2 * this.scale)
         // +1 tile of margin, matching TileRenderer's own prefetch ring, so a boundary tile just
         // past the viewport has its page already discovered.
-        const visBot =
-            0.5 * screenH + screenH / (2 * this.scale) + this.tiles.preferredTileSize / this.scale
+        const visBot = screenBot + this.tiles.preferredTileSize / this.scale
+
+        // Read past, not merely reached - see [onPageScrolledThrough]. No height, no reading.
+        const isScrolledThrough = (top: number, pageHeight: number) =>
+            pageHeight > 0 && (top + pageHeight <= screenBot || top < visTop)
+
+        let scrolledThrough: ImagePage | null = null
 
         // Backward: pages above page 0, needed once zoomed out enough that visTop goes negative -
         // the visible band reaching above where page 0 starts. Mirrors the forward walk below.
         let yTop = y0
         let iBack = -1
         let docTopBack = this.anchorDocY
+        let above = 0
         while (yTop > visTop && iBack >= -MAX_VISIBLE_PAGES) {
             const page = this.getPage(iBack)
             if (!page) break
+            above = -iBack
             const pageHeight = this.getPageHeight(page)
             docTopBack -= pageHeight
             yTop -= pageHeight
+            // Walking up, so the first match is the deepest one above page 0.
+            if (scrolledThrough === null && isScrolledThrough(yTop, pageHeight)) {
+                scrolledThrough = page
+            }
             // Walked upward, so each goes in front of the last - top to bottom, as the forward
             // walk below appends.
             if (page.isDecoded) pages.unshift({ page, docTop: docTopBack, pageHeight })
@@ -423,14 +530,19 @@ export class ImageViewerContinuousState extends ImageViewerState {
         let docTop = this.anchorDocY
         let prevHeight = 0
         let hasPrev = false
+        let below = 0
         while (y < visBot && i <= MAX_VISIBLE_PAGES) {
             const page = this.getPage(i)
             if (!page) break
+            below = i
             // Anchored to the previous page in this walk, never frozen: an undecoded page's height
             // is a guess, so re-deriving it every frame self-corrects once it decodes.
             if (hasPrev) docTop += prevHeight
             hasPrev = true
             const pageHeight = this.getPageHeight(page)
+
+            // Walking down, so a later match replaces whatever the backward walk found.
+            if (isScrolledThrough(y, pageHeight)) scrolledThrough = page
 
             if (y + pageHeight > visTop && page.isDecoded) pages.push({ page, docTop, pageHeight })
 
@@ -443,6 +555,14 @@ export class ImageViewerContinuousState extends ImageViewerState {
         }
 
         this.onScreenPages = pages.map(p => p.page)
+        this._pagesBelow = below
+        this._pagesAbove = above
+
+        // By identity: a page that stays the deepest one read through is reported once.
+        if (scrolledThrough !== null && scrolledThrough !== this.lastScrolledThrough) {
+            this.lastScrolledThrough = scrolledThrough
+            this.onPageScrolledThrough?.(scrolledThrough)
+        }
 
         const snapshot: ContinuousRenderSnapshot = {
             pages,

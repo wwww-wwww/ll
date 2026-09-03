@@ -132,8 +132,8 @@ function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
         // Against the live scale, not the start: each step moves by what this frame changed.
         const diff = 1 / newScale - 1 / state.scale
         state.offsetX += px * diff
-        state.scrollY -= py * diff * state.height
         state.scale = newScale
+        state.scrollBy(-py * diff * state.height)
         state.invalidate()
     })
     state.animationJob = job
@@ -154,7 +154,15 @@ async function doubleTapDragZoom(
 
     const originalScale = state.scale
     const originalOffsetX = state.offsetX
-    const originalScrollY = state.scrollY
+    // Zoom anchors the tap point, and the scroll that needs is a function of the total scale
+    // change - so it is applied as the step since the last frame. Page crossings and the end of
+    // the document are scrollBy's to keep, and it is the only thing that keeps them.
+    let anchorApplied = 0
+    const anchorScroll = (target: number) => {
+        state.scrollBy(target - anchorApplied)
+        anchorApplied = target
+    }
+
     const px = origin.x / state.width - 0.5
     const py = origin.y / state.height - 0.5
     let totalDeltaY = 0
@@ -175,7 +183,7 @@ async function doubleTapDragZoom(
             const diff = 1 / newScale - 1 / originalScale
             state.scale = newScale
             state.offsetX = originalOffsetX + px * diff
-            state.scrollY = originalScrollY - py * diff * state.height
+            anchorScroll(-py * diff * state.height)
             state.invalidate()
         }
 
@@ -203,7 +211,7 @@ async function doubleTapDragZoom(
             const limit = state.maxOffsetX(newScale)
             state.scale = newScale
             state.offsetX = coerceIn(originalOffsetX + px * diff, -limit, limit)
-            state.scrollY = originalScrollY - py * diff * state.height
+            anchorScroll(-py * diff * state.height)
             state.invalidate()
         })
         state.animationJob = job
@@ -214,31 +222,64 @@ async function doubleTapDragZoom(
     }
 
     // Snap scale and offsetX back if the drag overshot either limit.
-    const targetScale = coerceIn(state.scale, state.minScale, state.maxScale)
-    const targetLimit = state.maxOffsetX(targetScale)
-    const targetOffsetX = coerceIn(state.offsetX, -targetLimit, targetLimit)
-    if (targetScale === state.scale && targetOffsetX === state.offsetX) return
-
-    animateScaleTo(state, targetScale, targetOffsetX)
+    if (!snapScaleIntoBounds(state, px, py)) {
+        // Only the pan overshot.
+        snapOffsetXIntoBounds(state)
+    }
 }
 
-/** Spring [scale] and [offsetX] to a settled pair, holding [isScaleAnimating] for the duration. */
-function animateScaleTo(
+/**
+ * Walk a scale that overshot back into bounds about [originX]/[originY], the point the zoom was
+ * anchored to - fractions of the viewport from its centre. False if the scale was already fine.
+ *
+ * Position interpolates on the reciprocal of the scale, as `ImagePage.animateTo` does, so the
+ * origin holds throughout: what the anchor owes is a function of 1/scale, not of the animation's
+ * own progress.
+ */
+function snapScaleIntoBounds(
     state: ImageViewerContinuousState,
-    targetScale: number,
-    targetOffsetX: number,
-) {
+    originX: number,
+    originY: number,
+): boolean {
     const startScale = state.scale
+    const targetScale = coerceIn(startScale, state.minScale, state.maxScale)
+    if (targetScale === startScale) return false
+
+    const diffEnd = 1 / targetScale - 1 / startScale
     const startOffsetX = state.offsetX
+    const endLimit = state.maxOffsetX(targetScale)
+    const endOffsetX = coerceIn(startOffsetX + originX * diffEnd, -endLimit, endLimit)
+    const endScroll = -originY * diffEnd * state.height
+
     state.isScaleAnimating = true
+    let applied = 0
     const job = animate(0, 1, spring(), t => {
-        state.scale = (1 - t) * startScale + t * targetScale
-        state.offsetX = startOffsetX + (targetOffsetX - startOffsetX) * t
+        const newScale = (1 - t) * startScale + t * targetScale
+        const c = coerceIn((1 / newScale - 1 / startScale) / diffEnd, 0, 1)
+        state.scale = newScale
+        state.offsetX = startOffsetX + (endOffsetX - startOffsetX) * c
+        // As a step, so scrollBy keeps its page crossings and clamp.
+        state.scrollBy(endScroll * c - applied)
+        applied = endScroll * c
         state.invalidate()
     })
     state.animationJob = job
     job.promise.then(() => {
         if (state.animationJob === job) state.isScaleAnimating = false
+    })
+    return true
+}
+
+/** Walk a pan that overshot back to the edge it overshot, the scale being fine. */
+function snapOffsetXIntoBounds(state: ImageViewerContinuousState) {
+    const limit = state.maxOffsetX(state.scale)
+    const clampedX = coerceIn(state.offsetX, -limit, limit)
+    if (clampedX === state.offsetX) return
+
+    const startX = state.offsetX
+    state.animationJob = animate(0, 1, spring(), t => {
+        state.offsetX = startX + (clampedX - startX) * t
+        state.invalidate()
     })
 }
 
@@ -255,6 +296,8 @@ async function dragGesture(
     velocityTracker.add(firstEvent.raw.timeStamp, firstPosition)
 
     let single = true
+    let zoomOriginX = 0
+    let zoomOriginY = 0
     let lastMoveTime = firstEvent.raw.timeStamp
     let lastEventTime = firstEvent.raw.timeStamp
 
@@ -290,9 +333,14 @@ async function dragGesture(
                     const centroid = event.centroid(true)
                     const newScale = state.scale * zoom
                     const diff = 1 / newScale - 1 / state.scale
-                    state.offsetX += (centroid.x / state.width - 0.5) * diff
-                    state.scrollBy(-(centroid.y / state.height - 0.5) * diff * state.height)
+                    const cx = centroid.x / state.width - 0.5
+                    const cy = centroid.y / state.height - 0.5
+                    // What the snap-back below anchors to.
+                    zoomOriginX = cx
+                    zoomOriginY = cy
+                    state.offsetX += cx * diff
                     state.scale = newScale
+                    state.scrollBy(-cy * diff * state.height)
                 }
 
                 // One finger is bounded; a pinch is not, so the release can snap it back.
@@ -319,17 +367,10 @@ async function dragGesture(
     longPressJob?.cancel()
     if (longPressed()) return
 
-    if (state.scale < state.minScale) {
-        // Snap back up, returning offsetX to 0 as it goes - below minScale there is nowhere to pan.
-        animateScaleTo(state, state.minScale, 0)
-        return
-    }
-    if (state.scale > state.maxScale) {
-        const limit = state.maxOffsetX(state.maxScale)
-        animateScaleTo(state, state.maxScale, coerceIn(state.offsetX, -limit, limit))
-        return
-    }
+    // Scale out of bounds: snap it back, anchored where the pinch was.
+    if (snapScaleIntoBounds(state, zoomOriginX, zoomOriginY)) return
 
+    // Scale in bounds: fling pan or snap offsetX.
     const velocity = velocityTracker.calculateVelocity()
     // Held still before lifting: no fling, however fast it got there.
     const flingable =
@@ -341,15 +382,7 @@ async function dragGesture(
         return
     }
 
-    const limit = state.maxOffsetX(state.scale)
-    const clampedX = coerceIn(state.offsetX, -limit, limit)
-    if (clampedX === state.offsetX) return
-
-    const startX = state.offsetX
-    state.animationJob = animate(0, 1, spring(), t => {
-        state.offsetX = startX + (clampedX - startX) * t
-        state.invalidate()
-    })
+    snapOffsetXIntoBounds(state)
 }
 
 /** Decay fling along the release direction, scrolling and panning together. */
