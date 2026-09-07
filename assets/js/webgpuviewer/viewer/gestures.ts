@@ -127,7 +127,12 @@ export class PointerStream {
 
         // A snapshot: the gesture may await several events before reading this one, and the live
         // map keeps moving underneath it.
-        const changes = [...this.pointers.values()].map(p => ({ ...p }))
+        //
+        // Only [e.pointerId] moved this event - zero the rest so pan()/zoom() don't re-sum a
+        // stale delta left over from some other pointer's last move.
+        const changes = [...this.pointers.values()].map(p =>
+            p.id === e.pointerId ? { ...p } : { ...p, previous: p.current },
+        )
         const event = new GestureEvent(changes, type, e)
 
         if (type === "up" || type === "cancel") this.pointers.delete(e.pointerId)
