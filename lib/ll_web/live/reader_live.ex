@@ -65,7 +65,7 @@ defmodule LLWeb.ReaderLive do
 
             <div>
               <label for="chk_pagedetect">pagedetect</label>
-              <input id="chk_pagedetect" phx-update="ignore" type="checkbox" checked />
+              <input id="chk_pagedetect" phx-update="ignore" type="checkbox" />
             </div>
 
             <div class="pagedetect">
