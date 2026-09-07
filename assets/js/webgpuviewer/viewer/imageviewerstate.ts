@@ -217,8 +217,11 @@ export class ImageViewerState {
      * Called after the surface changes size. A page's home transform derives from the viewport, so a
      * resize invalidates the fit of anything settled - and the state knows only the pages it
      * fetches, so the decision goes to whoever owns them.
+     *
+     * `first` is the initial measurement: nothing has settled against a zero viewport yet, but a
+     * layout that depends on the size is only decidable from here on.
      */
-    onViewportChanged: (() => void) | null = null
+    onViewportChanged: ((first: boolean) => void) | null = null
 
     /** Attach to [canvas] and start the frame loop. */
     init(canvas: HTMLCanvasElement, width: number, height: number) {

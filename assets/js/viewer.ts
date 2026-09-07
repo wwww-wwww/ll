@@ -135,7 +135,15 @@ export interface ViewerConfig {
     navigateToPan: boolean
     /** Pages decoded at once. See [Viewer.startWorkers]. */
     decodeConcurrency: number
+    /** The turn animation while pages pair into spreads - see [Viewer.isDualPageMode]. */
     transition: TransitionName
+    /**
+     * The turn animation while they do not - a portrait screen, or [dualPage] off.
+     *
+     * Its own setting because the two views turn different things: a flip pivots a spread about
+     * its spine, which a lone page has no counterpart for.
+     */
+    singleTransition: TransitionName
     /** Right-to-left reading. */
     reversed: boolean
     vertical: boolean
@@ -173,6 +181,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
     // preload window far sooner; past a handful the network is the limit anyway.
     decodeConcurrency: 3,
     transition: "flip",
+    singleTransition: "default",
     reversed: false,
     vertical: false,
     continuous: false,
@@ -526,7 +535,16 @@ export class Viewer extends ImageViewerElement {
 
         // A resize changes every page's fit. Placeholders are also sized in screen pixels, so
         // they have to be rebuilt rather than just re-homed.
-        this.state.onViewportChanged = () => {
+        this.state.onViewportChanged = first => {
+            // A rotation across the square decides spreads differently, and that regroups the
+            // list from scratch - re-homing what the old grouping left behind would be wasted.
+            if (this.builtDual !== this.isDualPageMode()) {
+                this.rebuildPages()
+                return
+            }
+            // Nothing has settled against a zero viewport - see ImagePage.applyHome.
+            if (first) return
+
             this.pageCache.forEach(page => {
                 page.spreadPage?.cleanup()
                 page.spreadPage = null
@@ -596,12 +614,27 @@ export class Viewer extends ImageViewerElement {
 
         this.state.isReversed = this.config.reversed
         this.state.isVertical = this.config.vertical
-        this.state.transition = this.transitionFor(this.config.transition)
+        this.applyTransition()
         this.applyFilters()
+
+        // Pairing is baked into the list, so a change of mind about it needs the list itself back.
+        if (this.builtDual !== this.isDualPageMode()) {
+            this.rebuildPages()
+            return
+        }
 
         this.dropCache()
         this.preloadAround(this.currentIndex)
         this.state.invalidate()
+    }
+
+    /**
+     * Install whichever of the two turn animations the current view calls for. Re-run wherever
+     * [isDualPageMode] can change its mind, since the viewport is half of that answer.
+     */
+    private applyTransition() {
+        const name = this.isDualPageMode() ? this.config.transition : this.config.singleTransition
+        this.state.transition = this.transitionFor(name)
     }
 
     private transitionFor(name: TransitionName): Transition {
@@ -639,11 +672,23 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
+     * `Configuration.ORIENTATION_LANDSCAPE` - a screen wider than it is tall.
+     *
+     * Zero until the first measurement, so nothing pairs before the size is known - see
+     * [bindState]'s `onViewportChanged`, which regroups once it is.
+     */
+    private get isWideViewport(): boolean {
+        return this.state.width > this.state.height
+    }
+
+    /**
      * `isDualPageMode` - whether pages pair into spreads at all. Never in continuous, which
-     * scrolls one column however wide the screen is.
+     * scrolls one column however wide the screen is, and never on a portrait screen: two halves
+     * sharing a seam there are each narrower than either would be alone. Mihon decides the same
+     * way, rebuilding its adapter when a rotation changes the answer - see [rebuildPages].
      */
     private isDualPageMode(): boolean {
-        return this.config.dualPage && !this.config.continuous
+        return this.config.dualPage && !this.config.continuous && this.isWideViewport
     }
 
     /**
@@ -668,17 +713,15 @@ export class Viewer extends ImageViewerElement {
      * information out of each image's EXIF `PageName` tag inside the decoder; here it arrives with
      * the file list, so the pairing is already decided and [SpreadPosition] just records it.
      *
-     * Ignored entirely in continuous mode, where there are no spreads: a page fills the viewer's
-     * width and the next one follows below it, so a half has nothing to pair with and no half-width
-     * slot to sit in. Turning [ViewerConfig.dualPage] off is not enough on its own - that stops
-     * [pairsWithNext] composing an [ImageSpread], but the grouping below would still emit
-     * [SpreadPosition.Left]/[SpreadPosition.Right] pages with one empty slot, which is what drives
-     * the half-width placeholders and the half-page fit.
+     * Ignored entirely outside dual mode - continuous, or a portrait screen. There is no seam to
+     * sit at, so each file becomes its own whole [SpreadPosition.Single] page rather than a half
+     * with an empty slot beside it.
      *
      * Nothing is fetched here. Only [preloadAround] starts loads, and only within the window.
      */
     setPages(urls: string[], order: number[] | null = null, startFileIndex: number = 0) {
         this.dropCache()
+        this.batches = [{ urls, order }]
         this.pageList = this.buildPages(urls, order, 0, 0)
         this.fileCount = urls.length
 
@@ -690,6 +733,12 @@ export class Viewer extends ImageViewerElement {
 
     /** Files across the whole list - where [appendPages] carries on numbering from. */
     private fileCount = 0
+
+    /** Each grouping call's own input, kept so [rebuildPages] can regroup it. */
+    private batches: { urls: string[]; order: number[] | null }[] = []
+
+    /** What [isDualPageMode] said when [pageList] was grouped - [rebuildPages] once it disagrees. */
+    private builtDual = false
 
     /**
      * Add [urls] to the end of the list, keeping everything already decoded.
@@ -703,6 +752,7 @@ export class Viewer extends ImageViewerElement {
      */
     appendPages(urls: string[], order: number[] | null = null) {
         if (urls.length === 0) return
+        this.batches.push({ urls, order })
         this.pageList.push(...this.buildPages(urls, order, this.pageList.length, this.fileCount))
         this.fileCount += urls.length
         this.preloadAround(this.currentIndex)
@@ -718,6 +768,7 @@ export class Viewer extends ImageViewerElement {
      */
     prependPages(urls: string[], order: number[] | null = null) {
         if (urls.length === 0) return
+        this.batches.unshift({ urls, order })
         const pages = this.buildPages(urls, order, 0, 0)
 
         for (const page of this.pageList) {
@@ -748,7 +799,11 @@ export class Viewer extends ImageViewerElement {
         fileOffset: number,
     ): ViewerPage[] {
         const pages: ViewerPage[] = []
-        const grouping = this.config.continuous ? null : order
+        // Recorded, so a viewport that later disagrees knows the list needs regrouping.
+        this.builtDual = this.isDualPageMode()
+        // Outside dual mode every file stands alone, as Mihon's `setJoinedItems` pairs each item
+        // with null - no seam to sit at, so no half slot and no [SpreadPosition] worth keeping.
+        const grouping = this.builtDual ? order : null
 
         if (grouping === null) {
             urls.forEach((url, i) =>
@@ -779,7 +834,7 @@ export class Viewer extends ImageViewerElement {
             // in *reading* order, which right-to-left means the right half comes first - hence
             // the pair below storing its second file in slot 0.
             if (o === 0) {
-                if (remaining[0] === 1 && this.config.dualPage) {
+                if (remaining[0] === 1) {
                     remaining.shift()
                     const right = urls[file++]
                     const left = urls[file++]
@@ -796,6 +851,34 @@ export class Viewer extends ImageViewerElement {
             }
         }
         return pages
+    }
+
+    /**
+     * Regroup every batch under the current [isDualPageMode], keeping the reader on the file they
+     * were on - pairing changes how many pages there are and which one holds that file, so the
+     * index it had means something else afterwards. Mihon's `setJoinedItems` rebuilds the same way.
+     *
+     * Everything decoded is dropped with it: the files move between pages, and a page's decoded
+     * images belong to the slots it had.
+     */
+    private rebuildPages() {
+        const file = this.page
+        this.dropCache()
+
+        const pages: ViewerPage[] = []
+        let fileOffset = 0
+        for (const batch of this.batches) {
+            pages.push(...this.buildPages(batch.urls, batch.order, pages.length, fileOffset))
+            fileOffset += batch.urls.length
+        }
+        this.pageList = pages
+
+        // The view has just changed which of the two it is - see [applyTransition].
+        this.applyTransition()
+        this.currentIndex = Math.max(0, this.pageIndexOfFile(file))
+        invalidateCache()
+        this.preloadAround(this.currentIndex)
+        this.state.invalidate()
     }
 
     private makePage(
@@ -1024,7 +1107,7 @@ export class Viewer extends ImageViewerElement {
 
     /** True when page [index] and the next one make up one spread. */
     private pairsWithNext(index: number): boolean {
-        if (!this.config.dualPage) return false
+        if (!this.isDualPageMode()) return false
         const page = this.pageList[index]
         const next = this.pageList[index + 1]
         if (!page || !next) return false
@@ -1463,7 +1546,7 @@ export class Viewer extends ImageViewerElement {
      * are unchanged, which is what preserves its pan/zoom across frames.
      */
     private buildSpreadPage(page: ViewerPage): ImagePage {
-        if (!this.config.dualPage) return page.imagePage
+        if (!this.isDualPageMode()) return page.imagePage
         if (page.spreadPosition === SpreadPosition.Single) {
             page.spreadPage = null
             return page.imagePage
@@ -1635,6 +1718,8 @@ export class Viewer extends ImageViewerElement {
     clear() {
         this.dropCache()
         this.pageList = []
+        this.batches = []
+        this.fileCount = 0
         this.currentIndex = 0
     }
 

@@ -142,9 +142,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             if (width === this.state.width && height === this.state.height) return
             const first = this.state.width === 0 || this.state.height === 0
             this.state.init(this, width, height)
-            // Not on the first measurement: nothing has settled against a zero viewport, and
-            // ImagePage defers its own home snap until there is one - see ImagePage.applyHome.
-            if (!first) this.state.onViewportChanged?.()
+            this.state.onViewportChanged?.(first)
             this.state.invalidate()
         })
         this.resizeObserver.observe(this)
