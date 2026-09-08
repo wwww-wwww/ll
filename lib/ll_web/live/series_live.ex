@@ -677,26 +677,20 @@ defmodule LLWeb.SeriesLive do
 
     body = Jason.encode!(%{query: query, variables: %{title: title}})
 
-    HTTPoison.request(%HTTPoison.Request{
-      method: "POST",
-      url: "https://graphql.anilist.co",
-      body: body,
-      headers: [
-        {"Accept", "application/json"},
-        {"Content-Type", "application/json"}
-      ],
-      options: [recv_timeout: 30000]
-    })
-    |> case do
-      {:ok, %{body: body}} ->
-        results =
-          Jason.decode!(body)
-          |> Map.get("data")
-          |> Map.get("Page")
-          |> Map.get("media")
-
-        {:noreply, socket |> assign(:anilist_search_results, results)}
-
+    with {:ok, %{body: body}} <-
+           HTTPoison.request(%HTTPoison.Request{
+             method: "POST",
+             url: "https://graphql.anilist.co",
+             body: body,
+             headers: [
+               {"Accept", "application/json"},
+               {"Content-Type", "application/json"}
+             ],
+             options: [recv_timeout: 30000]
+           }),
+         {:ok, %{data: %{Page: %{media: results}}}} <- Jason.decode(body, keys: :atoms) do
+      {:noreply, socket |> assign(:anilist_search_results, results)}
+    else
       err ->
         IO.inspect(err)
         {:noreply, socket}
