@@ -18,6 +18,8 @@ defmodule LL.Message do
       Ecto.Changeset.change(%__MODULE__{}, %{title: title, body: body})
       |> Repo.insert()
 
+    Logger.error("#{title}: #{body}")
+
     LLWeb.Endpoint.broadcast("messages", "create", message)
     message
   end

@@ -4,9 +4,8 @@ defmodule LLWeb.SeriesLive do
 
   import Ecto.Query
 
-  require Logger
-
   alias LL.{
+    Anilist,
     Repo,
     Series,
     Chapter,
@@ -79,11 +78,11 @@ defmodule LLWeb.SeriesLive do
 
                 <div>
                   <span :for={{t, i} <- (assigns[:anilist_search_results] || []) |> Enum.with_index()}>
-                    <% title = t["title"]["english"] || t["title"]["romaji"] || t["title"]["native"] %>
-                    <img src={t["coverImage"]["extraLarge"]} />
-                    <.link href={t["siteUrl"]} target="_blank">{title}</.link>
+                    <% title = t[:title][:english] || t[:title][:romaji] || t[:title][:native] %>
+                    <img src={t[:coverImage][:extraLarge]} />
+                    <.link href={t[:siteUrl]} target="_blank">{title}</.link>
                     <div
-                      :for={title <- Enum.map(t["title"], &elem(&1, 1)) ++ t["synonyms"]}
+                      :for={title <- Enum.map(t[:title], &elem(&1, 1)) ++ t[:synonyms]}
                       :if={!is_nil(title)}
                     >
                       {title}
@@ -443,11 +442,8 @@ defmodule LLWeb.SeriesLive do
     |> Ecto.Changeset.change(%{series_id: socket.assigns.entry.id})
     |> Repo.insert()
     |> case do
-      {:ok, multi} ->
-        Endpoint.broadcast("series:#{socket.assigns.entry.id}", "multi", multi)
-
-      err ->
-        Message.error(err)
+      {:ok, multi} -> Endpoint.broadcast("series:#{socket.assigns.entry.id}", "multi", multi)
+      err -> Message.error(err)
     end
 
     {:noreply, socket}
@@ -643,57 +639,9 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_event("anilist-search", %{"title" => title}, socket) do
-    query = """
-    query ($title: String) {
-      Page {
-        media (search: $title, type: MANGA) {
-          siteUrl
-          title {
-            english
-            romaji
-            native
-          }
-          status
-          staff {
-            edges {
-              role
-              node {
-                name {
-                  full
-                }
-              }
-            }
-          }
-          coverImage {
-            extraLarge
-          }
-          id
-          description
-          synonyms
-        }
-      }
-    }
-    """
-
-    body = Jason.encode!(%{query: query, variables: %{title: title}})
-
-    with {:ok, %{body: body}} <-
-           HTTPoison.request(%HTTPoison.Request{
-             method: "POST",
-             url: "https://graphql.anilist.co",
-             body: body,
-             headers: [
-               {"Accept", "application/json"},
-               {"Content-Type", "application/json"}
-             ],
-             options: [recv_timeout: 30000]
-           }),
-         {:ok, %{data: %{Page: %{media: results}}}} <- Jason.decode(body, keys: :atoms) do
-      {:noreply, socket |> assign(:anilist_search_results, results)}
-    else
-      err ->
-        IO.inspect(err)
-        {:noreply, socket}
+    case Anilist.search(title) do
+      {:ok, results} -> {:noreply, socket |> assign(:anilist_search_results, results)}
+      _err -> {:noreply, socket}
     end
   end
 
@@ -703,45 +651,49 @@ defmodule LLWeb.SeriesLive do
     details = socket.assigns.anilist_search_results |> Enum.at(index)
 
     author =
-      details["staff"]["edges"]
-      |> Enum.filter(&String.contains?(&1["role"], "Original Story"))
-      |> Enum.map(& &1["node"]["name"]["full"])
+      details.staff.edges
+      |> Enum.filter(&String.contains?(&1.role, "Original Story"))
+      |> Enum.map(& &1[:node][:name][:full])
       |> Enum.at(0) ||
-        details["staff"]["edges"]
-        |> Enum.filter(&String.contains?(&1["role"], "Story"))
-        |> Enum.map(& &1["node"]["name"]["full"])
+        details.staff.edges
+        |> Enum.filter(&String.contains?(&1.role, "Story"))
+        |> Enum.map(& &1[:node][:name][:full])
         |> Enum.at(0)
 
     artist =
-      details["staff"]["edges"]
+      details.staff.edges
       |> Enum.filter(
-        &(String.contains?(&1["role"], "Art") or String.contains?(&1["role"], "Illustration"))
+        &(String.contains?(&1.role, "Art") or String.contains?(&1.role, "Illustration"))
       )
-      |> Enum.map(& &1["node"]["name"]["full"])
+      |> Enum.map(& &1[:node][:name][:full])
       |> Enum.at(0)
 
-    cover_url = details["coverImage"]["extraLarge"]
+    cover_url = details[:coverImage][:extraLarge]
 
-    {:ok, entry} =
-      socket.assigns.entry
-      |> Ecto.Changeset.change(%{
-        anilist_id: details["id"],
-        title: title |> String.trim(),
-        thumbnail_path: cover_url,
-        author: author,
-        artist: artist,
-        description: details["description"]
-      })
-      |> Repo.update()
+    socket.assigns.entry
+    |> Ecto.Changeset.change(%{
+      anilist_id: details.id,
+      title: title |> String.trim(),
+      thumbnail_path: cover_url,
+      author: author,
+      artist: artist,
+      description: details[:description]
+    })
+    |> Repo.update()
+    |> case do
+      {:ok, %MultiSeries{} = entry} ->
+        Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+        LL.Anilist.download_cover(cover_url, entry)
 
-    case entry do
-      %MultiSeries{} -> Endpoint.broadcast("multi:#{entry.id}", "update", entry)
-      %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
+      {:ok, %Series{} = entry} ->
+        Endpoint.broadcast("series:#{entry.id}", "update", entry)
+        LL.Anilist.download_cover(cover_url, entry)
+
+      err ->
+        Message.error(err)
     end
 
-    LL.Anilist.download_cover(cover_url, entry)
-
-    {:noreply, assign(socket, entry: entry)}
+    {:noreply, socket}
   end
 
   def handle_info(%{topic: "series:" <> _id, event: "update", payload: series}, socket) do

@@ -7,6 +7,60 @@ defmodule LL.Anilist do
 
   @endpoint "https://graphql.anilist.co"
 
+  def search(title) do
+    query = """
+    query ($title: String) {
+      Page {
+        media (search: $title, type: MANGA) {
+          siteUrl
+          title {
+            english
+            romaji
+            native
+          }
+          status
+          staff {
+            edges {
+              role
+              node {
+                name {
+                  full
+                }
+              }
+            }
+          }
+          coverImage {
+            extraLarge
+          }
+          id
+          description
+          synonyms
+        }
+      }
+    }
+    """
+
+    body = Jason.encode!(%{query: query, variables: %{title: title}})
+
+    with {:ok, %{body: body}} <-
+           HTTPoison.request(%HTTPoison.Request{
+             method: "POST",
+             url: "https://graphql.anilist.co",
+             body: body,
+             headers: [
+               {"Accept", "application/json"},
+               {"Content-Type", "application/json"},
+               {"Referer", "https://graphql.anilist.co"}
+             ],
+             options: [recv_timeout: 30000]
+           }),
+         {:ok, %{data: %{Page: %{media: results}}}} <- Jason.decode(body, keys: :atoms) do
+      {:ok, results}
+    else
+      err -> Message.error(err)
+    end
+  end
+
   def cover(id) do
     query = """
     query ($id: Int) {
