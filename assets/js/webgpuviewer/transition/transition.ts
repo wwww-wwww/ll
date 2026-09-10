@@ -422,6 +422,8 @@ export function blitCached(
 const REGION_SHADER = `
 struct Uniforms {
     rect: vec4<f32>,
+    // Fade in x, the rest padding.
+    fade: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -455,7 +457,8 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(src_tex, src_sampler, in.uv);
+    // Premultiplied, so the whole sample scales.
+    return textureSample(src_tex, src_sampler, in.uv) * uniforms.fade.x;
 }
 `
 
@@ -494,11 +497,11 @@ function getRegionPipeline(): GPURenderPipeline {
     return regionPipeline
 }
 
-const regionScratch = new Float32Array(4)
+const regionScratch = new Float32Array(8)
 
 /**
  * Blit one region of a cached texture into [pass] at those same coordinates - one side of a cached
- * spread without the other. Null [cachedView] draws nothing.
+ * spread without the other. Null [cachedView] draws nothing, as does [alpha] 0.
  */
 export function blitCachedRegion(
     pass: GPURenderPassEncoder,
@@ -507,13 +510,14 @@ export function blitCachedRegion(
     y1: number,
     x2: number,
     y2: number,
+    alpha: number = 1,
 ) {
-    if (!cachedView || x2 <= x1 || y2 <= y1) return
+    if (!cachedView || x2 <= x1 || y2 <= y1 || alpha <= 0) return
 
-    regionScratch.set([x1, y1, x2, y2])
+    regionScratch.set([x1, y1, x2, y2, alpha, 0, 0, 0])
 
     const uniformBuffer = device().createBuffer({
-        size: 16,
+        size: 32,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
     device().queue.writeBuffer(uniformBuffer, 0, regionScratch)

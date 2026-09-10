@@ -40,6 +40,9 @@ const MIN_BEND = 0.04
 /** How much of each end eases back to flat lighting, to match the static halves. */
 const LIT_ENDS = 0.15
 
+/** How much of each end the static halves fade over - opaque through the rest of the turn. */
+const FADE_ENDS = 0.25
+
 // Along the leaf only - it does not bend vertically, so rows buy just a shorter diagonal.
 const COLS = 64
 const ROWS = 2
@@ -76,6 +79,21 @@ interface Leaf {
 function smoothstep(x: number): number {
     const e = Math.min(Math.max(x, 0), 1)
     return e * e * (3 - 2 * e)
+}
+
+/**
+ * Whether [big]'s own rect on this side reaches past [small]'s - so a face sized by [small] does
+ * not fully cover what [big] draws there. Compares real geometry only, both pages' own rects
+ * rather than a mirrored fallback, so a missing side (nothing to size a face by) always counts as
+ * uncovered.
+ */
+function sidePokesOut(big: ImagePage, small: ImagePage, dst: GPUTexture, left: boolean): boolean {
+    const bigRect = big.leafRect(dst, left)
+    const smallRect = small.leafRect(dst, left)
+    if (!bigRect || !smallRect) return true
+    const span = (rect: Float32Array, i: number) => rect[i + 2] - rect[i]
+    const bigger = (a: number, b: number) => a > b + 1e-4
+    return bigger(span(bigRect, 0), span(smallRect, 0)) || bigger(span(bigRect, 1), span(smallRect, 1))
 }
 
 /** [rect] reflected across the spine - where the leaf's other face has to lie. */
@@ -205,16 +223,24 @@ class TransitionFlipImpl extends Transition {
             t,
         )
 
+        // Page 2's revealed half pokes out from behind the leaf's front face - sized by page 1 -
+        // only when page 2 is bigger there; fade it in rather than let it pop in unblocked from
+        // the first frame. Symmetric at the other end: page 1's kept half against the back face,
+        // sized by page 2. Opaque in between either way, so nothing is see-through mid-turn.
+        const fadeIn = sidePokesOut(page2, page1, dst, !forward) ? smoothstep(t / FADE_ENDS) : 1
+        const fadeOut = sidePokesOut(page1, page2, dst, forward) ? smoothstep((1 - t) / FADE_ENDS) : 1
+
         const pass = beginClearedPass(encoder, dst)
         try {
             if (surfaceFill(page1, page2)) Draw.rect(pass, 0, 0, 1, 1, background)
-            // Clipped at each spine: page 1 keeps the side the leaf left, page 2 the one it uncovers.
+            // Clipped at each spine: page 1 keeps the side the leaf left, page 2 the one it
+            // uncovers - page 2's fading in as it comes clear, page 1's out as the leaf lands.
             if (forward) {
-                if (spine1 !== null) blitCachedRegion(pass, cached1, 0, 0, spine1, 1)
-                if (spine2 !== null) blitCachedRegion(pass, cached2, spine2, 0, 1, 1)
+                if (spine1 !== null) blitCachedRegion(pass, cached1, 0, 0, spine1, 1, fadeOut)
+                if (spine2 !== null) blitCachedRegion(pass, cached2, spine2, 0, 1, 1, fadeIn)
             } else {
-                if (spine1 !== null) blitCachedRegion(pass, cached1, spine1, 0, 1, 1)
-                if (spine2 !== null) blitCachedRegion(pass, cached2, 0, 0, spine2, 1)
+                if (spine1 !== null) blitCachedRegion(pass, cached1, spine1, 0, 1, 1, fadeOut)
+                if (spine2 !== null) blitCachedRegion(pass, cached2, 0, 0, spine2, 1, fadeIn)
             }
         } finally {
             pass.end()
