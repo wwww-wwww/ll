@@ -4,6 +4,7 @@ import {
     STIFFNESS_MEDIUM,
     STIFFNESS_MEDIUM_LOW,
     animate,
+    closeTo,
     coerceIn,
     spring,
 } from "../util"
@@ -58,7 +59,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
 
     offsetX = 0
 
-    private _minZoomWidthFraction = 1
+    private _homeScale = 1
 
     /**
      * How much of the viewport width a page fills when fully zoomed out, from 0 to 1. The default 1
@@ -72,26 +73,36 @@ export class ImageViewerContinuousState extends ImageViewerState {
      * Clamped away from 0, which is not a scale anything can be drawn at. Setting it lifts a [scale]
      * that is now below the floor, so it takes effect without waiting for a gesture.
      */
-    get minZoomWidthFraction(): number {
-        return this._minZoomWidthFraction
+    get homeScale(): number {
+        return this._homeScale
     }
 
-    set minZoomWidthFraction(value: number) {
+    set homeScale(value: number) {
         const clamped = coerceIn(value, 0.01, 1)
-        if (clamped === this._minZoomWidthFraction) return
-        this._minZoomWidthFraction = clamped
+        if (clamped === this._homeScale) return
+        this._homeScale = clamped
         if (this.scale < clamped) this.scale = clamped
         this.invalidate()
     }
 
-    /** Lowest [scale] a gesture may settle at - see [minZoomWidthFraction]. */
+    private _minScale = 0
+
+    /** Lowest [scale] a gesture may settle at - [homeScale] unless set to something else. */
     get minScale(): number {
-        return this._minZoomWidthFraction
+        return this._minScale > 0 ? this._minScale : this.homeScale
     }
 
-    /** Follows [minScale], so a double tap off the zoom-out floor still doubles what is on screen. */
+    set minScale(value: number) {
+        this._minScale = value
+    }
+
+    get atHomeScale(): boolean {
+        return closeTo(this.scale, this.homeScale)
+    }
+
+    /** Follows [homeScale], so a double tap off the zoom-out floor still doubles what is on screen. */
     get doubleTapScale(): number {
-        return this.minScale * 2
+        return this.homeScale * 2
     }
 
     get maxScale(): number {

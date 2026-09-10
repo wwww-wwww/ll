@@ -277,7 +277,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             // otherwise restart from a scale still travelling, and three would zoom barely
             // further than one.
             const from = state.animationTargetScale ?? state.scale
-            // The state's own bounds, not a copy: minScale follows minZoomWidthFraction, so a
+            // The state's own bounds, not a copy: minScale follows homeScale, so a
             // duplicated constant here would let the wheel zoom past where a pinch may settle.
             const target = coerceIn(
                 Math.pow(10, Math.log10(from) + off),
