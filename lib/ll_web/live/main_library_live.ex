@@ -53,6 +53,17 @@ defmodule LLWeb.MainLibraryLive do
     from(l in Library, where: is_nil(l.user_id))
     |> Repo.all()
     |> Repo.preload([:series, [multi_series: [:series, :children]]])
+    |> Enum.sort_by(
+      fn library ->
+        {
+          library.name == "Yuri",
+          library.name == "Update",
+          library.name == "Complete",
+          library.name == "Trial"
+        }
+      end,
+      :desc
+    )
   end
 
   def libraries_series(libraries) do

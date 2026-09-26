@@ -42,7 +42,7 @@ defmodule LL.Application do
 
     downloaders2 =
       Enum.map(
-        1..5,
+        1..1,
         &Supervisor.child_spec({LL.Downloader, id: "local.#{&1}", queue: :local},
           id: "LL.Downloader.local.#{&1}"
         )

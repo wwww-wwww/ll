@@ -152,7 +152,7 @@ defmodule LLWeb.SourceLive do
               min="0"
               max="2"
               phx-hook="tristate"
-              name={@field.id}
+              name={@field.name}
               id={@field.id}
               value={@field.value || 0}
             />
@@ -201,7 +201,9 @@ defmodule LLWeb.SourceLive do
       %{type: "check", state: state} ->
         [{filter_id, state}]
 
-      %{type: "sort", state: state} ->
+      %{type: "sort"} = f ->
+        state = Map.get(f, :state) || %{index: 0, ascending: false}
+
         [
           {filter_id, state.index},
           {filter_id ++ ["ascending"], state.ascending}
@@ -245,12 +247,7 @@ defmodule LLWeb.SourceLive do
 
     options = get_options(filters)
 
-    form =
-      options
-      |> Enum.map(&{key(elem(&1, 0)), elem(&1, 1)})
-      |> Map.new()
-      |> Map.merge(%{"query" => ""})
-      |> to_form()
+    form = build_form(options, "")
 
     socket =
       socket
@@ -287,7 +284,23 @@ defmodule LLWeb.SourceLive do
   end
 
   def handle_info({:filters, filters}, socket) do
-    {:noreply, assign(socket, filters: filters)}
+    options = get_options(filters)
+
+    socket =
+      socket
+      |> assign(filters: filters)
+      |> assign(options: options)
+      |> assign(search_form: build_form(options, socket.assigns.query))
+
+    {:noreply, socket}
+  end
+
+  defp build_form(options, query) do
+    options
+    |> Enum.map(&{key(elem(&1, 0)), elem(&1, 1)})
+    |> Map.new()
+    |> Map.merge(%{"query" => query})
+    |> to_form()
   end
 
   def key(id), do: Phoenix.HTML.javascript_escape(inspect(id))
@@ -331,14 +344,19 @@ defmodule LLWeb.SourceLive do
 
     options =
       socket.assigns.options
-      |> Enum.map(&{elem(&1, 0), Map.get(params, key(elem(&1, 0)), elem(&1, 1))})
+      |> Enum.map(fn {id, default} ->
+        value =
+          case Map.fetch(params, key(id)) do
+            {:ok, "on"} -> true
+            {:ok, v} -> v
+            :error when is_boolean(default) -> false
+            :error -> default
+          end
 
-    new_form =
-      options
-      |> Enum.map(&{key(elem(&1, 0)), elem(&1, 1)})
-      |> Map.new()
-      |> Map.merge(%{"query" => query})
-      |> to_form()
+        {id, value}
+      end)
+
+    new_form = build_form(options, query)
 
     filters = to_filters(options)
 

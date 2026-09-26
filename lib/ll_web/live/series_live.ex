@@ -346,7 +346,7 @@ defmodule LLWeb.SeriesLive do
       Repo.get(Series, series_id)
       |> Repo.preload(source: :extension, multi_series: :series)
 
-    if not File.exists?(series.thumbnail_path) do
+    if not is_nil(series.thumbnail_path) and not File.exists?(series.thumbnail_path) do
       LL.Anilist.download_cover(series)
     end
 

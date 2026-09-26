@@ -49,7 +49,7 @@ defmodule LL.Downloader do
             method: task.type,
             url: task.url,
             body: body,
-            options: [recv_timeout: 30000]
+            options: [recv_timeout: 30000, follow_redirect: true]
           })
           |> case do
             {:ok, %HTTPoison.Response{body: body, headers: headers}} ->

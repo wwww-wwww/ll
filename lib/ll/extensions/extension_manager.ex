@@ -156,10 +156,10 @@ defmodule LL.ExtensionManager do
           IO.binwrite(file, body)
           File.close(file)
 
-          System.cmd("uv", ["run", "covers.py", path, "thumbnails/#{filename}"])
+          thumbnail_path = LL.Covers.encode(path)
 
           {:ok, series} =
-            Ecto.Changeset.change(series, %{thumbnail_path: path})
+            Ecto.Changeset.change(series, %{thumbnail_path: thumbnail_path})
             |> Repo.update()
 
           LLWeb.SeriesLive.update(series)
@@ -204,7 +204,7 @@ defmodule LL.ExtensionManager do
                   series
 
                 series ->
-                  if not File.exists?(series.thumbnail_path) do
+                  if not is_nil(series.thumbnail_path) and not File.exists?(series.thumbnail_path) do
                     series
                     |> Ecto.Changeset.change(%{thumbnail_path: m.thumbnail_url})
                     |> Repo.update!()
@@ -233,7 +233,8 @@ defmodule LL.ExtensionManager do
     %{
       extension: source.extension.path,
       source: source.source_id,
-      url: series.url
+      url: series.url,
+      title: series.title,
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "series_details", :local do

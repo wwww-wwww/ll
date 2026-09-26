@@ -111,7 +111,7 @@ defmodule LL.Anilist do
         IO.binwrite(file, body)
         File.close(file)
 
-        System.cmd("uv", ["run", "covers.py", path, "thumbnails/#{filename}"])
+        thumbnail_path = LL.Covers.encode(path)
 
         {:ok, entry} =
           Ecto.Changeset.change(entry, %{thumbnail_path: path})
