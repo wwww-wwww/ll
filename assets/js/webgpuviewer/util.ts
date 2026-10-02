@@ -27,6 +27,25 @@ export function closeTo(a: number, b: number, eps: number = 0.0001): boolean {
     return Math.abs(a - b) < eps
 }
 
+/** An 0xAARRGGBB int (Android's `Color`) as a `GPUColor`, alpha from the top byte. */
+export function argbToGPUColor(color: number): GPUColor {
+    return {
+        r: ((color >> 16) & 0xff) / 255,
+        g: ((color >> 8) & 0xff) / 255,
+        b: (color & 0xff) / 255,
+        a: ((color >>> 24) & 0xff) / 255,
+    }
+}
+
+/** Kotlin's `runCatching { fn(arg) }` - an app callback throwing shouldn't corrupt viewer state. */
+export function invokeSafe<T>(fn: ((arg: T) => void) | null | undefined, arg: T) {
+    try {
+        fn?.(arg)
+    } catch (e) {
+        console.error("callback threw", e)
+    }
+}
+
 export interface Offset {
     x: number
     y: number

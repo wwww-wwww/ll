@@ -48,8 +48,7 @@ export function resize(source: Uint8Array, width: number, height: number): Uint8
     const scaleX = width / dstWidth
     const scaleY = height / dstHeight
 
-    // The C++ caches at most 256 x-weights per destination pixel; a 2x reduction never needs more
-    // than three, so the cap is academic - sized to the real span here instead.
+    // Sized to the real span needed - a 2x reduction never needs more than three.
     const xWeights = new Float32Array(Math.ceil(scaleX) + 2)
 
     for (let y = 0; y < dstHeight; ++y) {

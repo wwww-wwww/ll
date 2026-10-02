@@ -1,4 +1,4 @@
-import { Rect, argb } from "../util"
+import { Rect, argb, coerceIn } from "../util"
 import { decodeToPixels, resize } from "../imageutil"
 import { detectBackgroundCpu, findAllCpu } from "../trim"
 import { DecodedImage, closeLevels } from "../decoder"
@@ -97,78 +97,87 @@ export class Image {
 
         const image = new Image(width, height)
 
-        // The one case that still wants CPU pixels. Skipped entirely otherwise, which is what
-        // keeps the default path off the main thread.
-        const needsPixels =
-            (trimColors !== null && trimColors.length > 0) || backgroundColor === null
-        if (needsPixels) {
-            image.analyse(
-                decodeToPixels(bitmap, width, height),
-                width,
-                height,
-                trimColors,
-                trimThreshold,
-                backgroundColor,
-            )
-        } else {
-            image.backgroundColor = backgroundColor
-        }
-
-        // Each level is resized from the original rather than from the level above: one
-        // off-thread call apiece, and no accumulated resampling error down the chain.
-        const levels: { source: ImageBitmap; w: number; h: number; scale: number; own: boolean }[] =
-            [{ source: bitmap, w: width, h: height, scale: 1, own: false }]
-
-        if (createMipMaps) {
-            let scale = 1
-            while (width * scale > MIPMAP_TILE_SIZE || height * scale > MIPMAP_TILE_SIZE) {
-                scale /= 2
-                const w = Math.floor(width * scale)
-                const h = Math.floor(height * scale)
-                if (w <= 0 || h <= 0) break
-                levels.push({
-                    source: await createImageBitmap(bitmap, {
-                        resizeWidth: w,
-                        resizeHeight: h,
-                        resizeQuality: "high",
-                    }),
-                    w,
-                    h,
-                    scale,
-                    own: true,
-                })
+        try {
+            // The one case that still wants CPU pixels. Skipped entirely otherwise, which is what
+            // keeps the default path off the main thread.
+            const needsPixels =
+                (trimColors !== null && trimColors.length > 0) || backgroundColor === null
+            if (needsPixels) {
+                const [trim, background] = Image.measurePixels(
+                    decodeToPixels(bitmap, width, height),
+                    width,
+                    height,
+                    trimColors,
+                    trimThreshold,
+                    backgroundColor,
+                )
+                image.trim = trim
+                if (background !== null) image.backgroundColor = background
+            } else {
+                image.backgroundColor = backgroundColor
             }
-        }
 
-        // No render lock: Mipmap.createFromSource yields between tiles so queued frames get the
-        // thread back. Safe since the image isn't reachable from any page yet.
-        await WebGpuRenderer.unlocked(async () => {
-            try {
-                for (const level of levels) {
-                    image.mipmaps.push(
-                        await Mipmap.createFromSource(
-                            level.source,
-                            level.w,
-                            level.h,
-                            level.scale,
-                            MIPMAP_TILE_SIZE,
-                        ),
-                    )
+            // Each level is resized from the original rather than from the level above: one
+            // off-thread call apiece, and no accumulated resampling error down the chain.
+            const levels: {
+                source: ImageBitmap
+                w: number
+                h: number
+                scale: number
+                own: boolean
+            }[] = [{ source: bitmap, w: width, h: height, scale: 1, own: false }]
+
+            if (createMipMaps) {
+                let scale = 1
+                while (width * scale > MIPMAP_TILE_SIZE || height * scale > MIPMAP_TILE_SIZE) {
+                    scale /= 2
+                    const w = Math.floor(width * scale)
+                    const h = Math.floor(height * scale)
+                    if (w <= 0 || h <= 0) break
+                    levels.push({
+                        source: await createImageBitmap(bitmap, {
+                            resizeWidth: w,
+                            resizeHeight: h,
+                            resizeQuality: "high",
+                        }),
+                        w,
+                        h,
+                        scale,
+                        own: true,
+                    })
                 }
-            } catch (e) {
-                console.error("Renderer: error creating image", e)
-                image.mipmaps.forEach(m => m.cleanup())
-                image.mipmaps.length = 0
-                throw e
-            } finally {
-                // The originals belong to the caller; the resized levels are ours.
-                levels.forEach(level => {
-                    if (level.own) level.source.close()
-                })
             }
-        })
 
-        return image
+            // No render lock: Mipmap.createFromSource yields between tiles so queued frames get
+            // the thread back. Safe since the image isn't reachable from any page yet.
+            await WebGpuRenderer.unlocked(async () => {
+                try {
+                    for (const level of levels) {
+                        image.mipmaps.push(
+                            await Mipmap.createFromSource(
+                                level.source,
+                                level.w,
+                                level.h,
+                                level.scale,
+                                MIPMAP_TILE_SIZE,
+                            ),
+                        )
+                    }
+                } finally {
+                    // The originals belong to the caller; the resized levels are ours.
+                    levels.forEach(level => {
+                        if (level.own) level.source.close()
+                    })
+                }
+            })
+
+            return image
+        } catch (e) {
+            // Nothing else holds a reference to release the buffer/mip levels allocated above.
+            console.error("Renderer: error creating image", e)
+            image.cleanup()
+            throw e
+        }
     }
 
     /**
@@ -189,40 +198,42 @@ export class Image {
         const image = new Image(decoded.width, decoded.height)
         image.backgroundColor = backgroundColor
 
-        await WebGpuRenderer.unlocked(async () => {
-            try {
-                for (const level of decoded.levels) {
-                    image.mipmaps.push(
-                        level.bytes ?
-                            await Mipmap.create(
-                                // Bounded: a pooled buffer can be larger than this level.
-                                new Uint8Array(level.bytes, 0, level.w * level.h * 4),
-                                level.w,
-                                level.h,
-                                level.scale,
-                                tileSize,
-                            )
-                            : await Mipmap.createFromSource(
-                                level.bitmap!,
-                                level.w,
-                                level.h,
-                                level.scale,
-                                tileSize,
-                            ),
-                    )
+        try {
+            await WebGpuRenderer.unlocked(async () => {
+                try {
+                    for (const level of decoded.levels) {
+                        image.mipmaps.push(
+                            level.bytes ?
+                                await Mipmap.create(
+                                    // Bounded: a pooled buffer can be larger than this level.
+                                    new Uint8Array(level.bytes, 0, level.w * level.h * 4),
+                                    level.w,
+                                    level.h,
+                                    level.scale,
+                                    tileSize,
+                                )
+                                : await Mipmap.createFromSource(
+                                    level.bitmap!,
+                                    level.w,
+                                    level.h,
+                                    level.scale,
+                                    tileSize,
+                                ),
+                        )
+                    }
+                } finally {
+                    // No-op on the pixel path; releases the surfaces on the fallback one.
+                    closeLevels(decoded.levels)
                 }
-            } catch (e) {
-                console.error("Renderer: error creating image", e)
-                image.mipmaps.forEach(m => m.cleanup())
-                image.mipmaps.length = 0
-                throw e
-            } finally {
-                // No-op on the pixel path; releases the surfaces on the fallback one.
-                closeLevels(decoded.levels)
-            }
-        })
+            })
 
-        return image
+            return image
+        } catch (e) {
+            // Nothing else holds a reference to release the buffer allocated above.
+            console.error("Renderer: error creating image", e)
+            image.cleanup()
+            throw e
+        }
     }
 
     /**
@@ -242,22 +253,23 @@ export class Image {
     }
 
     /**
-     * Resolve [trim] and [backgroundColor] from CPU pixels - the front half of [create], shared
-     * with [fromBitmap] so both reach the same answers.
+     * Trim and background colour for [pixels], null where none - shared by [create], [fromBitmap]
+     * and [measure] so all reach the same answers.
      */
-    private analyse(
+    private static measurePixels(
         pixels: Uint8Array,
         width: number,
         height: number,
         trimColors: number[][] | null,
         trimThreshold: number,
         backgroundColor: number | null,
-    ) {
+    ): [Rect | null, number | null] {
         if (trimColors && !trimColors.every(c => c.length >= 3)) {
             throw new Error("each trimColor must have at least 3 elements [r, g, b]")
         }
 
-        let backgroundFromTrim = false
+        let trim: Rect | null = null
+        let background = backgroundColor
 
         const trimWith = trimColors && trimColors.length > 0 ? trimColors : null
         if (trimWith) {
@@ -272,28 +284,50 @@ export class Image {
             }
 
             if (bestIndex >= 0) {
-                this.trim = rects[bestIndex]
-                // Set background color from the winning trim color.
-                if (backgroundColor === null) {
+                trim = rects[bestIndex]
+                // The winning trim colour, unless the caller named one.
+                if (background === null) {
                     const c = trimWith[bestIndex]
-                    this.backgroundColor = argb(
-                        0xff,
-                        Math.trunc(c[0] * 255),
-                        Math.trunc(c[1] * 255),
-                        Math.trunc(c[2] * 255),
-                    )
-                    backgroundFromTrim = true
+                    const ch = (v: number) => coerceIn(Math.trunc(v * 255), 0, 255)
+                    background = argb(0xff, ch(c[0]), ch(c[1]), ch(c[2]))
                 }
             }
         }
 
         // Probing the edges is only worth a pass when neither the caller nor trim has already
         // named a background colour.
-        if (backgroundColor !== null) {
-            this.backgroundColor = backgroundColor
-        } else if (!backgroundFromTrim) {
-            this.backgroundColor = detectBackgroundCpu(pixels, width, height, trimThreshold)
+        if (background === null) {
+            background = detectBackgroundCpu(pixels, width, height, trimThreshold)
         }
+        return [trim, background]
+    }
+
+    private static readonly TILESIZE = MIPMAP_TILE_SIZE
+
+    /** The mip levels below the base, halved from [pixels] until one fits a tile. */
+    private static smallerLevels(
+        pixels: Uint8Array,
+        width: number,
+        height: number,
+    ): Level[] {
+        const levels: Level[] = []
+        let currentPixels = pixels
+        let textureWidth = width
+        let textureHeight = height
+        let scale = 1
+
+        while (width * scale > Image.TILESIZE || height * scale > Image.TILESIZE) {
+            scale /= 2
+            const newWidth = Math.floor(width * scale)
+            const newHeight = Math.floor(height * scale)
+            if (newWidth <= 0 || newHeight <= 0) break
+
+            currentPixels = resize(currentPixels, textureWidth, textureHeight)
+            levels.push(new Level(currentPixels, newWidth, newHeight, scale))
+            textureWidth = newWidth
+            textureHeight = newHeight
+        }
+        return levels
     }
 
     /**
@@ -325,55 +359,133 @@ export class Image {
         } = options
 
         const image = new Image(width, height)
-        image.analyse(pixels, width, height, trimColors, trimThreshold, backgroundColor)
 
-        const levels: { pixels: Uint8Array; w: number; h: number; scale: number }[] = [
-            { pixels, w: width, h: height, scale: 1 },
-        ]
+        try {
+            const [trim, background] = Image.measurePixels(
+                pixels,
+                width,
+                height,
+                trimColors,
+                trimThreshold,
+                backgroundColor,
+            )
+            image.trim = trim
+            if (background !== null) image.backgroundColor = background
 
-        if (createMipMaps) {
-            let currentPixels = pixels
-            let textureWidth = width
-            let textureHeight = height
-            let scale = 1
+            const levels = [
+                new Level(pixels, width, height, 1),
+                ...(createMipMaps ? Image.smallerLevels(pixels, width, height) : []),
+            ]
 
-            while (width * scale > MIPMAP_TILE_SIZE || height * scale > MIPMAP_TILE_SIZE) {
-                scale /= 2
-                const newWidth = Math.floor(width * scale)
-                const newHeight = Math.floor(height * scale)
-                if (newWidth <= 0 || newHeight <= 0) break
+            // No render lock: Mipmap.create yields between upload chunks so queued frames get the
+            // thread back. Safe since the image isn't reachable from any page yet.
+            await WebGpuRenderer.unlocked(async () => {
+                for (const level of levels) image.mipmaps.push(await level.upload())
+            })
 
-                currentPixels = resize(currentPixels, textureWidth, textureHeight)
-                levels.push({ pixels: currentPixels, w: newWidth, h: newHeight, scale })
-                textureWidth = newWidth
-                textureHeight = newHeight
-            }
+            return image
+        } catch (e) {
+            // Nothing else holds a reference to release the buffer allocated above.
+            console.error("Renderer: error creating image", e)
+            image.cleanup()
+            throw e
         }
+    }
 
-        // No render lock: Mipmap.create yields between upload chunks so queued frames get the
-        // thread back. Safe since the image isn't reachable from any page yet.
-        await WebGpuRenderer.unlocked(async () => {
+    /**
+     * Rewrites this image in its own textures from [pixels], a full image of this size of which
+     * only [rect] changed. Smaller levels are rebuilt whole. Chunked and yielding, so frames keep
+     * drawing. False if cleaned up part way.
+     */
+    async update(pixels: Uint8Array, rect: Rect | null = null): Promise<boolean> {
+        this.requireFullImage(pixels)
+        const levels = [...this.mipmaps]
+        const base = levels[0]
+        if (!base) return false
+        const smaller = levels.length > 1 ? Image.smallerLevels(pixels, this.width, this.height) : []
+        return WebGpuRenderer.unlocked(async () => {
             try {
-                for (const level of levels) {
-                    image.mipmaps.push(
-                        await Mipmap.create(
-                            level.pixels,
-                            level.w,
-                            level.h,
-                            level.scale,
-                            MIPMAP_TILE_SIZE,
-                        ),
-                    )
+                if (!(await base.update(pixels, rect))) return false
+                for (let i = 1; i < levels.length && i - 1 < smaller.length; i++) {
+                    if (!(await levels[i].update(smaller[i - 1].pixels))) return false
                 }
-            } catch (e) {
-                console.error("Renderer: error creating image", e)
-                image.mipmaps.forEach(m => m.cleanup())
-                image.mipmaps.length = 0
-                throw e
+                return true
+            } finally {
+                this.contentVersion++
             }
         })
+    }
 
-        return image
+    /** Bumped by [update]; part of the page's frameVersion, so a transition's cached copy re-seeds. */
+    contentVersion = 0
+
+    /** Adds the smaller levels [create]'s createMipMaps makes, from [pixels] as in [update]. */
+    async createMipMaps(pixels: Uint8Array) {
+        this.requireFullImage(pixels)
+        const base = this.mipmaps[0]
+        if (!base) throw new Error("Image has no textures")
+        if (this.mipmaps.length > 1) return
+        const levels = Image.smallerLevels(pixels, this.width, this.height)
+        if (levels.length === 0) return
+
+        // Off the lock: unreachable until added.
+        const extra: Mipmap[] = []
+        try {
+            await WebGpuRenderer.unlocked(async () => {
+                for (const level of levels) extra.push(await level.upload())
+            })
+            await WebGpuRenderer.withContext(() => {
+                if (this.mipmaps.length !== 1 || this.mipmaps[0] !== base) {
+                    throw new Error("Image was cleaned up")
+                }
+                this.mipmaps.push(...extra)
+            })
+        } catch (e) {
+            if (extra.length > 0 && !this.mipmaps.some(m => extra.includes(m))) {
+                await WebGpuRenderer.unlocked(() => extra.forEach(m => m.cleanup()))
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Another image like this one - size, background - from [pixels], a later frame in the form
+     * [update] takes. For swapping with it frame by frame.
+     */
+    twin(pixels: Uint8Array): Promise<Image> {
+        return Image.create(pixels, this.width, this.height, {
+            createMipMaps: false,
+            backgroundColor: this.backgroundColor,
+        })
+    }
+
+    /** A short buffer would have writeTexture read past it, and the resize silently skip. */
+    private requireFullImage(pixels: Uint8Array) {
+        const need = this.width * this.height * 4
+        if (pixels.byteLength < need) {
+            throw new Error(`pixels hold ${pixels.byteLength} B, ${this.width}x${this.height} needs ${need}`)
+        }
+    }
+
+    /** Sets [trim] and [backgroundColor] from [pixels] as [create] would. */
+    async measure(
+        pixels: Uint8Array,
+        trimColors: number[][] | null = null,
+        trimThreshold = 0.05,
+        backgroundColor: number | null = null,
+    ) {
+        const [newTrim, background] = Image.measurePixels(
+            pixels,
+            this.width,
+            this.height,
+            trimColors,
+            trimThreshold,
+            backgroundColor,
+        )
+        await WebGpuRenderer.withContext(() => {
+            this.trim = newTrim
+            if (background !== null) this.backgroundColor = background
+        })
     }
 
     /** An empty, writable image - what a `Render` page draws into. */
@@ -494,6 +606,19 @@ export class Image {
                 (tile.y - 0.5 * mipmap.height) / dst.height,
             scale: scale / mipmap.scale,
         }))
+    }
+}
+
+class Level {
+    constructor(
+        readonly pixels: Uint8Array,
+        readonly w: number,
+        readonly h: number,
+        readonly scale: number,
+    ) { }
+
+    upload(): Promise<Mipmap> {
+        return Mipmap.create(this.pixels, this.w, this.h, this.scale, MIPMAP_TILE_SIZE)
     }
 }
 

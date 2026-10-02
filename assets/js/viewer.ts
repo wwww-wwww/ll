@@ -1,4 +1,4 @@
-import { Job, alphaOf, closeTo, coerceIn, launch } from "./webgpuviewer/util"
+import { Job, alphaOf, animate, closeTo, coerceIn, launch, spring } from "./webgpuviewer/util"
 import { DecodeAborted, ImageDecoder, closeLevels } from "./webgpuviewer/decoder"
 import { MIPMAP_TILE_SIZE, Image } from "./webgpuviewer/renderer/image"
 import { applyDisplayCorrection } from "./webgpuviewer/filter/colormanagement"
@@ -127,6 +127,8 @@ export interface ViewerConfig {
     landscapeZoom: boolean
     /** `config.imageCropBorders` - trim uniform margins off each page. */
     cropBorders: boolean
+    /** `config.imageCropBordersWebtoon` - as [cropBorders], while continuous. */
+    cropBordersContinuous: boolean
     /** `config.automaticBackground` - infer each page's letterbox colour from its own edges. */
     automaticBackground: boolean
     /** When set, and [automaticBackground] is off, every page uses this ARGB colour. */
@@ -174,6 +176,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
     zoomStart: "center",
     landscapeZoom: false,
     cropBorders: false,
+    cropBordersContinuous: false,
     automaticBackground: false,
     backgroundColor: 0,
     navigateToPan: false,
@@ -295,6 +298,7 @@ class PlaceholderPage extends RenderPageBase {
 export class ProgressPage extends PlaceholderPage {
     private _progress = 0
     private _background: number
+    private progressJob: Job | null = null
 
     constructor(
         viewport: () => Viewport,
@@ -311,8 +315,21 @@ export class ProgressPage extends PlaceholderPage {
     }
 
     set progress(value: number) {
-        this._progress = value
-        this.invalidate()
+        const target = coerceIn(value, 0, 1)
+        this.progressJob?.cancel()
+        if (this._progress === target) return
+
+        // Animated rather than snapped, so a fast download doesn't make the ring visibly jump.
+        this.progressJob = animate(this._progress, target, spring(), current => {
+            this._progress = current
+            this.invalidate()
+        })
+    }
+
+    override cleanup() {
+        this.progressJob?.cancel()
+        this.progressJob = null
+        super.cleanup()
     }
 
     override get backgroundColor(): number | null {
@@ -329,9 +346,9 @@ export class ProgressPage extends PlaceholderPage {
         const cx = dst.width * (0.5 + scale * x)
         const cy = dst.height * (0.5 + scale * y)
 
-        // Off this page's own width, not dst's: a spread half would otherwise draw a ring sized
-        // for the whole screen, straight over its partner.
-        const full = this.width * 0.5 * scale
+        // Sized off the shorter of the two axes, not the full width - a tall narrow spread half
+        // would otherwise draw a ring wider than it is tall.
+        const full = Math.min(this.width, this.height) * 0.25 * scale
 
         this.circle(cx, cy, full / 2, 0xaaaaaaaa | 0)
 
@@ -496,6 +513,11 @@ export class Viewer extends ImageViewerElement {
 
         this.applyFilters()
 
+        if (this.continuousState) {
+            this.continuousState.backgroundColor = this.config.backgroundColor
+            this.continuousState.cropBorders = this.cropBorders
+        }
+
         // A pure lookup, as in Mihon's own `fetchPage`: admission belongs to [preloadAround].
         //
         // It used to admit through [acquire], which was harmless while only -1/0/+1 were ever
@@ -575,9 +597,9 @@ export class Viewer extends ImageViewerElement {
     setContinuous() {
         this.continuousState = new ImageViewerContinuousState()
         this.replaceState(this.continuousState)
+        this.config.continuous = true
         // The callbacks live on the state object, so the new one needs them too.
         this.bindState()
-        this.config.continuous = true
         this.config.vertical = true
         this.config.dualPage = false
         this.config.preloadAhead = 3
@@ -586,6 +608,10 @@ export class Viewer extends ImageViewerElement {
 
     /** The continuous state, or null in paged mode - the cast [state] would otherwise need. */
     private continuousState: ImageViewerContinuousState | null = null
+
+    private get cropBorders(): boolean {
+        return this.config.continuous ? this.config.cropBordersContinuous : this.config.cropBorders
+    }
 
     // -----------------------------------------------------------------------------------------
     // Configuration
@@ -614,6 +640,10 @@ export class Viewer extends ImageViewerElement {
 
         this.state.isReversed = this.config.reversed
         this.state.isVertical = this.config.vertical
+        if (this.continuousState) {
+            this.continuousState.backgroundColor = this.config.backgroundColor
+            this.continuousState.cropBorders = this.cropBorders
+        }
         this.applyTransition()
         this.applyFilters()
 
@@ -995,37 +1025,63 @@ export class Viewer extends ImageViewerElement {
         if (!this.pageCache.has(index)) {
             this.pageCache.set(index, page)
             while (this.pageCache.size > this.cacheSize) {
-                if (!this.evictFarthest(index)) break
+                if (!this.evictFarthest(index, index)) break
             }
         }
         return page
     }
 
-    /** True while [pinnedFrom] is drawing [page]'s image, as itself or as a spread side. */
-    private isPinned(page: ViewerPage): boolean {
+    /** True while [pinnedFrom] is drawing [image], as itself or as a spread side. */
+    private isPinnedImage(image: ImagePage): boolean {
         const pinned = this.pinnedFrom
         if (!pinned) return false
-        const image = page.imagePage
         if (pinned === image) return true
         return pinned instanceof ImageSpread && (pinned.left === image || pinned.right === image)
+    }
+
+    /** As [isPinnedImage], for [page]'s own image. */
+    private isPinned(page: ViewerPage): boolean {
+        return this.isPinnedImage(page.imagePage)
+    }
+
+    /** Images swapped out while [pinnedFrom] was still drawing them, i.e. mid page turn. */
+    private readonly deferredCleanup: ImagePage[] = []
+
+    /** Cleans up [image], or defers it while [pinnedFrom] still draws it. */
+    private cleanupImage(image: ImagePage) {
+        if (this.isPinnedImage(image)) this.deferredCleanup.push(image)
+        else image.cleanup()
+    }
+
+    /** Releases whatever [pinnedFrom] no longer protects - call once it changes. */
+    private flushDeferredCleanup() {
+        for (let i = this.deferredCleanup.length - 1; i >= 0; i--) {
+            const image = this.deferredCleanup[i]
+            if (!this.isPinnedImage(image)) {
+                image.cleanup()
+                this.deferredCleanup.splice(i, 1)
+            }
+        }
     }
 
     /**
      * Evict the page furthest from [reference] - `evictFarthestPage`.
      *
-     * Never the reference, never the current page, never what a running turn is animating away
+     * Never the reference, [keep], the current page, never what a running turn is animating away
      * from. Returns false when nothing was evictable, so a trim loop stops instead of spinning.
+     *
+     * [keep] is a page about to be handed out: evicted, it would be drawn destroyed.
      */
-    private evictFarthest(reference: number): boolean {
-        return this.evictFarthestNow(reference)
+    private evictFarthest(reference: number, keep: number | null = null): boolean {
+        return this.evictFarthestNow(reference, keep)
     }
 
-    private evictFarthestNow(reference: number): boolean {
+    private evictFarthestNow(reference: number, keep: number | null): boolean {
         let victim: number | null = null
         let bestDistance = -1
 
         for (const [index, page] of this.pageCache) {
-            if (index === reference || index === this.currentIndex) continue
+            if (index === reference || index === keep || index === this.currentIndex) continue
             if (this.isPinned(page)) continue
             const distance = Math.abs(index - reference)
             if (distance > bestDistance) {
@@ -1055,9 +1111,10 @@ export class Viewer extends ImageViewerElement {
      */
     private release(page: ViewerPage) {
         page.state = PageState.Idle
-        page.spreadPage?.cleanup()
+        // Through the pin: a decode that swapped this page's image leaves its spread unguarded.
+        if (page.spreadPage) this.cleanupImage(page.spreadPage)
         page.spreadPage = null
-        page.imagePage.cleanup()
+        this.cleanupImage(page.imagePage)
         this.resetPlaceholder(page)
         // Stop paying for bytes nobody is waiting for any more. This is what an <img> could never
         // do: setting src away from a partly-loaded image does not reliably cancel the request.
@@ -1070,7 +1127,10 @@ export class Viewer extends ImageViewerElement {
         this.decodeQueue.length = 0
         this.pageCache.forEach(page => this.release(page))
         this.pageCache.clear()
+        // Nothing can still be animating, so the pin has nothing left to protect.
         this.pinnedFrom = null
+        this.deferredCleanup.forEach(image => image.cleanup())
+        this.deferredCleanup.length = 0
         invalidateCache()
     }
 
@@ -1210,7 +1270,7 @@ export class Viewer extends ImageViewerElement {
                     page.spreadPage = null
                     page.progress = []
                     page.state = PageState.Idle
-                    old.cleanup()
+                    this.cleanupImage(old)
                     page.imagePage.attach(this.state, () => this.state.invalidate())
                     this.state.invalidate()
                 } else {
@@ -1270,11 +1330,11 @@ export class Viewer extends ImageViewerElement {
             if (!this.applyWideZoom(imagePage)) this.applyFitMode(imagePage)
         }
 
-        old.cleanup()
         // Fade up from the placeholder's colour, if that placeholder was on screen - one that
         // decoded out of view has nothing left to fade from.
         if (old.isOnScreen) imagePage.fadeIn()
 
+        this.cleanupImage(old)
         this.state.invalidate()
     }
 
@@ -1301,7 +1361,7 @@ export class Viewer extends ImageViewerElement {
         // to keep those off the main thread entirely - so when either is asked for, decoding falls
         // back in place rather than paying to ship pixels across a thread boundary and back.
         const trimColors =
-            this.config.cropBorders && this.isFullWidth(page) ?
+            this.cropBorders && this.isFullWidth(page) ?
                 [
                     [1, 1, 1],
                     [0, 0, 0],
@@ -1610,6 +1670,7 @@ export class Viewer extends ImageViewerElement {
         // and the page being turned away from has to survive the animation.
         const from = this.pageCache.get(previous)
         this.pinnedFrom = from ? this.buildSpreadPage(from) : null
+        this.flushDeferredCleanup()
 
         this.currentIndex = index
         this.preloadAround(index)
@@ -1648,12 +1709,15 @@ export class Viewer extends ImageViewerElement {
         this.moveWithPan(-1)
     }
 
+    // moveRight/moveLeft are screen directions, so a right-to-left book's next is to the left.
     moveToNext() {
-        this.moveRight()
+        if (this.config.reversed) this.moveLeft()
+        else this.moveRight()
     }
 
     moveToPrevious() {
-        this.moveLeft()
+        if (this.config.reversed) this.moveRight()
+        else this.moveLeft()
     }
 
     /**

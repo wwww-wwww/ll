@@ -272,6 +272,16 @@ export function invalidateCache() {
 }
 
 /**
+ * Forget cached renders of [state]'s pages. The cache is module-level and a page reaches its
+ * viewer through `parent`, so a slot left on a finished viewer's page would keep it alive.
+ */
+export function releasePagesOf(state: object) {
+    for (const slot of [slot1, slot2]) {
+        if (slot.page?.parent === state) slot.invalidate()
+    }
+}
+
+/**
  * Called once a page turn settles on [newCurrentPage]. Slot 2 is often already a valid render of
  * it - prewarmed while it was still the *next* page - so this swaps it into slot 1 instead of
  * discarding it. Falls back to a full wipe when neither slot matches.
@@ -323,19 +333,18 @@ export function getCachedTexture(
     tiles: TileRenderer,
 ): GPUTextureView | null {
     if (page.destroyed || !page.isDecoded) return null
+    if (dstWidth <= 0 || dstHeight <= 0) return null
 
     ensureTextures(dstWidth, dstHeight)
     const slot = isPage1 ? slot1 : slot2
     const texture = slot.texture!
     const view = slot.view!
     const blittedKeys = slot.blittedKeys
-    // Never a hit for an animated page - it swaps images every frame, so every call needs a fresh
-    // clear + seed to blit whatever frame is current right now, rather than relying on
-    // frameVersion happening to have ticked.
-    const identityMatches = !page.isAnimated && slot.hit(page)
+    // An animation's swap bumps frameVersion, so it misses like any other change.
+    const identityMatches = slot.hit(page)
 
-    // Null for a page that never gets tiles - not highQuality, animated, or not an image page at
-    // all - in which case there's nothing further to compare against blittedKeys.
+    // Null for a page that never gets tiles - not highQuality, or not an image page at all - in
+    // which case there's nothing further to compare against blittedKeys.
     const available = page.newlyAvailableTileKeys(tiles, texture)
 
     if (identityMatches && (available === null || setsEqual(available, blittedKeys))) {
@@ -345,11 +354,8 @@ export function getCachedTexture(
     // renderIntoCache opens its own pass (load or clear, matching identityMatches).
     page.renderIntoCache(encoder, texture, tiles, identityMatches)
 
-    // [available] is still accurate after the render: renderIntoCache only blits what's already
-    // cached and queues what's missing for the background worker - generation itself is async, so
-    // the grid can't have gained anything in between. Reusing it here instead of re-walking the
-    // grid halves this call's cost.
-    slot.blittedKeys = available ?? new Set()
+    slot.blittedKeys =
+        available === null ? new Set() : (page.newlyAvailableTileKeys(tiles, texture) ?? new Set())
     if (!identityMatches) slot.record(page)
 
     return view

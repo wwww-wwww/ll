@@ -368,6 +368,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
         if (stoppedMotion) {
             page.isScaleAnimating = false
             page.isFlinging = false
+            page.invalidate()
         }
 
         let longPressed = false
@@ -431,6 +432,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
 
             if (secondCleanUp) {
                 // Double tap - let any in-progress page turn finish committing first.
+                if (!state.doubleTapZoomEnabled) return
                 const tapX = secondDown.current.x / state.width
                 const tapY = secondDown.current.y / state.height
                 await pageTurnJob?.join()
@@ -486,10 +488,10 @@ export class ImageViewerElement extends HTMLCanvasElement {
                         const px = origin.x / state.width - 0.5
                         const py = origin.y / state.height - 0.5
 
-                        page.scale = originalScale * Math.pow(10, (2 * totalDeltaY) / state.height)
-                        const diff = 1 / page.scale - 1 / originalScale
+                        const newScale = originalScale * Math.pow(10, (2 * totalDeltaY) / state.height)
+                        const diff = 1 / newScale - 1 / originalScale
 
-                        page.setPos(orZero(originalX + px * diff), orZero(originalY + py * diff))
+                        page.setPos(orZero(originalX + px * diff), orZero(originalY + py * diff), newScale)
                     }
                 }
             }
@@ -501,7 +503,10 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 page.scale > page.homeScale &&
                 page.scale < page.maxScale
         } finally {
-            if (!willFlingZoom) page.isScaleAnimating = false
+            if (!willFlingZoom) {
+                page.isScaleAnimating = false
+                page.invalidate()
+            }
         }
 
         const velocity = velocityTracker.calculateVelocity()
@@ -513,21 +518,17 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 const newScale =
                     originalScale * Math.pow(10, (2 * (totalDeltaY + value)) / state.height)
 
-                page.scale = coerceIn(newScale, page.homeScale, page.maxScale)
-                const diff = 1 / page.scale - 1 / originalScale
+                const scale = coerceIn(newScale, page.homeScale, page.maxScale)
+                const diff = 1 / scale - 1 / originalScale
 
+                const prevScale = page.scale
                 page.setPos(
-                    coerceIn(
-                        orZero(originalX + px * diff),
-                        page.minX(page.scale),
-                        page.maxX(page.scale),
-                    ),
-                    coerceIn(
-                        orZero(originalY + py * diff),
-                        page.minY(page.scale),
-                        page.maxY(page.scale),
-                    ),
+                    coerceIn(orZero(originalX + px * diff), page.minX(scale), page.maxX(scale)),
+                    coerceIn(orZero(originalY + py * diff), page.minY(scale), page.maxY(scale)),
+                    scale,
                 )
+                // Pinned at a zoom limit: the decay would run on without scaling anything.
+                if (value !== 0 && scale === prevScale) zoomFling.cancel()
             })
             page.animationJob = zoomFling
             zoomFling.promise.then(() => {
@@ -535,6 +536,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 // still settles, and clearing the flag would then lie about whatever replaced it.
                 if (page.animationJob !== zoomFling) return
                 page.isScaleAnimating = false
+                page.invalidate()
             })
         } else {
             page.animateTo({ origin: { x: origin.x / state.width, y: origin.y / state.height } })
@@ -639,7 +641,8 @@ export class ImageViewerElement extends HTMLCanvasElement {
                         state.currentPos = change.current
                         state.invalidate()
                     } else {
-                        const zoom = event.zoom()
+                        // Off leaves two fingers panning without scaling.
+                        const zoom = state.pinchZoomEnabled ? event.zoom() : 1
 
                         if (zoom !== 1 || pan.x !== 0 || pan.y !== 0) {
                             const newScale = page.scale * zoom
@@ -675,8 +678,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
                                 y = clampedY
                             }
 
-                            page.scale = newScale
-                            page.setPos(orZero(x), orZero(y))
+                            page.setPos(orZero(x), orZero(y), newScale)
                         }
                     }
                 }
@@ -685,6 +687,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             }
         } finally {
             page.isScaleAnimating = false
+            page.invalidate()
         }
 
         longPress.cancelLongPress()

@@ -1,6 +1,7 @@
 import { nextFrame, yieldToEventLoop } from "../util"
 // Cyclic with this module, and benign: each side reaches the other only from inside a function.
 import { FilterChain } from "../filter/filterchain"
+import { Hdr } from "./hdr"
 
 /**
  * Device ownership and the frame loop - the port of `renderer/WebGpuRenderer.kt`.
@@ -17,10 +18,33 @@ import { FilterChain } from "../filter/filterchain"
  * The surface is a [GPUCanvasContext], and there is no `present()` - the browser composites the
  * canvas once the frame's work is submitted.
  */
+/**
+ * `Drawn` - a frame was recorded and submitted. `Retry` - nothing drawn this frame but the
+ * renderer is otherwise fine (a transient `getCurrentTexture` failure); ask again next frame.
+ * `Unavailable` - nothing can be drawn until something external changes (WebGPU never
+ * initialized, or this instance has no canvas) - repeatedly invalidating would just spin
+ * `requestAnimationFrame` forever, so a caller should stop asking until told otherwise.
+ */
+export type FrameResult = "drawn" | "retry" | "unavailable"
+
 export class WebGpuRenderer {
     static adapter: GPUAdapter
     static device: GPUDevice
-    static format: GPUTextureFormat = "rgba8unorm"
+
+    /** Set once `device.lost` resolves - see `unavailableReason`. */
+    private static deviceLost = false
+
+    /** Human-readable reason nothing can currently be drawn, or null if the device is fine. */
+    static get unavailableReason(): string | null {
+        if (WebGpuRenderer.deviceLost) return "WebGPU device lost"
+        if (!WebGpuRenderer.device) return "WebGPU never initialized"
+        return null
+    }
+
+    /** Follows `Hdr.frameFormat`. */
+    static get format(): GPUTextureFormat {
+        return Hdr.frameFormat
+    }
 
     /** Global draw offset, applied by every placement - see `Image.placement`. */
     static offsetX = 0
@@ -46,7 +70,13 @@ export class WebGpuRenderer {
 
             const device = await adapter.requestDevice({ requiredFeatures })
 
+            // Before any canvas configures - `Hdr.resolve` probes a disposable canvas since a
+            // `GPUCanvasContext` has no `getCapabilities`.
+            Hdr.attachDisplay()
+            Hdr.resolve(device)
+
             device.lost.then(info => {
+                WebGpuRenderer.deviceLost = true
                 console.error("WebGpuRenderer: device lost", info.reason, info.message)
                 WebGpuRenderer.deviceLostHandlers.forEach(fn => {
                     try {
@@ -179,6 +209,9 @@ export class WebGpuRenderer {
     width = 0
     height = 0
 
+    /** What the canvas was last configured as - see `configure`. */
+    private configuredFormat: GPUTextureFormat = "rgba8unorm"
+
     /** `init(scope, surface, width, height)` - the canvas is the surface here. */
     init(canvas: HTMLCanvasElement, width: number, height: number) {
         this.canvas = canvas
@@ -192,31 +225,54 @@ export class WebGpuRenderer {
             this.context = canvas.getContext("webgpu") as GPUCanvasContext
         }
 
+        // No images exist yet on a fresh canvas, so any stranded HDR claims are safe to drop.
+        Hdr.resetContent()
+        Hdr.latchFrameFormat()
+        this.configure(Hdr.frameFormat)
+    }
+
+    /** Configures the canvas, requesting extended range when [format] is float - see `Hdr`. */
+    private configure(format: GPUTextureFormat) {
+        if (!this.context) return
         this.context.configure({
             device: WebGpuRenderer.device,
-            format: WebGpuRenderer.format,
+            format,
             colorSpace: "srgb",
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
             alphaMode: "premultiplied",
-        })
+            // Chrome's extended-range canvas config - not yet in the upstream WebGPU types.
+            ...(format === "rgba16float" ?
+                ({ toneMapping: { mode: "extended" } } as object)
+                : {}),
+        } as GPUCanvasConfiguration)
+        this.configuredFormat = format
     }
 
     /**
      * Record and submit one frame. Holds the render lock for the whole of it, so a tile
      * generation batch can never land halfway through a frame's recording.
      *
-     * False when the canvas had no texture to draw into: nothing was drawn, and the frame is worth
-     * asking for again. The Kotlin reads a status off the surface and reconfigures on anything but
-     * `Lost`; a browser reconfigures its own swapchain, so the retry is all that is left of that -
-     * apart from re-configuring the context, which is what a canvas of no size needs.
+     * The Kotlin reads a status off the surface and reconfigures on anything but `Lost`; a
+     * browser reconfigures its own swapchain, so the retry is all that is left of that - apart
+     * from re-configuring the context, which is what a canvas of no size needs. See `FrameResult`.
      */
     async render(
         fn: (encoder: GPUCommandEncoder, texture: GPUTexture) => void | Promise<void>,
-    ): Promise<boolean> {
-        let drawn = false
+    ): Promise<FrameResult> {
+        let result: FrameResult = "unavailable"
         await WebGpuRenderer.withLock(async device => {
             const context = this.context
+            // Only `init` builds one, so a redraw alone accomplishes nothing.
             if (!context) return
+
+            // Only reconfigures between frames, the one point guaranteed clear of old resources.
+            try {
+                Hdr.latchFrameFormat()
+                if (Hdr.frameFormat !== this.configuredFormat) this.configure(Hdr.frameFormat)
+            } catch (e) {
+                // Escaping would end the frame loop.
+                console.error("WebGpuRenderer: HDR presentation update failed", e)
+            }
 
             let texture: GPUTexture
             try {
@@ -225,10 +281,14 @@ export class WebGpuRenderer {
             } catch (e) {
                 console.warn("WebGpuRenderer: failed to get current texture", e)
                 // A context that has lost its configuration - a canvas resized to nothing and
-                // back, above all - gets it again rather than staying dark for good.
+                // back, above all - gets it again rather than staying dark for good. Not `init`:
+                // that resets `Hdr`'s content tracking, which would be wrong mid-session.
                 if (this.canvas && this.width > 0 && this.height > 0) {
-                    this.init(this.canvas, this.width, this.height)
+                    this.canvas.width = this.width
+                    this.canvas.height = this.height
+                    this.configure(Hdr.frameFormat)
                 }
+                result = "retry"
                 return
             }
 
@@ -239,17 +299,19 @@ export class WebGpuRenderer {
                 await fn(encoder, this.filters.beginFrame(texture))
                 this.filters.endFrame(encoder, texture)
                 device.queue.submit([encoder.finish()])
-                drawn = true
+                result = "drawn"
             } catch (e) {
                 // Don't rethrow - allow the app to continue rendering next frame.
                 console.error("WebGpuRenderer: render error", e)
+                result = "retry"
             }
         })
-        return drawn
+        return result
     }
 
     cleanup() {
-        this.filters.cleanup()
+        // Once the device is lost there is nothing to free.
+        if (!WebGpuRenderer.deviceLost) this.filters.cleanup()
         this.context?.unconfigure()
         this.context = null
     }

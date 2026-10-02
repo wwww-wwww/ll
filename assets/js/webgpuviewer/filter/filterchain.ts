@@ -186,6 +186,7 @@ export class FilterChain {
 
     cleanup() {
         this._filters.forEach(f => f.cleanup())
+        this.tailBlit.cleanup()
         this.destroyPool()
     }
 
@@ -194,6 +195,10 @@ export class FilterChain {
     private readonly pool = new Map<string, Slot[]>()
 
     private frame = 0
+
+    /** A filter whose output size varies frame to frame could otherwise pile up entries forever. */
+    private poolBytes = 0
+    private readonly maxPoolBytes = 48 * 1024 * 1024
 
     private key(width: number, height: number, format: GPUTextureFormat, storage: boolean): string {
         return `${width}x${height}:${format}:${storage ? 1 : 0}`
@@ -226,6 +231,8 @@ export class FilterChain {
             return free
         }
 
+        if (this.poolBytes > this.maxPoolBytes) this.evictOldestUnused()
+
         let usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT
         if (storage) usage |= GPUTextureUsage.STORAGE_BINDING
 
@@ -234,7 +241,30 @@ export class FilterChain {
         slot.inUse = true
         slot.lastFrame = this.frame
         slots.push(slot)
+        this.poolBytes += width * height * 4
         return slot
+    }
+
+    /** The single oldest slot nothing is currently reading, across every size/format bucket. */
+    private evictOldestUnused() {
+        let oldestKey: string | null = null
+        let oldestSlot: Slot | null = null
+        for (const [k, slots] of this.pool) {
+            for (const slot of slots) {
+                if (!slot.inUse && (!oldestSlot || slot.lastFrame < oldestSlot.lastFrame)) {
+                    oldestKey = k
+                    oldestSlot = slot
+                }
+            }
+        }
+        if (!oldestKey || !oldestSlot) return
+        const slots = this.pool.get(oldestKey)
+        if (!slots) return
+        const idx = slots.indexOf(oldestSlot)
+        if (idx >= 0) slots.splice(idx, 1)
+        if (slots.length === 0) this.pool.delete(oldestKey)
+        this.poolBytes -= oldestSlot.texture.width * oldestSlot.texture.height * 4
+        oldestSlot.texture.destroy()
     }
 
     private releaseAll() {
@@ -245,6 +275,7 @@ export class FilterChain {
     private destroyPool() {
         for (const slots of this.pool.values()) for (const slot of slots) slot.texture.destroy()
         this.pool.clear()
+        this.poolBytes = 0
         this.sceneSlot = null
     }
 

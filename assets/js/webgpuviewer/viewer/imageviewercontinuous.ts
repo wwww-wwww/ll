@@ -97,6 +97,7 @@ export async function handleContinuousGesture(
         )
 
         if (secondCleanUp !== null) {
+            if (!state.doubleTapZoomEnabled) return
             doubleTapZoom(state, secondDown.current)
             return
         }
@@ -110,7 +111,7 @@ export async function handleContinuousGesture(
 
 /** Double tap: toggle between the state's minScale and doubleTapScale, anchored at the tap. */
 function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
-    const py = position.y / state.height - 0.5
+    const py = position.y / state.height
     const zoomedIn = state.scale > state.minScale + 0.1
 
     // Zooming out returns offsetX to 0, so the anchor is whatever x offset would arrive there;
@@ -138,7 +139,10 @@ function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
     })
     state.animationJob = job
     job.promise.then(() => {
-        if (state.animationJob === job) state.isScaleAnimating = false
+        if (state.animationJob === job) {
+            state.isScaleAnimating = false
+            state.invalidate()
+        }
     })
 }
 
@@ -164,7 +168,7 @@ async function doubleTapDragZoom(
     }
 
     const px = origin.x / state.width - 0.5
-    const py = origin.y / state.height - 0.5
+    const py = origin.y / state.height
     let totalDeltaY = 0
 
     state.isScaleAnimating = true
@@ -195,7 +199,10 @@ async function doubleTapDragZoom(
             state.scale > state.minScale &&
             state.scale < state.maxScale
     } finally {
-        if (!willFlingZoom) state.isScaleAnimating = false
+        if (!willFlingZoom) {
+            state.isScaleAnimating = false
+            state.invalidate()
+        }
     }
 
     const velocity = velocityTracker.calculateVelocity()
@@ -208,6 +215,8 @@ async function doubleTapDragZoom(
                 state.maxScale,
             )
             const diff = 1 / newScale - 1 / originalScale
+            // Pinned at a zoom limit: the decay would run on without scaling anything.
+            if (value !== 0 && newScale === state.scale) throw new FlingStalled()
             const limit = state.maxOffsetX(newScale)
             state.scale = newScale
             state.offsetX = coerceIn(originalOffsetX + px * diff, -limit, limit)
@@ -215,9 +224,16 @@ async function doubleTapDragZoom(
             state.invalidate()
         })
         state.animationJob = job
-        job.promise.then(() => {
-            if (state.animationJob === job) state.isScaleAnimating = false
-        })
+        job.promise
+            .catch(e => {
+                if (!(e instanceof FlingStalled)) throw e
+            })
+            .then(() => {
+                if (state.animationJob === job) {
+                    state.isScaleAnimating = false
+                    state.invalidate()
+                }
+            })
         return
     }
 
@@ -230,7 +246,9 @@ async function doubleTapDragZoom(
 
 /**
  * Walk a scale that overshot back into bounds about [originX]/[originY], the point the zoom was
- * anchored to - fractions of the viewport from its centre. False if the scale was already fine.
+ * anchored to: [originX] a fraction of the viewport from its centre, since the horizontal offset
+ * is centred; [originY] a fraction from its top, since the camera is. False if the scale was
+ * already fine.
  *
  * Position interpolates on the reciprocal of the scale, as `ImagePage.animateTo` does, so the
  * origin holds throughout: what the anchor owes is a function of 1/scale, not of the animation's
@@ -265,7 +283,10 @@ function snapScaleIntoBounds(
     })
     state.animationJob = job
     job.promise.then(() => {
-        if (state.animationJob === job) state.isScaleAnimating = false
+        if (state.animationJob === job) {
+            state.isScaleAnimating = false
+            state.invalidate()
+        }
     })
     return true
 }
@@ -301,6 +322,7 @@ async function dragGesture(
     let lastMoveTime = firstEvent.raw.timeStamp
     let lastEventTime = firstEvent.raw.timeStamp
 
+    state.isPanning = true
     try {
         for (; ;) {
             const event = await stream.next()
@@ -317,7 +339,8 @@ async function dragGesture(
             velocityTracker.add(event.raw.timeStamp, change.current)
 
             const pan = event.pan()
-            const zoom = event.zoom()
+            // Off leaves two fingers panning without scaling.
+            const zoom = state.pinchZoomEnabled ? event.zoom() : 1
             // Whenever two fingers are down: a quiet moment mid-pinch is still a pinch, and
             // generation stays held off.
             state.isScaleAnimating = multi
@@ -334,7 +357,7 @@ async function dragGesture(
                     const newScale = state.scale * zoom
                     const diff = 1 / newScale - 1 / state.scale
                     const cx = centroid.x / state.width - 0.5
-                    const cy = centroid.y / state.height - 0.5
+                    const cy = centroid.y / state.height
                     // What the snap-back below anchors to.
                     zoomOriginX = cx
                     zoomOriginY = cy
@@ -362,6 +385,8 @@ async function dragGesture(
         }
     } finally {
         state.isScaleAnimating = false
+        state.isPanning = false
+        state.invalidate()
     }
 
     longPressJob?.cancel()

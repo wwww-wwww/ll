@@ -1,11 +1,13 @@
 import {
     AnimationSpec,
     Job,
+    Rect,
     STIFFNESS_MEDIUM,
     STIFFNESS_MEDIUM_LOW,
     animate,
     closeTo,
     coerceIn,
+    invokeSafe,
     spring,
 } from "../util"
 import { Draw } from "../draw/draw"
@@ -15,16 +17,43 @@ import { solveImagePlacement } from "../renderer/tilerenderer"
 import { ImagePage, ImageSingle, RenderPageBase } from "./imagepage"
 import { ImageViewerState } from "./imageviewerstate"
 
-export const MAX_VISIBLE_PAGES = 4
+export const MAX_VISIBLE_PAGES = 24
 
 /** Settle distance for a scroll spring: below half a device pixel nothing more is visible. */
 export const SCROLL_THRESHOLD_PX = 0.5
 
-/** One page visible this frame, with the document-space top [captureRenderState] found it at. */
+/** Caps a page walk against a provider that never reports null/zero-height. */
+const MAX_PAGE_WALK = 10_000
+
+/** JS numbers are already double precision, so unlike the Kotlin this only screens NaN/Infinity. */
+function isSane(n: number): boolean {
+    return Number.isFinite(n)
+}
+
+/**
+ * One page visible this frame, at the document-space slot top [captureRenderState] found.
+ * [pageHeight] is the slot (content + gap), [contentHeight] the page drawn at its top.
+ */
 interface VisiblePage {
     page: ImagePage
     docTop: number
     pageHeight: number
+    contentHeight: number
+    /** As [getPageHeight] measured it, so the draw places what the layout sized. */
+    crop: Rect | null
+}
+
+/**
+ * A [ImageViewerContinuousState.documentY] plus enough to re-find it after a fresh set of pages
+ * replaces the ones it was taken against - [pageIndexHint]/[fractionWithinPage] re-derive the
+ * place by page index instead of the raw, now-meaningless number.
+ */
+export interface ContinuousPosition {
+    documentY: number
+    scale: number
+    offsetX: number
+    pageIndexHint: number
+    fractionWithinPage: number
 }
 
 interface ContinuousRenderSnapshot {
@@ -35,6 +64,8 @@ interface ContinuousRenderSnapshot {
     cameraDocY: number
     /** [isScaleAnimating] or [isFlinging] - either means "don't generate tiles right now". */
     suppressGeneration: boolean
+    backgroundColor: number
+    readThrough: ImagePage | null
 }
 
 /**
@@ -55,9 +86,40 @@ export class ImageViewerContinuousState extends ImageViewerState {
         super(true)
     }
 
-    scale = 1
+    private _scale = 1
 
-    offsetX = 0
+    get scale(): number {
+        return this._scale
+    }
+
+    set scale(value: number) {
+        if (!isSane(value)) return
+        this._scale = value
+    }
+
+    private _offsetX = 0
+
+    get offsetX(): number {
+        return this._offsetX
+    }
+
+    set offsetX(value: number) {
+        if (!isSane(value)) return
+        this._offsetX = value
+    }
+
+    private _backgroundColor = 0
+
+    /** 0xAARRGGBB clear color behind the pages - see `Draw.clear`/`renderPass`'s `clearColor`. */
+    get backgroundColor(): number {
+        return this._backgroundColor
+    }
+
+    set backgroundColor(value: number) {
+        if (value === this._backgroundColor) return
+        this._backgroundColor = value
+        this.invalidate()
+    }
 
     private _homeScale = 1
 
@@ -123,6 +185,12 @@ export class ImageViewerContinuousState extends ImageViewerState {
      */
     isFlinging = false
 
+    /**
+     * True while a drag is actively panning (not yet released into a fling). With [isFlinging],
+     * marks real scroll that [onViewport] reports against.
+     */
+    isPanning = false
+
     private _scrollY = 0
 
     /**
@@ -154,22 +222,91 @@ export class ImageViewerContinuousState extends ImageViewerState {
      */
     getPageHeight(page: ImagePage): number {
         if (!(page instanceof ImageSingle)) return page.height
-        const pageWidth = page.width
-        if (pageWidth <= 0) return page.height
-        return page.height * (this.width / pageWidth)
+        const crop = this.cropOf(page)
+        const pageWidth = crop?.width() ?? page.width
+        if (pageWidth <= 0 || this.width <= 0) return page.height
+        return (crop?.height() ?? page.height) * (this.width / pageWidth)
     }
 
-    /** Height page 0 was last measured at, to carry the position across a decode correcting it. */
-    private currentPageHeight: number | null = null
+    private _cropBorders = false
 
     /**
-     * The page read through, reported when it changes: the deepest one whose bottom has reached
-     * the viewport's, or that covers its top. Where [onPageChange] means "reached this page's
-     * top", this means "read past it". Observation only - nothing here moves the scroll.
+     * Cut each page to its measured trim: the trim fills the width, its slot is the trim's
+     * height, and nothing outside it draws. Unlike the paged viewer, no zoom is involved.
      */
-    onPageScrolledThrough: ((page: ImagePage) => void) | null = null
+    get cropBorders(): boolean {
+        return this._cropBorders
+    }
 
-    private lastScrolledThrough: ImagePage | null = null
+    set cropBorders(value: boolean) {
+        if (this._cropBorders === value) return
+        this._cropBorders = value
+        this.currentPageHeight = null
+        this.invalidate()
+    }
+
+    /** The part of [page] drawn, in its own pixels; null for all of it. */
+    private cropOf(page: ImageSingle): Rect | null {
+        if (!this._cropBorders) return null
+        const trim = page.image?.trim
+        if (!trim) return null
+        return trim.width() > 0 && trim.height() > 0 ?
+            new Rect(trim.left, trim.top, trim.right, trim.bottom)
+            : null
+    }
+
+    private cropFor(page: ImagePage): Rect | null {
+        return page instanceof ImageSingle ? this.cropOf(page) : null
+    }
+
+    private _pageGap = 0
+
+    /**
+     * Empty space after each page, 0 to 1 viewport heights - part of the page slot (see
+     * [getPageSlotHeight]), not a separate element, so the first page still starts flush at the top.
+     */
+    get pageGap(): number {
+        return this._pageGap
+    }
+
+    set pageGap(value: number) {
+        const clamped = coerceIn(value, 0, 1)
+        if (!isSane(clamped) || clamped === this._pageGap) return
+        this._pageGap = clamped
+        this.currentPageHeight = null
+        this.invalidate()
+    }
+
+    /** [pageGap] in document-space pixels. 0 until the surface has a height to measure against. */
+    private get pageGapPx(): number {
+        return this.pageGap * this.height
+    }
+
+    /**
+     * Height [page] reserves in document space: [getPageHeight] plus [pageGapPx]. This, not
+     * [getPageHeight], is what document space is built from.
+     */
+    getPageSlotHeight(page: ImagePage): number {
+        return this.getPageHeight(page) + this.pageGapPx
+    }
+
+    /** Slot height page 0 was last measured at, to carry the position across a decode. */
+    private currentPageHeight: number | null = null
+
+    /** Set by [savePosition], applied by [captureRenderState] once a page is actually available. */
+    private pendingRestore: ContinuousPosition | null = null
+
+    /** Set while [restorePosition] walks pages, so its intermediate steps don't reach the app. */
+    private isRestoring = false
+
+    /**
+     * `readThrough` is the deepest page whose bottom has reached the viewport's; where
+     * [onPageChange] means "reached this page", this means "read past it" - so the document's
+     * last page reads through exactly when its bottom comes on screen. Reported every frame, not
+     * on a change: an edge that loses a race is lost for good, so diff it yourself if that
+     * matters. Observation only - it never moves the scroll.
+     */
+    onViewport: ((readThrough: ImagePage | null) => void) | null = null
 
     /**
      * Pages the last frame reached below and above the current one. What the viewport actually
@@ -207,25 +344,27 @@ export class ImageViewerContinuousState extends ImageViewerState {
      * here forever.
      */
     scrollBy(deltaPixels: number) {
+        if (!isSane(deltaPixels)) return
         if (!this.getPage(0)) return
         this.slideOffset = 0
 
         this._scrollY += deltaPixels
 
-        // Backwards, while the position sits above the top of the current page.
-        while (this.scrollY < 0) {
+        // Backwards, above the current page top.
+        let guard = 0
+        while (this.scrollY < 0 && guard++ < MAX_PAGE_WALK) {
             if (this.getPage(-1) === null) {
                 this._scrollY = 0
                 break
             }
-            this.onPageChange?.(-1)
+            if (!this.isRestoring) invokeSafe(this.onPageChange, -1)
             const newPage = this.getPage(0)
             if (!newPage) return
-            const newHeight = this.getPageHeight(newPage)
+            const newHeight = this.getPageSlotHeight(newPage)
             this.anchorDocY -= newHeight
             this.currentPageHeight = newHeight
-            // No height to hold a position inside, so rest at its top rather than leave the
-            // position above it, which the next scroll would read as another step back.
+            // Nothing to hold a position inside, so rest at its top - left above it, the next
+            // scroll reads it as another step back.
             if (newHeight <= 0) {
                 this._scrollY = 0
                 break
@@ -234,45 +373,61 @@ export class ImageViewerContinuousState extends ImageViewerState {
         }
 
         // Forwards, while it sits past the bottom. Stops at the last page rather than stepping off
-        // the end, which would leave the position short instead of clamping.
-        for (; ;) {
+        // the end.
+        guard = 0
+        for (; guard++ < MAX_PAGE_WALK;) {
             const page = this.getPage(0)
             if (!page) return
-            const pageHeight = this.getPageHeight(page)
+            const pageHeight = this.getPageSlotHeight(page)
             if (this.scrollY <= pageHeight || pageHeight <= 0) break
             if (this.getPage(1) === null) {
                 this._scrollY = pageHeight
                 break
             }
-            this.onPageChange?.(1)
+            if (!this.isRestoring) invokeSafe(this.onPageChange, 1)
             this.anchorDocY += pageHeight
             const newPage = this.getPage(0)
             if (!newPage) return
-            this.currentPageHeight = this.getPageHeight(newPage)
+            this.currentPageHeight = this.getPageSlotHeight(newPage)
             this._scrollY -= pageHeight
         }
 
         this.clampToDocumentEnd()
     }
 
+    private get safeScale(): number {
+        return isSane(this.scale) && this.scale > 0 ? this.scale : 1
+    }
+
+    /** Page-space height of the viewport. Runs from page-space 0 - the camera is top-anchored. */
+    private get bandHeight(): number {
+        return this.height / this.safeScale
+    }
+
     /**
-     * Furthest [scrollY] may go: the last page's bottom stops at the viewport's, never above it.
-     * Null when the document does not end within the pages this mode draws, so nothing to clamp.
+     * Furthest [scrollY] may go: the last page's bottom stops at the viewport's, or - zoomed out
+     * past what [MAX_VISIBLE_PAGES] can measure - the last drawn page's does. Null when there is
+     * provably content enough below.
      * Negative when the end falls above page 0's own top - see [clampToDocumentEnd].
+     *
+     * Measured to the last page's content, excluding its trailing [pageGap] - nothing to scroll to.
      */
     private maxScrollY(): number | null {
-        const viewportHeight = this.height / this.scale
-        let bottom = 0
+        const bottomEdge = this.bandHeight
+        let slotTop = 0
         for (let i = 0; i <= MAX_VISIBLE_PAGES; i++) {
             const page = this.getPage(i)
-            if (!page) return bottom - viewportHeight
-            const pageHeight = this.getPageHeight(page)
-            if (pageHeight <= 0) break
-            bottom += pageHeight
+            if (!page) return Math.max(0, slotTop - this.pageGapPx) - bottomEdge
+            const contentHeight = this.getPageHeight(page)
+            if (contentHeight <= 0) return null
             // Enough content below to fill the viewport, whatever follows it.
-            if (bottom - viewportHeight > this.scrollY) break
+            if (slotTop + contentHeight - bottomEdge > this.scrollY) return null
+            slotTop += contentHeight + this.pageGapPx
         }
-        return null
+        // Zoomed out past what MAX_VISIBLE_PAGES can measure. Bound by the last page it reaches,
+        // not "no bound": past that is only blank, and unbounded scrolls off and snaps back once
+        // the end comes into range.
+        return Math.max(0, slotTop - this.pageGapPx) - bottomEdge
     }
 
     /**
@@ -281,7 +436,8 @@ export class ImageViewerContinuousState extends ImageViewerState {
      * the backward walk reads that as "step to the page above" - so step back to a page that can.
      */
     private clampToDocumentEnd() {
-        for (; ;) {
+        let guard = 0
+        for (; guard++ < MAX_PAGE_WALK;) {
             const max = this.maxScrollY()
             if (max === null || this.scrollY <= max) return
             if (max >= 0) {
@@ -293,10 +449,10 @@ export class ImageViewerContinuousState extends ImageViewerState {
                 this._scrollY = 0
                 return
             }
-            this.onPageChange?.(-1)
+            if (!this.isRestoring) invokeSafe(this.onPageChange, -1)
             const newPage = this.getPage(0)
             if (!newPage) return
-            const newHeight = this.getPageHeight(newPage)
+            const newHeight = this.getPageSlotHeight(newPage)
             this.anchorDocY -= newHeight
             this.currentPageHeight = newHeight
             // No height yet to hold it either, so rest at its top.
@@ -320,6 +476,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
 
     /** Put the viewport's top at [docY] - see [documentY]. */
     scrollTo(docY: number) {
+        if (!isSane(docY)) return
         this.scrollBy(docY - this.documentY)
     }
 
@@ -328,6 +485,106 @@ export class ImageViewerContinuousState extends ImageViewerState {
         this._scrollY = 0
         // A different page now: its own height is the baseline, not the page left behind.
         this.currentPageHeight = null
+        this.pendingRestore = null
+    }
+
+    /** Capture where the viewport is right now, to hand to [restorePosition] later. */
+    savePosition(): ContinuousPosition {
+        const docY = this.anchorDocY + this.scrollY
+        const page = this.getPage(0)
+        const pageHeight = page ? this.getPageSlotHeight(page) : 0
+        const fraction = pageHeight > 0 ? coerceIn(this.scrollY / pageHeight, 0, 1) : 0
+        return {
+            documentY: docY,
+            scale: this.scale,
+            offsetX: this.offsetX,
+            pageIndexHint: this.getCurrentPageIndex(),
+            fractionWithinPage: fraction,
+        }
+    }
+
+    /** Put the viewport back at [pos]. Deferred to [captureRenderState] if no page exists yet. */
+    restorePosition(pos: ContinuousPosition) {
+        if (!isSane(pos.documentY) || !isSane(pos.scale) || !isSane(pos.offsetX)) return
+        if (!this.getPage(0)) {
+            this.pendingRestore = pos
+            return
+        }
+        this.applyRestore(pos)
+    }
+
+    private applyRestore(pos: ContinuousPosition) {
+        this.isRestoring = true
+        try {
+            this.scale = coerceIn(pos.scale, this.minScale, this.maxScale)
+            const targetDocY = this.resolveDocumentYForRestore(pos)
+            this.scrollBy(targetDocY - this.documentY)
+            const maxOffsetX = this.maxOffsetX(this.scale)
+            this.offsetX = coerceIn(pos.offsetX, -maxOffsetX, maxOffsetX)
+            this.pendingRestore = null
+        } finally {
+            this.isRestoring = false
+        }
+        this.invalidate()
+    }
+
+    /** [pos]'s page/fraction hint when it resolves, its raw documentY otherwise. */
+    private resolveDocumentYForRestore(pos: ContinuousPosition): number {
+        if (pos.pageIndexHint >= 0) {
+            const resolved = this.documentYForPageIndex(pos.pageIndexHint, pos.fractionWithinPage)
+            if (resolved !== null) return resolved
+        }
+        return pos.documentY
+    }
+
+    /** The page index [getPage] would need to answer 0 with to reach [documentY] - see [ContinuousPosition]. */
+    getCurrentPageIndex(): number {
+        const docY = this.anchorDocY + this.scrollY
+        let y = this.anchorDocY
+        let idx = 0
+        let guard = 0
+        while (guard++ < MAX_PAGE_WALK) {
+            const page = this.getPage(idx)
+            if (!page) break
+            const h = this.getPageSlotHeight(page)
+            if (h <= 0) break
+            if (docY < y + h) return idx
+            y += h
+            idx++
+        }
+        return 0
+    }
+
+    /**
+     * Document-space position [fraction] of the way down page [pageIndex] (relative to the page
+     * [getPage] answers 0 with), or null if walking there runs off the pages available.
+     */
+    private documentYForPageIndex(pageIndex: number, fraction: number): number | null {
+        const clampedFraction = coerceIn(fraction, 0, 1)
+        let docY = this.anchorDocY
+        if (pageIndex === 0) {
+            const page = this.getPage(0)
+            if (!page) return null
+            return docY + this.getPageSlotHeight(page) * clampedFraction
+        }
+        if (pageIndex > 0) {
+            for (let i = 0; i < pageIndex; i++) {
+                const p = this.getPage(i)
+                if (!p) return null
+                docY += this.getPageSlotHeight(p)
+            }
+            const target = this.getPage(pageIndex)
+            if (!target) return null
+            return docY + this.getPageSlotHeight(target) * clampedFraction
+        }
+        for (let i = pageIndex; i < 0; i++) {
+            const p = this.getPage(i)
+            if (!p) return null
+            docY -= this.getPageSlotHeight(p)
+        }
+        const target = this.getPage(pageIndex)
+        if (!target) return null
+        return docY + this.getPageSlotHeight(target) * clampedFraction
     }
 
     /** Slide the current page into place after a jump - [direction] 1 when it came from below. */
@@ -441,6 +698,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         deltaPixels: number,
         spec: AnimationSpec = spring(STIFFNESS_MEDIUM_LOW, SCROLL_THRESHOLD_PX),
     ) {
+        if (!isSane(deltaPixels)) return
         const carried =
             this.scrollJob !== null && this.animationJob === this.scrollJob ?
                 this.scrollRemaining
@@ -451,6 +709,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         const total = carried + deltaPixels
         this.scrollRemaining = total
         let lastValue = 0
+        this.isFlinging = true
         const job: Job = animate(0, total, spec, value => {
             this.scrollBy(value - lastValue)
             lastValue = value
@@ -461,48 +720,78 @@ export class ImageViewerContinuousState extends ImageViewerState {
         this.scrollJob = job
         job.promise.then(() => {
             if (this.scrollJob === job) this.scrollRemaining = 0
+            if (this.animationJob === job) {
+                this.isFlinging = false
+                this.invalidate()
+            }
         })
     }
 
     protected override captureRenderState(): unknown {
+        const snapshot = this.captureLocked()
+        if (this.isFlinging || this.isPanning) invokeSafe(this.onViewport, snapshot.readThrough)
+        return snapshot
+    }
+
+    private captureLocked(): ContinuousRenderSnapshot {
         const screenH = this.height
+
+        const pending = this.pendingRestore
+        if (pending && this.getPage(0)) this.applyRestore(pending)
 
         const page0 = this.getPage(0)
         if (page0) {
-            const pageHeight = this.getPageHeight(page0)
+            const pageHeight = this.getPageSlotHeight(page0)
             // A decode correcting a placeholder's height holds the same fraction of the page: at
             // its top nothing moves, near its bottom the pages below stay put. Both heights have
             // to be measured, and an unmeasured one is not a baseline to correct against later.
             const previous = this.currentPageHeight
-            if (previous !== null && previous > 0 && pageHeight > 0) {
-                this._scrollY *= pageHeight / previous
-            }
+            const ratio =
+                previous !== null && previous > 0 && pageHeight > 0 && pageHeight !== previous ?
+                    pageHeight / previous
+                    : null
+            const wasPinned =
+                ratio !== null && (() => {
+                    const max = this.maxScrollY()
+                    return max !== null && this.scrollY >= max
+                })()
+            if (ratio !== null) this._scrollY *= ratio
             if (pageHeight > 0) this.currentPageHeight = pageHeight
             // A decode shortening the document under a position already at its end: only
             // [scrollBy] used to notice, on the next scroll, as a jump.
             this.clampToDocumentEnd()
+            if (wasPinned) {
+                const max = this.maxScrollY()
+                if (max !== null && max >= 0 && this.scrollY < max) this._scrollY = max
+            }
         }
 
         // After the clamp, which can step the page at 0 back.
         const y0 = page0 ? -this.scrollY + this.slideOffset : 0
 
-        // Document position at the viewport's centre - the point both the fast path and
-        // TileRenderer's continuous overload zoom around, so they agree on where a page belongs.
-        const cameraDocY = this.anchorDocY - y0 + 0.5 * screenH
+        const s = this.safeScale
+
+        // The point both the fast path and TileRenderer's continuous overload zoom around, so
+        // they agree on where a page belongs.
+        const cameraDocY = this.anchorDocY - y0 + (0.5 * screenH) / s
 
         const pages: VisiblePage[] = []
+        // Undecoded ones too: [pages] skips them, and their decode's invalidate must still land.
+        const visible: ImagePage[] = []
 
-        // Visible band in unscaled page space. Zoom is centred on the screen, so the viewport
-        // covers screenH / scale of page space around the screen centre.
-        const visTop = 0.5 * screenH - screenH / (2 * this.scale)
-        const screenBot = 0.5 * screenH + screenH / (2 * this.scale)
+        // Visible band in unscaled page space, from page 0's top - see cameraDocY.
+        const visTop = 0
+        const screenBot = screenH / s
         // +1 tile of margin, matching TileRenderer's own prefetch ring, so a boundary tile just
         // past the viewport has its page already discovered.
-        const visBot = screenBot + this.tiles.preferredTileSize / this.scale
+        const visBot = screenBot + this.tiles.preferredTileSize / s
 
-        // Read past, not merely reached - see [onPageScrolledThrough]. No height, no reading.
-        const isScrolledThrough = (top: number, pageHeight: number) =>
-            pageHeight > 0 && (top + pageHeight <= screenBot || top < visTop)
+        // Read past, not merely reached - see [onViewport]. The bottom edge alone: a page
+        // covering the viewport's top is one being read, and matching it too would report it over
+        // the finished pages below. Against content, not the slot, or the trailing gap keeps the
+        // last page from ever reporting - the end lands its bottom on screenBot.
+        const isScrolledThrough = (top: number, contentHeight: number) =>
+            contentHeight > 0 && top + contentHeight <= screenBot + 0.5
 
         let scrolledThrough: ImagePage | null = null
 
@@ -516,16 +805,26 @@ export class ImageViewerContinuousState extends ImageViewerState {
             const page = this.getPage(iBack)
             if (!page) break
             above = -iBack
-            const pageHeight = this.getPageHeight(page)
+            const contentHeight = this.getPageHeight(page)
+            const pageHeight = contentHeight + this.pageGapPx
             docTopBack -= pageHeight
             yTop -= pageHeight
             // Walking up, so the first match is the deepest one above page 0.
-            if (scrolledThrough === null && isScrolledThrough(yTop, pageHeight)) {
+            if (scrolledThrough === null && isScrolledThrough(yTop, contentHeight)) {
                 scrolledThrough = page
             }
+            visible.push(page)
             // Walked upward, so each goes in front of the last - top to bottom, as the forward
             // walk below appends.
-            if (page.isDecoded) pages.unshift({ page, docTop: docTopBack, pageHeight })
+            if (page.isDecoded) {
+                pages.unshift({
+                    page,
+                    docTop: docTopBack,
+                    pageHeight,
+                    contentHeight,
+                    crop: this.cropFor(page),
+                })
+            }
             if (pageHeight <= 0) break
             iBack--
         }
@@ -550,12 +849,18 @@ export class ImageViewerContinuousState extends ImageViewerState {
             // is a guess, so re-deriving it every frame self-corrects once it decodes.
             if (hasPrev) docTop += prevHeight
             hasPrev = true
-            const pageHeight = this.getPageHeight(page)
+            const contentHeight = this.getPageHeight(page)
+            const pageHeight = contentHeight + this.pageGapPx
 
             // Walking down, so a later match replaces whatever the backward walk found.
-            if (isScrolledThrough(y, pageHeight)) scrolledThrough = page
+            if (isScrolledThrough(y, contentHeight)) scrolledThrough = page
 
-            if (y + pageHeight > visTop && page.isDecoded) pages.push({ page, docTop, pageHeight })
+            if (y + pageHeight > visTop) {
+                visible.push(page)
+                if (page.isDecoded) {
+                    pages.push({ page, docTop, pageHeight, contentHeight, crop: this.cropFor(page) })
+                }
+            }
 
             // A zero-height page never advances y, so stop rather than ask for pages forever.
             if (pageHeight <= 0) break
@@ -565,24 +870,50 @@ export class ImageViewerContinuousState extends ImageViewerState {
             i++
         }
 
-        this.onScreenPages = pages.map(p => p.page)
+        this.onScreenPages = visible
         this._pagesBelow = below
         this._pagesAbove = above
 
-        // By identity: a page that stays the deepest one read through is reported once.
-        if (scrolledThrough !== null && scrolledThrough !== this.lastScrolledThrough) {
-            this.lastScrolledThrough = scrolledThrough
-            this.onPageScrolledThrough?.(scrolledThrough)
+        if (scrolledThrough === null) {
+            const last = this.getPage(-1)
+            if (last && this.getPageHeight(last) > 0) scrolledThrough = last
         }
 
-        const snapshot: ContinuousRenderSnapshot = {
+        return {
             pages,
             scale: this.scale,
             offsetX: this.offsetX,
             cameraDocY,
             suppressGeneration: this.isScaleAnimating || this.isFlinging,
+            backgroundColor: this.backgroundColor,
+            readThrough: scrolledThrough,
         }
-        return snapshot
+    }
+
+    /**
+     * Limits [pass] to [vp]'s content band, where a cropped page's margins would otherwise land
+     * on its neighbours. False when none of it is on screen.
+     */
+    private scissorToSlot(
+        pass: GPURenderPassEncoder,
+        anchorX: number,
+        anchorY: number,
+        vp: VisiblePage,
+        scale: number,
+        dstW: number,
+        dstH: number,
+    ): boolean {
+        const l = coerceIn(Math.round(anchorX - (scale * dstW) / 2), 0, Math.trunc(dstW))
+        const r = coerceIn(Math.round(anchorX + (scale * dstW) / 2), 0, Math.trunc(dstW))
+        const t = coerceIn(Math.round(anchorY + scale * vp.docTop), 0, Math.trunc(dstH))
+        const b = coerceIn(
+            Math.round(anchorY + scale * (vp.docTop + vp.contentHeight)),
+            0,
+            Math.trunc(dstH),
+        )
+        if (r <= l || b <= t) return false
+        pass.setScissorRect(l, t, r - l, b - t)
+        return true
     }
 
     protected override renderSnapshot(
@@ -596,7 +927,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
             // Nothing to draw, but the texture still has to be written: `getCurrentTexture`
             // rotates buffers, so submitting no commands leaves a frame from several ago on
             // screen. The Kotlin returns here instead - its surface is not a swap chain.
-            Draw.clear(encoder, texture, 0)
+            Draw.clear(encoder, texture, s.backgroundColor)
             return
         }
 
@@ -618,7 +949,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         const anchorY = dstH / 2 - s.scale * s.cameraDocY + s.scale * WebGpuRenderer.offsetY * dstH
 
         if (hasImagePage) {
-            this.renderPass(encoder, texture, pass => {
+            this.renderPass(encoder, texture, s.backgroundColor, pass => {
                 for (const vp of s.pages) {
                     const page = vp.page
                     if (!(page instanceof ImageSingle)) continue
@@ -626,30 +957,44 @@ export class ImageViewerContinuousState extends ImageViewerState {
                     // since, in which case its images' buffers are gone and drawing one throws.
                     if (page.destroyed || !page.isDecoded || page.width <= 0) continue
 
-                    const pageScale = dstW / page.width
+                    // A crop fills the width, and the page's own centre sits off the crop's.
+                    const crop = vp.crop
+                    const pageScale = dstW / (crop?.width() ?? page.width)
+                    const shiftX =
+                        crop ? pageScale * (page.width / 2 - (crop.left + crop.right) / 2) : 0
+                    const shiftY =
+                        crop ? pageScale * (page.height / 2 - (crop.top + crop.bottom) / 2) : 0
+                    if (
+                        crop &&
+                        !this.scissorToSlot(pass, anchorX, anchorY, vp, s.scale, dstW, dstH)
+                    ) continue
 
                     // Tiles first, marking the stencil; the sampler below shades only what is
-                    // left, and nothing at all once the draw reports full coverage. Animated pages
-                    // never get tiles, so they skip the call outright.
-                    const covered =
-                        !page.isAnimated &&
-                        this.tiles.drawContinuous(
-                            pass,
-                            page,
-                            texture,
-                            s.cameraDocY,
-                            vp.docTop,
-                            s.offsetX,
-                            s.scale,
-                            s.suppressGeneration,
-                        )
+                    // left, and nothing at all once the draw reports full coverage.
+                    const covered = this.tiles.drawContinuous(
+                        pass,
+                        page,
+                        texture,
+                        s.cameraDocY,
+                        vp.docTop,
+                        vp.contentHeight,
+                        s.offsetX,
+                        s.scale,
+                        s.suppressGeneration,
+                        crop,
+                    )
 
                     if (!covered) {
-                        const imageScale = pageScale * s.scale
-                        page.forEachImage((image, srcOffsetX) => {
+                        page.forEachImage((image, srcOffsetX, sideScale) => {
                             if (image.mipmaps.length === 0) return
-                            const docCenterX = pageScale * (srcOffsetX + image.x)
-                            const docCenterY = vp.docTop + 0.5 * vp.pageHeight + pageScale * image.y
+                            const imageScale = pageScale * s.scale * sideScale
+                            const docCenterX =
+                                shiftX + pageScale * (srcOffsetX + sideScale * image.x)
+                            const docCenterY =
+                                vp.docTop +
+                                0.5 * vp.contentHeight +
+                                shiftY +
+                                pageScale * sideScale * image.y
                             const [x, y] = solveImagePlacement(
                                 anchorX + s.scale * docCenterX,
                                 anchorY + s.scale * docCenterY,
@@ -658,11 +1003,8 @@ export class ImageViewerContinuousState extends ImageViewerState {
                                 dstW,
                                 dstH,
                             )
-                            // Content not worth linear-light correctness ([ImageSingle.highQuality])
-                            // gets the plain sampler - it never reaches the tile cache either.
-                            // Animated pages are never highQuality but want the fast sampler
-                            // regardless, swapping images every frame. Both are stencil-tested
-                            // against the tile draw above, skipping pixels it already covered.
+                            // Stencil-tested against the tile draw above, skipping pixels it
+                            // already covered.
                             //
                             // The page's fade rides in as the alpha multiplier rather than the
                             // Kotlin's separate veil pass - see [ImagePage.fade].
@@ -673,16 +1015,17 @@ export class ImageViewerContinuousState extends ImageViewerState {
                                 x,
                                 y,
                                 imageScale,
-                                page.isAnimated || page.highQuality,
+                                true,
                                 true,
                                 page.fade,
                             )
                         })
                     }
+                    if (crop) pass.setScissorRect(0, 0, texture.width, texture.height)
                 }
             })
         } else {
-            Draw.clear(encoder, texture, 0)
+            Draw.clear(encoder, texture, s.backgroundColor)
         }
 
         for (const vp of s.pages) {
@@ -701,7 +1044,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
             // position for the same reason: they are in that dst-fraction unit, not docTop's
             // document pixels, so the two cannot be added.
             const renderScale = s.scale * page.scale
-            const targetY = anchorY + s.scale * (vp.docTop + 0.5 * vp.pageHeight)
+            const targetY = anchorY + s.scale * (vp.docTop + 0.5 * vp.contentHeight)
 
             page.renderLoaded(
                 encoder,

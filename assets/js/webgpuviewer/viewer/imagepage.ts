@@ -21,9 +21,13 @@ import { RenderPage } from "../renderer/renderpage"
 import type { TileRenderer } from "../renderer/tilerenderer"
 import { WebGpuRenderer } from "../renderer/renderer"
 import type { ImageViewerState } from "./imageviewerstate"
+import type { AnimationFrame } from "./animationframe"
 
 /** Default [ImagePage.fadeIn] length. */
 export const FADE_MILLIS = 200
+
+/** Frame-duration floor: plenty of GIFs declare 0, which spins the loop on delay(0). */
+const MIN_FRAME_MILLIS = 10
 
 /**
  * A page in the viewer, with shared transform (x, y, scale), pan/zoom-to-fit bounds, and
@@ -46,11 +50,6 @@ export class ImagePage {
         return this._destroyed
     }
 
-    /** True while an animation frame loop owns the current frame. Only ever true for images. */
-    get isAnimated(): boolean {
-        return false
-    }
-
     /**
      * Incremented each time this page's drawn content changes - an animated frame, or a
      * [RenderPageBase]'s `invalidate`. Read by a transition to spot a stale cache slot.
@@ -64,6 +63,7 @@ export class ImagePage {
     y = 0
 
     setPos(x: number = this.x, y: number = this.y, scale: number = this.scale) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale) || scale <= 0) return
         if (this.x === x && this.y === y && this.scale === scale) return
         this.x = x
         this.y = y
@@ -164,6 +164,15 @@ export class ImagePage {
      */
     get backgroundColor(): number | null {
         return null
+    }
+
+    /**
+     * Background columns tiling the whole width, normalised to [dst]. One for a single page; a
+     * spread gives each side its own, so neither crosses the seam nor leaves the edges bare.
+     */
+    forEachBackgroundColumn(dst: GPUTexture, action: (color: number, x1: number, x2: number) => void) {
+        const color = this.backgroundColor
+        if (color !== null) action(color, 0, 1)
     }
 
     /**
@@ -351,6 +360,9 @@ export class ImagePage {
         return this._parent?.isOnScreen(this) === true
     }
 
+    /** Called as this page joins the drawn ones. */
+    cameOnScreen() { }
+
     /** True when drawing this page draws [other] - itself, or a side [ImageSpread] overrides in. */
     covers(other: ImagePage): boolean {
         return this === other
@@ -386,6 +398,7 @@ export class ImagePage {
      * [ImageSpread] overrides this to fit each one independently rather than the combined span.
      */
     protected halfWidthScale(halfWidth: number, parentHeight: number): number {
+        if (this.width <= 0 || this.height <= 0) return 0.01
         return Math.max(0.01, Math.min(halfWidth / this.width, parentHeight / this.height))
     }
 
@@ -656,6 +669,11 @@ export class ImagePage {
             return
         }
 
+        if (!scaleChanging && endX === startX && endY === startY) {
+            this.animationJob = null
+            return
+        }
+
         this.animationTargetX = endX
         this.animationTargetY = endY
         this.animationTargetScale = targetScale
@@ -688,6 +706,8 @@ export class ImagePage {
             this.animationTargetY = null
             this.animationTargetScale = null
             this.isScaleAnimating = false
+            // The last step drew with generation held off; settled, the tiles need a frame.
+            if (scaleChanging) this.onInvalidate?.()
         })
     }
 
@@ -933,9 +953,9 @@ export class ImageSingle extends ImagePage {
     private _highQuality = true
 
     /**
-     * When false, this page skips the tile cache entirely and its fast path renders with
-     * `linear = false` - for content not worth either path's extra correctness or sharpness, such
-     * as an app-drawn transition/error bitmap.
+     * When false, this page skips the tile cache and draws straight from its image - for content
+     * that changes too often to tile (an animation, a progressive preview) or isn't worth it (an
+     * app-drawn bitmap).
      */
     get highQuality(): boolean {
         return this._highQuality
@@ -978,18 +998,32 @@ export class ImageSingle extends ImagePage {
     }
 
     private animationLoop: Job | null = null
-    private frames: [Image, number][] | null = null
+
     private currentFrameImage: Image | null = null
 
-    /** True while an animation frame loop owns [currentImage]. The tile cache skips these. */
-    override get isAnimated(): boolean {
-        return this.frames !== null
+    /** The image [image] swaps with while animating; this page's own. */
+    private backImage: Image | null = null
+
+    // Bumped by each [animate], so a loop it replaced can't swap or keep a back image.
+    private animationGeneration = 0
+
+    // Wakes an animation paused off screen.
+    private wakeShown: (() => void) | null = null
+
+    override cameOnScreen() {
+        this.wakeShown?.()
     }
 
     private _frameVersion = 0
 
+    /** Incremented each time the animation frame changes. Used by the render cache to detect stale frames. */
     override get frameVersion(): number {
-        return this._frameVersion
+        return this._frameVersion + this.contentVersion
+    }
+
+    /** Uploads into the image(s) so far; unlike [frameVersion], a fade or redraw leaves it. */
+    get contentVersion(): number {
+        return this.image?.contentVersion ?? 0
     }
 
     /** Current image for rendering (may change during animation). */
@@ -998,13 +1032,15 @@ export class ImageSingle extends ImagePage {
     }
 
     /**
-     * Runs [action] for each image drawn right now, with its pixel offset from the page anchor -
-     * [currentImage] at 0 here, both sides for an [ImageSpread]. For callers that place images
-     * with their own math (the tile cache, the continuous viewer) instead of [renderPage].
+     * Runs [action] for each image drawn right now, with its pixel offset from the page anchor and
+     * its own scale multiplier - [currentImage] at 0/1 here, both sides for an [ImageSpread], which
+     * gives the shorter side a multiplier above 1 to grow it to the taller one's height. For
+     * callers that place images with their own math (the tile cache, the continuous viewer)
+     * instead of [renderPage].
      */
-    forEachImage(action: (image: Image, offsetX: number) => void) {
+    forEachImage(action: (image: Image, offsetX: number, imageScale: number) => void) {
         const im = this.currentImage
-        if (im) action(im, 0)
+        if (im) action(im, 0, 1)
     }
 
     /** True once at least one of this page's images has been uploaded and can be drawn. */
@@ -1030,27 +1066,125 @@ export class ImageSingle extends ImagePage {
         super.invalidate()
     }
 
-    /** Starts an animated-frame loop over `[image, durationMillis]` pairs. */
-    startAnimationLoop(frames: [Image, number][]) {
+    /**
+     * Plays an animation from [image], its frame 0, shown for [firstDuration] ms. [next] gives
+     * each frame after it in turn, or null to end on the one shown - looping is its to do.
+     * [release] runs once the animation is done with.
+     *
+     * Two images take turns: the next frame uploads into the hidden one while the other shows, so
+     * a frame is never seen half-written and swaps in on time. Holds its frame while off screen.
+     */
+    animate(
+        firstDuration: number,
+        release: () => void,
+        next: () => Promise<AnimationFrame | null>,
+    ) {
+        if (this.destroyed || !this.image) {
+            this.runRelease(release)
+            return
+        }
         this.animationLoop?.cancel()
-        this.frames = frames
-        this.currentFrameImage = frames[0]?.[0] ?? null
-
+        // The replaced loop's back image is its own; this one starts again from [image].
+        if (this.backImage) this.releaseImage(this.backImage)
+        this.backImage = null
+        this.currentFrameImage = null
+        const generation = ++this.animationGeneration
+        // A tile grid would be cut again for every frame.
+        this.highQuality = false
         this.animationLoop = launch(async job => {
-            let frameIndex = 0
-            while (true) {
-                job.ensureActive()
-                const frame = this.frames?.[frameIndex]
-                if (!frame) break
-                const [img, duration] = frame
-                this.currentFrameImage = img
-                // Keeps running off screen - frames stay in step with their durations, and
-                // invalidate() asks for a redraw only while there is one to ask for.
-                this.invalidate()
-                await delay(Math.max(duration, 0))
-                frameIndex = (frameIndex + 1) % (this.frames?.length ?? 1)
+            try {
+                await this.play(job, next, firstDuration, generation)
+            } catch (e) {
+                // Ends on the frame shown: nothing above would catch it.
+                console.warn("ImagePage: animation stopped", e)
+            } finally {
+                this.runRelease(release)
             }
         })
+    }
+
+    // The host's, run where nothing would catch a throw.
+    private runRelease(release: () => void) {
+        try {
+            release()
+        } catch (e) {
+            console.error("ImagePage: animation release failed", e)
+        }
+    }
+
+    /** Frees [img] off this page: its textures on the render dispatcher. */
+    private releaseImage(img: Image) {
+        launch(async () => {
+            try {
+                await WebGpuRenderer.unlocked(() => img.cleanup())
+            } catch (e) {
+                console.error("ImagePage: cleanup error", e)
+            }
+        })
+    }
+
+    private async play(
+        job: Job,
+        next: () => Promise<AnimationFrame | null>,
+        firstDuration: number,
+        generation: number,
+    ) {
+        let front = this.image
+        if (!front) return
+        let back: Image | null = null
+        let shownAt = performance.now()
+        let showFor = Math.max(firstDuration, MIN_FRAME_MILLIS)
+
+        while (true) {
+            if (!this.isOnScreen) {
+                while (!this.isOnScreen) {
+                    await new Promise<void>(resolve => (this.wakeShown = resolve))
+                }
+                this.wakeShown = null
+                shownAt = performance.now()
+            }
+
+            job.ensureActive()
+            const frame = await next()
+            if (!frame) return
+            const duration = Math.max(frame.duration, MIN_FRAME_MILLIS)
+            const due = shownAt + showFor
+            try {
+                // Late frames still show, as soon as they're ready: a decode slower than the frame
+                // rate would never catch up by skipping.
+                const target: Image | null = back
+                if (!target) {
+                    const made = await front.twin(frame.pixels)
+                    const kept = !this.destroyed && generation === this.animationGeneration
+                    if (kept) this.backImage = made
+                    if (!kept) {
+                        this.releaseImage(made)
+                        return
+                    }
+                    back = made
+                } else if (!(await target.update(frame.pixels))) {
+                    return
+                }
+            } finally {
+                frame.close()
+            }
+
+            const wait = due - performance.now()
+            if (wait > 0) await delay(wait)
+            job.ensureActive()
+
+            const shown: Image = back!
+            if (this.destroyed || generation !== this.animationGeneration) return
+            this.currentFrameImage = shown
+            this.invalidate()
+            back = front
+            front = shown
+
+            // Behind by more than a frame: resync rather than race to catch up.
+            const now = performance.now()
+            shownAt = now - due > duration ? now : due
+            showFor = duration
+        }
     }
 
     override renderWith(
@@ -1073,7 +1207,7 @@ export class ImageSingle extends ImagePage {
             ],
         })
         try {
-            this.renderPage(pass, dst, x, y, scale, false, false)
+            this.renderPage(pass, dst, x, y, scale, true, false)
         } finally {
             pass.end()
         }
@@ -1118,25 +1252,10 @@ export class ImageSingle extends ImagePage {
     }
 
     /**
-     * Animated frames always want the fast path regardless of [highQuality] (never worth a tile
-     * cache that would just churn every frame); a non-[highQuality], non-animated page falls back
-     * to the plain [renderWith]; everything else goes through the tile cache, backfilling with
-     * [renderPage] wherever it isn't covered yet.
+     * As [ImagePage.drawLive]: through the tile cache when [highQuality], backfilling with
+     * [renderPage] wherever it isn't covered yet, else [renderPage] alone.
      */
     override drawLive(encoder: GPUCommandEncoder, dst: GPUTexture, tiles: TileRenderer): boolean {
-        if (this.isAnimated) {
-            const pass = this.beginLivePass(encoder, dst, tiles)
-            try {
-                this.renderBackground(pass, dst, 0, 0, 1)
-                this.renderPage(pass, dst, 0, 0, 1, true, true, this.fade)
-            } finally {
-                pass.end()
-            }
-            return false
-        }
-
-        if (!this.highQuality) return super.drawLive(encoder, dst, tiles)
-
         const pass = this.beginLivePass(encoder, dst, tiles)
         try {
             // Background always drawn live first (its fades are position-dependent, never from a
@@ -1145,7 +1264,7 @@ export class ImageSingle extends ImagePage {
             // uncovered instead of the whole viewport, since the tile blit already produced the
             // right pixel wherever it drew.
             this.renderBackground(pass, dst, 0, 0, 1)
-            const covered = tiles.draw(pass, this, dst, 0, 0, 1)
+            const covered = this.highQuality && tiles.draw(pass, this, dst, 0, 0, 1)
             if (!covered) this.renderPage(pass, dst, 0, 0, 1, true, true, this.fade)
             return covered
         } finally {
@@ -1154,34 +1273,19 @@ export class ImageSingle extends ImagePage {
     }
 
     override renderCacheSeed(encoder: GPUCommandEncoder, tex: GPUTexture, tiles: TileRenderer) {
-        if (this.isAnimated) {
-            const pass = this.beginCachePass(encoder, tex)
-            try {
-                this.renderPage(pass, tex, 0, 0, 1, true, false, this.fade)
-            } finally {
-                pass.end()
-            }
-            return
-        }
-
-        if (!this.highQuality) {
-            super.renderCacheSeed(encoder, tex, tiles)
-            return
-        }
-
         const pass = this.beginCachePass(encoder, tex)
         try {
             // A fade re-seeds the cache every frame (frameVersion), which is what lets a page
             // fade in mid-turn at all - the alpha is baked into the slot the transition blits.
             this.renderPage(pass, tex, 0, 0, 1, true, false, this.fade)
-            tiles.blitAvailableTiles(pass, this, tex)
+            if (this.highQuality) tiles.blitAvailableTiles(pass, this, tex)
         } finally {
             pass.end()
         }
     }
 
     override newlyAvailableTileKeys(tiles: TileRenderer, tex: GPUTexture): Set<number> | null {
-        return !this.highQuality || this.isAnimated ? null : tiles.availableTileKeys(this, tex)
+        return !this.highQuality ? null : tiles.availableTileKeys(this, tex)
     }
 
     override renderIntoCache(
@@ -1221,11 +1325,9 @@ export class ImageSingle extends ImagePage {
         offsetX: number,
         offsetY: number,
     ) {
-        const image = this.currentImage
-        if (!image) return
-        if (image.mipmaps.length === 0) return
-        // One image, so its column is the whole width - see [backgroundSpansFullWidth].
-        Draw.rect(pass, offsetX, offsetY, offsetX + 1, offsetY + 1, image.backgroundColor)
+        this.forEachBackgroundColumn(dst, (color, x1, x2) => {
+            Draw.rect(pass, offsetX + x1, offsetY, offsetX + x2, offsetY + 1, color)
+        })
     }
 
     /**
@@ -1246,10 +1348,8 @@ export class ImageSingle extends ImagePage {
         alpha: number = 1,
     ) {
         const variant = RenderPage.variantFor(linear, masked)
-        this.forEachPlacedImage(dst, x, y, scale, (image, rect, placeX, placeY, placeScale) => {
-            if (!linear || !masked) {
-                this.drawImageBackground(pass, image, rect, scale, masked)
-            }
+        if (!linear || !masked) this.drawPageBackground(pass, dst, scale, masked)
+        this.forEachPlacedImage(dst, x, y, scale, (image, _rect, placeX, placeY, placeScale) => {
             for (const tile of image.prepareTilesForRender(dst, placeX, placeY, placeScale)) {
                 RenderPage.drawTile(pass, dst, tile, variant, alpha)
             }
@@ -1270,24 +1370,16 @@ export class ImageSingle extends ImagePage {
         y: number,
         scale: number,
     ) {
-        this.forEachPlacedImage(dst, x, y, scale, (image, rect) => {
-            this.drawImageBackground(pass, image, rect, scale, true)
-        })
+        this.drawPageBackground(pass, dst, scale, true)
     }
 
     /**
-     * Draws [image]'s fading background rect. Alpha fades with distance from home/min scale or
-     * the page's pan bounds, so it only shows near the edges of the zoom/pan range where the
-     * image itself doesn't fill the viewport.
+     * The background's fade, from the live pan/scale - it only shows near the edges of the
+     * zoom/pan range. Page level, so a spread fades as one sheet.
      */
-    private drawImageBackground(
-        pass: GPURenderPassEncoder,
-        image: Image,
-        rect: Float32Array,
-        scale: number,
-        maskedBackground: boolean,
-    ) {
+    private backgroundAlpha(scale: number): number {
         const parent = this.parent
+        if (!parent) return 1
         const minScale = this.minScale
         const homeScale = this.homeScale
         const currentScale = this.scale * scale
@@ -1310,7 +1402,7 @@ export class ImageSingle extends ImagePage {
         }
 
         const boundsProximityAt = (anchorScale: number) => {
-            if (!parent || anchorScale <= 0) return 0
+            if (anchorScale <= 0) return 0
             const pixelsPerUnitX = parent.width * anchorScale
             const pixelsPerUnitY = parent.height * anchorScale
             return Math.min(
@@ -1329,35 +1421,46 @@ export class ImageSingle extends ImagePage {
             )
         }
 
-        const bgAlpha =
-            parent ?
-                currentScale > minScale ?
-                    boundsProximityAt(currentScale)
-                    : Math.max(
-                        Math.min(proximity(homeScale), boundsProximityAt(homeScale)),
-                        Math.min(proximity(minScale), boundsProximityAt(minScale)),
-                    )
-                : 1
+        if (currentScale > minScale) return boundsProximityAt(currentScale)
+        const homeProximity = Math.min(proximity(homeScale), boundsProximityAt(homeScale))
+        const minProximity = Math.min(proximity(minScale), boundsProximityAt(minScale))
+        return Math.max(homeProximity, minProximity)
+    }
 
-        const bg = image.backgroundColor
-        const a = Math.trunc(((bg >>> 24) & 0xff) * bgAlpha)
+    /** [color] at [backgroundAlpha]. The rect blends with SrcAlpha, so only alpha fades. */
+    private drawBackgroundRect(
+        pass: GPURenderPassEncoder,
+        color: number,
+        x1: number,
+        x2: number,
+        scale: number,
+        maskedBackground: boolean,
+    ) {
+        // A column the seam clamp collapsed.
+        if (x2 <= x1) return
+
+        const a = Math.trunc(((color >>> 24) & 0xff) * this.backgroundAlpha(scale))
         if (a <= 0) return
 
-        const x1 = this.backgroundSpansFullWidth ? 0 : rect[0]
-        const x2 = this.backgroundSpansFullWidth ? 1 : rect[2]
         // Alpha only. Both pipelines already blend with SrcAlpha, so scaling rgb applied the fade
         // twice and took the crossfade through black on the way.
-        const bgColor = (a << 24) | (bg & 0xffffff) | 0
+        const bgColor = (a << 24) | (color & 0xffffff) | 0
         if (maskedBackground) RenderPage.drawMaskedRect(pass, x1, 0, x2, 1, bgColor)
         else Draw.rect(pass, x1, 0, x2, 1, bgColor)
     }
 
-    /**
-     * True when the background colour paints the whole viewport rather than just the image's
-     * rect - always so with one image, which has no neighbouring column to bleed into.
-     */
-    get backgroundSpansFullWidth(): boolean {
-        return true
+    /** Each [forEachBackgroundColumn] column once - they tile, so nothing blends twice. */
+    private drawPageBackground(
+        pass: GPURenderPassEncoder,
+        dst: GPUTexture,
+        scale: number,
+        maskedBackground: boolean,
+    ) {
+        // Outside forEachPlacedImage's walk, so it needs that guard of its own.
+        if (this.destroyed) return
+        this.forEachBackgroundColumn(dst, (color, x1, x2) => {
+            this.drawBackgroundRect(pass, color, x1, x2, scale, maskedBackground)
+        })
     }
 
     /** Walks this page's image(s) via [forEachImage], placing each for [action] to draw against. */
@@ -1378,11 +1481,16 @@ export class ImageSingle extends ImagePage {
         // evicted since - its images' buffers are gone, and touching one throws.
         if (this.destroyed) return
 
-        this.forEachImage((img, srcOffsetX) => {
+        this.forEachImage((img, srcOffsetX, imgScale) => {
             if (img.mipmaps.length > 0) {
-                const placeX = this.x + x + srcOffsetX / dst.width
-                const placeY = this.y + y
-                const placeScale = this.scale * scale
+                // A side scaled up (see forEachImage's doc) grows around the anchor the offset
+                // is already relative to, so both terms divide by imgScale together.
+                const placeX =
+                    (this.x + x + srcOffsetX / dst.width + WebGpuRenderer.offsetX) / imgScale -
+                    WebGpuRenderer.offsetX
+                const placeY =
+                    (this.y + y + WebGpuRenderer.offsetY) / imgScale - WebGpuRenderer.offsetY
+                const placeScale = this.scale * scale * imgScale
                 action(
                     img,
                     img.placement(dst, placeX, placeY, placeScale),
@@ -1401,19 +1509,15 @@ export class ImageSingle extends ImagePage {
         this.animationLoop?.cancel()
         this.animationLoop = null
 
-        // Only clean the image if we own it.
-        if (!this.ownsImage) {
-            this.frames = null
-            this.currentFrameImage = null
-            return
-        }
-
-        const framesToClean = this.frames
-        this.frames = null
+        // Made by [animate], so this page's whatever [ownsImage] says.
+        const back = this.backImage
+        this.backImage = null
         this.currentFrameImage = null
 
-        // Frames include the image; otherwise clean it directly.
-        const imagesToClean = framesToClean?.map(f => f[0]) ?? (this.image ? [this.image] : [])
+        const imagesToClean = [
+            ...(this.ownsImage && this.image ? [this.image] : []),
+            ...(back ? [back] : []),
+        ]
 
         if (imagesToClean.length > 0) {
             // Eviction fires exactly when the viewer reaches a new page, so freeing a page's
@@ -1465,10 +1569,32 @@ export class ImageSpread extends ImageSingle {
         return this.right instanceof ImageSingle ? this.right : null
     }
 
-    /** Runs [action] for each present side, with its pixel offset from the seam. */
-    private forEachSide(action: (side: ImagePage, offsetX: number) => void) {
-        if (this.left) action(this.left, -0.5 * this.left.width)
-        if (this.right) action(this.right, 0.5 * this.right.width)
+    /** Grows the shorter side up to the taller one's height; 1 if there is nothing to grow to. */
+    private sideScale(side: ImagePage | null): number {
+        const h = side?.height ?? 0
+        if (!side || h <= 0) return 1
+        const tallest = Math.max(this.left?.height ?? 0, this.right?.height ?? 0)
+        return tallest <= h ? 1 : tallest / h
+    }
+
+    private get leftScale(): number {
+        return this.sideScale(this.left)
+    }
+
+    private get rightScale(): number {
+        return this.sideScale(this.right)
+    }
+
+    private sideWidth(side: ImagePage | null): number {
+        return (side?.width ?? 0) * this.sideScale(side)
+    }
+
+    /** Runs [action] for each present side, with its (scaled) pixel offset from the seam. */
+    private forEachSide(action: (side: ImagePage, offsetX: number, scale: number) => void) {
+        if (this.left) action(this.left, -0.5 * this.left.width * this.leftScale, this.leftScale)
+        if (this.right) {
+            action(this.right, 0.5 * this.right.width * this.rightScale, this.rightScale)
+        }
     }
 
     override get highQuality(): boolean {
@@ -1480,12 +1606,12 @@ export class ImageSpread extends ImageSingle {
         if (this.rightSingle) this.rightSingle.highQuality = value
     }
 
-    override get isAnimated(): boolean {
-        return this.left?.isAnimated === true || this.right?.isAnimated === true
-    }
-
     override get frameVersion(): number {
         return (this.left?.frameVersion ?? 0) + (this.right?.frameVersion ?? 0)
+    }
+
+    override get contentVersion(): number {
+        return (this.leftSingle?.contentVersion ?? 0) + (this.rightSingle?.contentVersion ?? 0)
     }
 
     /** No image of its own - [left]/[right] hold them, and [forEachImage] walks both. */
@@ -1497,11 +1623,11 @@ export class ImageSpread extends ImageSingle {
      * Each side sits half its own width out from the seam (the page anchor). A render side has no
      * image to place and paints itself instead - see [drawRenderSides].
      */
-    override forEachImage(action: (image: Image, offsetX: number) => void) {
+    override forEachImage(action: (image: Image, offsetX: number, imageScale: number) => void) {
         const l = this.leftSingle?.currentImage
-        if (l) action(l, -0.5 * l.width)
+        if (l) action(l, -0.5 * l.width * this.leftScale, this.leftScale)
         const r = this.rightSingle?.currentImage
-        if (r) action(r, 0.5 * r.width)
+        if (r) action(r, 0.5 * r.width * this.rightScale, this.rightScale)
     }
 
     override get hasUploadedImage(): boolean {
@@ -1513,11 +1639,6 @@ export class ImageSpread extends ImageSingle {
 
     override get isDecoded(): boolean {
         return this.left?.isDecoded === true || this.right?.isDecoded === true
-    }
-
-    /** Two columns meeting at the seam, so neither may paint over the other half. */
-    override get backgroundSpansFullWidth(): boolean {
-        return this.left === null || this.right === null
     }
 
     override drawLive(encoder: GPUCommandEncoder, dst: GPUTexture, tiles: TileRenderer): boolean {
@@ -1548,6 +1669,11 @@ export class ImageSpread extends ImageSingle {
         this.right?.attach(parent, onInvalidate)
     }
 
+    override cameOnScreen() {
+        this.left?.cameOnScreen()
+        this.right?.cameOnScreen()
+    }
+
     /** True when either side paints itself rather than blitting a decoded image. */
     private get hasRenderSide(): boolean {
         return this.left instanceof RenderPageBase || this.right instanceof RenderPageBase
@@ -1575,9 +1701,16 @@ export class ImageSpread extends ImageSingle {
     private drawRenderSides(encoder: GPUCommandEncoder, dst: GPUTexture) {
         // As forEachPlacedImage: the page can have been evicted since the snapshot was taken.
         if (this.destroyed) return
-        this.forEachSide((side, offsetX) => {
+        this.forEachSide((side, offsetX, sideScale) => {
             if (side instanceof RenderPageBase) {
-                side.renderLoaded(encoder, this.x + offsetX / dst.width, this.y, this.scale, dst)
+                // As forEachPlacedImage: render scales x/y by the scale it is given.
+                side.renderLoaded(
+                    encoder,
+                    (this.x + offsetX / dst.width) / sideScale,
+                    this.y / sideScale,
+                    this.scale * sideScale,
+                    dst,
+                )
             }
         })
     }
@@ -1591,17 +1724,23 @@ export class ImageSpread extends ImageSingle {
     override leafRect(dst: GPUTexture, left: boolean): Float32Array | null {
         const side = left ? this.left : this.right
         if (!side) return null
-        const placeX = this.x + ((left ? -0.5 : 0.5) * side.width) / dst.width
+        const sideScale = this.sideScale(side)
+        const placeX = this.x + ((left ? -0.5 : 0.5) * this.sideWidth(side)) / dst.width
         const image = side instanceof ImageSingle ? side.currentImage : null
         if (image && image.mipmaps.length > 0) {
-            return image.placement(dst, placeX, this.y, this.scale)
+            return image.placement(
+                dst,
+                (placeX + WebGpuRenderer.offsetX) / sideScale - WebGpuRenderer.offsetX,
+                (this.y + WebGpuRenderer.offsetY) / sideScale - WebGpuRenderer.offsetY,
+                this.scale * sideScale,
+            )
         }
-        // A render side has no image to place - [sideColumn]'s fallback, plus the y axis.
+        // A render side has no image to place, so measure its own declared size instead.
         if (!(side instanceof RenderPageBase)) return null
         const cx = 0.5 + this.scale * (placeX + WebGpuRenderer.offsetX)
         const cy = 0.5 + this.scale * (this.y + WebGpuRenderer.offsetY)
-        const hw = (this.scale * 0.5 * side.width) / dst.width
-        const hh = (this.scale * 0.5 * side.height) / dst.height
+        const hw = (this.scale * 0.5 * this.sideWidth(side)) / dst.width
+        const hh = (this.scale * 0.5 * side.height * sideScale) / dst.height
         return new Float32Array([cx - hw, cy - hh, cx + hw, cy + hh])
     }
 
@@ -1631,46 +1770,35 @@ export class ImageSpread extends ImageSingle {
         return this.left?.backgroundColor ?? this.right?.backgroundColor ?? null
     }
 
-    override drawBackgroundColumns(
-        pass: GPURenderPassEncoder,
+    /** Each side's own colour over its own half: seam to screen edge, not just its image. */
+    override forEachBackgroundColumn(
         dst: GPUTexture,
-        offsetX: number,
-        offsetY: number,
+        action: (color: number, x1: number, x2: number) => void,
     ) {
-        this.forEachSide((side, srcOffsetX) => {
-            const color = side.backgroundColor
-            if (color !== null) {
-                const [x1, x2] = this.sideColumn(side, srcOffsetX, dst)
-                Draw.rect(pass, offsetX + x1, offsetY, offsetX + x2, offsetY + 1, color)
-            }
-        })
-    }
+        const leftColor = this.left?.backgroundColor ?? null
+        const rightColor = this.right?.backgroundColor ?? null
+        // Clamped: panned far enough, the seam leaves the screen and one half takes it all.
+        const rawSeam = this.spineX(dst)
+        const seam = rawSeam !== null ? coerceIn(rawSeam, 0, 1) : null
 
-    /**
-     * [side]'s left/right edges within [dst], normalised - the whole width when it is the only
-     * side. An image side goes through `Image.placement` so its own `Image.x` counts; a render
-     * side has no such offset and gets the same formula without it.
-     */
-    private sideColumn(side: ImagePage, srcOffsetX: number, dst: GPUTexture): [number, number] {
-        if (this.backgroundSpansFullWidth) return [0, 1]
-        const placeX = this.x + srcOffsetX / dst.width
-        const image = side instanceof ImageSingle ? side.currentImage : null
-        if (image) {
-            const rect = image.placement(dst, placeX, this.y, this.scale)
-            return [rect[0], rect[2]]
+        if (seam === null || leftColor === null || rightColor === null) {
+            // One side, or nothing placed yet to find a seam by.
+            const color = leftColor ?? rightColor
+            if (color !== null) action(color, 0, 1)
+            return
         }
-        const center = 0.5 + this.scale * (placeX + WebGpuRenderer.offsetX)
-        const half = (this.scale * 0.5 * side.width) / dst.width
-        return [center - half, center + half]
+
+        action(leftColor, 0, seam)
+        action(rightColor, seam, 1)
     }
 
     override horizontalExtent(): [number, number] {
-        return [this.left?.width ?? 0, this.right?.width ?? 0]
+        return [this.sideWidth(this.left), this.sideWidth(this.right)]
     }
 
-    /** Total width (sum of both sides' widths). */
+    /** Total width (sum of both sides' scaled widths). */
     override get width(): number {
-        return (this.left?.width ?? 0) + (this.right?.width ?? 0)
+        return Math.round(this.sideWidth(this.left) + this.sideWidth(this.right))
     }
 
     /** Total height (max of both sides' heights). */
@@ -1687,12 +1815,17 @@ export class ImageSpread extends ImageSingle {
         const ri = this.rightSingle?.image
         const leftW = li ? li.width - (li.trim?.left ?? 0) : (this.left?.width ?? 0)
         const rightW = ri ? (ri.trim?.right ?? ri.width) : (this.right?.width ?? 0)
-        return leftW + rightW
+        return Math.round(leftW * this.leftScale + rightW * this.rightScale)
     }
 
     /** Visible height after trim (max of trim heights). */
     override get trimHeight(): number {
-        return Math.max(this.left?.trimHeight ?? 0, this.right?.trimHeight ?? 0)
+        return Math.round(
+            Math.max(
+                (this.left?.trimHeight ?? 0) * this.leftScale,
+                (this.right?.trimHeight ?? 0) * this.rightScale,
+            ),
+        )
     }
 
     override get isHalfWidth(): boolean {

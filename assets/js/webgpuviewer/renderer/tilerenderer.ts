@@ -123,9 +123,24 @@ function keyTy(k: number): number {
     return (k % 0x1000000) - KEY_BIAS
 }
 
+/** A crop in page pixels, the shape of Android's `Rect`. */
+export interface Rect {
+    left: number
+    top: number
+    right: number
+    bottom: number
+}
+
 /** One cached tile: where in the atlas it sits (packed), and when it was last drawn. */
 class Tile {
     lastUsed = 0
+
+    /**
+     * True when this tile was rendered without the staged rescaler that its grid's scale would
+     * otherwise call for, because it was off screen when it was generated. [drawCore] re-cuts
+     * it once it becomes visible - see the upgrade there.
+     */
+    plain = false
 
     constructor(readonly atlasOrigin: number) { }
 }
@@ -230,7 +245,12 @@ class PageTiles {
         readonly frameUniform: GPUBuffer,
         /** Cut at this size until the grid is wiped, which is when it adopts a new preferred one. */
         public tileSize: number,
-    ) { }
+    ) {
+        this.contentVersion = page.contentVersion
+    }
+
+    /** [ImageSingle.contentVersion] the tiles were cut from. */
+    contentVersion: number
 
     get destroyed(): boolean {
         return this.page.destroyed
@@ -413,6 +433,7 @@ interface Request {
     state: PageTiles
     tx: number
     ty: number
+    onScreen: boolean
 }
 
 /**
@@ -526,10 +547,26 @@ export class TileRenderer {
         this.replaceRescaler(previous)
     }
 
-    /** Drop every tile the outgoing rescaler produced and let go of what it held. */
+    /**
+     * Drop every tile the outgoing rescaler produced and let go of what it held.
+     *
+     * The cost measurements go with them. They were timed through the outgoing rescaler, so they
+     * describe a pipeline that no longer runs, and an exponential average needs twenty-odd tiles
+     * per size to forget one. Kept, they steer [reconsiderTileSize] and [nextBatchSize] the whole
+     * time, and it cuts both ways: a swap to a cheaper rescaler reads as expensive and shrinks the
+     * tiles for nothing, while a swap to a dearer one reads as affordable through exactly the
+     * window its first tiles land in. [preferredTileSize] goes back with them, since nothing
+     * measured justifies the size the outgoing rescaler settled on and the grids are being re-cut
+     * here anyway.
+     */
     private replaceRescaler(previous: Rescaler) {
         this.pages.forEach(st => this.releaseTiles(st))
         previous.cleanup()
+        this.tileCostNs.fill(0)
+        this.tileSamples.fill(0)
+        this.probeAttempts.fill(0)
+        this.tileOverheadNs = 0
+        this.preferredTileSize = TILE_SIZE
         this.invalidate()
     }
 
@@ -542,6 +579,23 @@ export class TileRenderer {
         return (
             (this._upscaler.factor > 1 && this._upscaler.supported) ||
             (this._downscaler.factor > 1 && this._downscaler.supported)
+        )
+    }
+
+    /**
+     * True when the rescaler in force has a whole [Rescaler.factor] of resizing to give a tile of
+     * [st]'s scale and size, and can run at all. Shared by [generateTileNow], which decides how to
+     * cut a tile, and [drawCore], which decides whether one cut plain is owed an upgrade.
+     */
+    private rescalerApplies(st: PageTiles): boolean {
+        const rescaler: Rescaler = st.scale >= 1 ? this._upscaler : this._downscaler
+        // First, so a rescaler whose factor varies with the zoom has settled on one.
+        rescaler.plan(st.scale, st.tileSize)
+        return (
+            rescaler.factor > 1 &&
+            rescaler.supported &&
+            rescaler.appliesAt(st.scale) &&
+            rescaler.fits(st.tileSize)
         )
     }
 
@@ -653,6 +707,9 @@ export class TileRenderer {
     private readonly tileCostNs = new Float64Array(TILE_SIZES.length)
     private readonly tileSamples = new Int32Array(TILE_SIZES.length)
 
+    /** Probes per size: one whose timing never lands would otherwise repeat forever. */
+    private readonly probeAttempts = new Int32Array(TILE_SIZES.length)
+
     private sizeIndex(tileSize: number): number {
         return TILE_SIZES.indexOf(tileSize)
     }
@@ -702,14 +759,22 @@ export class TileRenderer {
      * tile costing more than a batch's target is itself the hitch. A challenger needs
      * [TILE_SIZE_MARGIN] to win, since switching re-cuts every grid.
      *
-     * Frozen while [staged], because the sizes are then not comparable: the size in use is timed
-     * generating real tiles through the rescaler, every other size by [probeTileSize] without one.
-     * So the size in use reads as expensive, this switches away, and the size it switches to
-     * becomes expensive in turn - and every switch re-cuts every grid, which on screen is the
-     * high-quality tiles dropping out and back while only the scroll moves.
+     * The comparison between sizes is frozen while [staged], because the sizes are then not
+     * comparable: the size in use is timed generating real tiles through the rescaler, every other
+     * size by [probeTileSize] without one. So the size in use reads as expensive, this switches
+     * away, and the size it switches to becomes expensive in turn - and every switch re-cuts every
+     * grid (see [drawCore]), which on screen is the high-quality tiles dropping out and back while
+     * only the scroll moves.
+     *
+     * The step down is not part of that comparison and stays live while staged. It asks only
+     * whether the size in use costs more than a whole batch's budget - one number, measured the
+     * same way whether or not a rescaler ran - and it only ever descends, so it cannot oscillate
+     * the way the comparison would. Staged is also where it is needed most: [UpscalerArtCnn] adds
+     * nine compute dispatches to every tile, enough for one tile to outlast the frame it was meant
+     * to fit inside, and freezing this left the renderer no way down from a size it could not
+     * afford.
      */
     private reconsiderTileSize() {
-        if (this.staged) return
         const current = this.sizeIndex(this.preferredTileSize)
         if (current < 0 || this.tileSamples[current] < TILE_SIZE_SAMPLES) return
 
@@ -718,6 +783,8 @@ export class TileRenderer {
             this.invalidate()
             return
         }
+
+        if (this.staged) return
 
         let best = current
         let bestCost = this.costPerPixel(current)
@@ -775,7 +842,12 @@ export class TileRenderer {
     private freeColdestGrid(keep: PageTiles) {
         let victim: PageTiles | null = null
         for (const st of this.pages.values()) {
-            if (st !== keep && st.tiles.size > 0 && !st.page.isOnScreen) {
+            if (
+                st !== keep &&
+                st.tiles.size > 0 &&
+                !st.page.isOnScreen &&
+                ![...st.tiles.values()].some(t => t.lastUsed >= this.frame - 1)
+            ) {
                 victim = st
                 break
             }
@@ -1094,18 +1166,30 @@ export class TileRenderer {
         dst: GPUTexture,
         cameraDocY: number,
         docTop: number,
+        pageHeight: number,
         viewerOffsetX: number,
         scale: number,
+        crop: Rect | null = null,
     ): { pageScale: number; anchorX: number; anchorY: number; centerYOffset: number } | null {
         if (page.width <= 0) return null
-        const pageScaleAtZoom1 = dst.width / page.width
+        // [crop], when given, is what fills the viewer's width; the page centres off it.
+        const cropWidth = crop ? crop.right - crop.left : page.width
+        if (cropWidth <= 0) return null
+        const pageScaleAtZoom1 = dst.width / cropWidth
         const pageScale = pageScaleAtZoom1 * scale
+        const shiftX = crop
+            ? pageScaleAtZoom1 * (page.width / 2 - (crop.left + crop.right) / 2)
+            : 0
+        const shiftY = crop
+            ? pageScaleAtZoom1 * (page.height / 2 - (crop.top + crop.bottom) / 2)
+            : 0
         const anchorX =
-            dst.width / 2 + scale * (viewerOffsetX * dst.width + WebGpuRenderer.offsetX * dst.width)
+            dst.width / 2 +
+            scale * (viewerOffsetX * dst.width + WebGpuRenderer.offsetX * dst.width + shiftX)
         const anchorY =
             dst.height / 2 - scale * cameraDocY + scale * WebGpuRenderer.offsetY * dst.height
-        const pageHeightDoc = page.height * pageScaleAtZoom1
-        const centerYOffset = scale * (docTop + pageHeightDoc / 2)
+        // The caller's measured height, never one derived here - the two must agree exactly.
+        const centerYOffset = scale * (docTop + pageHeight / 2 + shiftY)
         return { pageScale, anchorX, anchorY, centerYOffset }
     }
 
@@ -1115,12 +1199,19 @@ export class TileRenderer {
      * when something new lands. Null if the page isn't drawable.
      */
     availableTileKeys(page: ImageSingle, dst: GPUTexture): Set<number> | null {
-        if (page.destroyed || !page.highQuality || page.isAnimated) return null
+        if (page.destroyed || !page.highQuality) return null
         if (!page.hasUploadedImage) return null
 
         const st = this.pages.get(page)
         if (!st) return null
         const a = this.pagedAnchor(page, dst, 0, 0, 1)
+        if (
+            st.contentVersion !== page.contentVersion ||
+            st.scale !== a.pageScale ||
+            st.tileSize !== this.preferredTileSize
+        ) {
+            return new Set()
+        }
         const gp = this.gridPlacement(page, dst, a.anchorX, a.anchorY, 0, a.pageScale, st.tileSize)
         if (!gp) return null
         if (gp.wantL >= gp.wantR || gp.wantT >= gp.wantB) return new Set()
@@ -1144,7 +1235,7 @@ export class TileRenderer {
      * this grid's tiles as "off-screen", behind whichever page is genuinely being drawn.
      */
     prewarm(page: ImageSingle, dst: GPUTexture) {
-        if (page.destroyed || !page.highQuality || page.isAnimated) return
+        if (page.destroyed || !page.highQuality) return
         if (!page.hasUploadedImage) return
 
         this.viewportWidth = dst.width
@@ -1153,17 +1244,19 @@ export class TileRenderer {
         const a = this.pagedAnchor(page, dst, 0, 0, 1)
         const st = this.touch(page, () => this.newGrid(page, a.pageScale))
 
-        if (st.scale !== a.pageScale || st.tileSize !== this.preferredTileSize) {
+        const version = page.contentVersion
+        if (
+            st.scale !== a.pageScale ||
+            st.tileSize !== this.preferredTileSize ||
+            st.contentVersion !== version
+        ) {
             this.releaseTiles(st)
             st.pending.clear()
             st.scale = a.pageScale
             st.tileSize = this.preferredTileSize
-            st.stable = false
-            this.invalidate()
-        } else {
-            st.stable = true
+            st.contentVersion = version
         }
-        if (!st.stable) return
+        st.stable = true
 
         const gp = this.gridPlacement(page, dst, a.anchorX, a.anchorY, 0, a.pageScale, st.tileSize)
         if (!gp) return
@@ -1185,6 +1278,18 @@ export class TileRenderer {
             gp.clipB,
             page.fade,
         )
+
+        let missing = 0
+        this.forEachTile(wanted, (txi, tyi) => {
+            const tile = st.tiles.get(key(txi, tyi))
+            if (tile) tile.lastUsed = this.frame
+            else missing++
+        })
+        if (missing === 0) return
+
+        let total = 0
+        for (const other of this.pages.values()) total += other.tiles.size * this.tileBytes(other)
+        if (total + missing * this.tileBytes(st) > this.maxTileBytes) return
 
         let added = false
         this.forEachTile(wanted, (txi, tyi) => {
@@ -1229,8 +1334,8 @@ export class TileRenderer {
 
     /**
      * Blit [page]'s cached tiles and enqueue the missing ones - the continuous viewer's
-     * placement, via [cameraDocY] (the camera's document position) and [docTop] (this page's
-     * own, both in screen pixels at zoom 1).
+     * placement, via [cameraDocY] (the camera's document position), [docTop] (this page's own
+     * top) and [pageHeight] (its content height - all in screen pixels at zoom 1).
      *
      * Rounds only the shared *camera* anchor, leaving each page's own offset from it exact -
      * unlike the paged path, several pages can draw through here in the same frame, and
@@ -1243,11 +1348,22 @@ export class TileRenderer {
         dst: GPUTexture,
         cameraDocY: number,
         docTop: number,
+        pageHeight: number,
         viewerOffsetX: number,
         scale: number,
         suppressGeneration: boolean,
+        crop: Rect | null = null,
     ): boolean {
-        const a = this.continuousAnchor(page, dst, cameraDocY, docTop, viewerOffsetX, scale)
+        const a = this.continuousAnchor(
+            page,
+            dst,
+            cameraDocY,
+            docTop,
+            pageHeight,
+            viewerOffsetX,
+            scale,
+            crop,
+        )
         if (!a) return false
         return this.drawCore(
             pass,
@@ -1276,7 +1392,7 @@ export class TileRenderer {
         applyRetainWindow: boolean,
         useStencilMask: boolean = false,
     ): boolean {
-        if (page.destroyed || !page.highQuality || page.isAnimated) return false
+        if (page.destroyed || !page.highQuality) return false
         if (!page.hasUploadedImage) return false
 
         this.viewportWidth = dst.width
@@ -1295,10 +1411,12 @@ export class TileRenderer {
             }
         }
 
+        const version = page.contentVersion
         if (
             st.scale !== pageScale ||
             st.centerYOffset !== centerYOffset ||
-            st.tileSize !== this.preferredTileSize
+            st.tileSize !== this.preferredTileSize ||
+            st.contentVersion !== version
         ) {
             // A changed centerYOffset at fixed scale means a placeholder corrected its guessed
             // height - invalidate the same way a scale change does. A changed preferred size
@@ -1307,6 +1425,7 @@ export class TileRenderer {
             st.pending.clear()
             st.scale = pageScale
             st.tileSize = this.preferredTileSize
+            st.contentVersion = version
             st.stable = false
             this.invalidate()
         } else {
@@ -1335,7 +1454,7 @@ export class TileRenderer {
             return true
         }
 
-        const ts = TILE_SIZE
+        const ts = gp.ts
 
         // In tile coordinates, unlike wantT/wantB - not offset by centerYOffset, since a tile's
         // blit position is snapY + ty*ts regardless of which page it belongs to.
@@ -1366,6 +1485,20 @@ export class TileRenderer {
             const tile = st.tiles.get(tkey)
             if (tile) {
                 tile.lastUsed = this.frame
+                // Generated off screen, so it skipped the rescaler its grid's scale calls for -
+                // see [generateTileNow]. Now that it is visible, drop it and let the worker cut it
+                // again at full quality. Once only: what replaces it is not plain.
+                if (
+                    tile.plain &&
+                    st.stable &&
+                    this.rescalerApplies(st) &&
+                    this.tileVisible(gp, dst, txi, tyi)
+                ) {
+                    this.atlasOrNull?.release(st.tileSize, tile.atlasOrigin)
+                    st.tiles.delete(tkey)
+                    st.instancesDirty = true
+                    st.pending.add(tkey)
+                }
             } else {
                 if (st.stable) st.pending.add(tkey)
                 if (covered && this.tileVisible(gp, dst, txi, tyi)) covered = false
@@ -1504,7 +1637,10 @@ export class TileRenderer {
         const queries = this.timestampQuerySet
         if (!queries) return null
         const index = TILE_SIZES.findIndex(
-            (size, i) => size !== this.preferredTileSize && this.tileSamples[i] < TILE_SIZE_SAMPLES,
+            (size, i) =>
+                size !== this.preferredTileSize &&
+                this.tileSamples[i] < TILE_SIZE_SAMPLES &&
+                this.probeAttempts[i] < 2 * TILE_SIZE_SAMPLES,
         )
         if (index < 0) return null
         const tileSize = TILE_SIZES[index]
@@ -1518,6 +1654,7 @@ export class TileRenderer {
         }
         if (!st) return null
 
+        this.probeAttempts[index]++
         const pool = this.atlas
         const timing = this.acquireTimestampBuffers()
         const encoder = device().createCommandEncoder()
@@ -1561,6 +1698,7 @@ export class TileRenderer {
                     if (this.suspended) break
                     const batchSize = this.nextBatchSize()
                     let generated = 0
+                    let visible = false
                     const measurements: Promise<void>[] = []
                     while (generated < batchSize) {
                         const req = this.nextRequest()
@@ -1575,6 +1713,14 @@ export class TileRenderer {
                                 this.recordTileOverhead((performance.now() - started) * 1e6)
                             }
                             generated++
+                            // A turn blits prewarmed tiles, so its pages count. Only if it landed:
+                            // a full atlas drops it, and a frame would requeue it.
+                            if (
+                                (req.onScreen || req.state.page.isOnScreen) &&
+                                req.state.tiles.has(key(req.tx, req.ty))
+                            ) {
+                                visible = true
+                            }
                         } catch (e) {
                             console.error("TileRenderer: tile render failed", e)
                         }
@@ -1586,7 +1732,7 @@ export class TileRenderer {
                         await probe
                         continue
                     }
-                    this.invalidate()
+                    if (visible) this.invalidate()
                     if (measurements.length > 0) await Promise.all(measurements)
                     else await delay(5)
                     await yieldToEventLoop()
@@ -1636,30 +1782,44 @@ export class TileRenderer {
 
         if (!bestState) return null
         bestState.pending.delete(bestKey)
-        return { state: bestState, tx: keyTx(bestKey), ty: keyTy(bestKey) }
+        // [priorityOf] adds a whole [OFF_SCREEN_SCORE] per tile outside the grid's on-screen
+        // window, so anything at or above it is a tile nobody can currently see - the margin ring
+        // kept against a pan, or a grid [prewarm] filled for a page that is not on screen at all.
+        return {
+            state: bestState,
+            tx: keyTx(bestKey),
+            ty: keyTy(bestKey),
+            onScreen: bestPriority < OFF_SCREEN_SCORE,
+        }
     }
 
     /** Generates [req], returning its GPU timing measurement if this tile started one. */
     private generate(req: Request): Promise<void> | null {
         const st = req.state
         if (st.destroyed || !st.stable) return null
-        return this.generateTileNow(st, req.tx, req.ty)
+        if (st.contentVersion !== st.page.contentVersion) return null
+        return this.generateTileNow(st, req.tx, req.ty, req.onScreen)
     }
 
     /** Generate [st]'s tile at ([tx], [ty]) right now if it isn't already cached. */
-    private generateTileNow(st: PageTiles, tx: number, ty: number): Promise<void> | null {
+    private generateTileNow(
+        st: PageTiles,
+        tx: number,
+        ty: number,
+        onScreen: boolean = true,
+    ): Promise<void> | null {
         // Which way this tile resizes decides which rescaler gets a say.
         const rescaler: Rescaler = st.scale >= 1 ? this._upscaler : this._downscaler
-        // First, so a rescaler whose factor varies with the zoom has settled on one.
-        rescaler.plan(st.scale, st.tileSize)
 
-        // [Rescaler.appliesAt] keeps a rescaler off a tile with less than a whole run of resizing
-        // to give it. What it declines resolves in one step, as always.
-        const use =
-            rescaler.factor > 1 &&
-            rescaler.supported &&
-            rescaler.appliesAt(st.scale) &&
-            rescaler.fits(st.tileSize)
+        // [rescalerApplies] keeps a rescaler off a tile with less than a whole run of resizing to
+        // give it. What it declines resolves in one step, as always.
+        //
+        // Off screen gets the same treatment for a different reason. A staged rescaler is not a
+        // filter tweak - [UpscalerArtCnn] adds nine compute dispatches to every tile - and the
+        // margin ring and [prewarm]'s grids are tiles nobody is looking at yet. Spending that on
+        // them buys nothing and competes with the frame being presented, so they render plain and
+        // [drawCore] upgrades them if they ever come on screen.
+        const use = onScreen && this.rescalerApplies(st)
 
         // The tile as the first step sees it, plus the rescaler's halo. Resized, that is the tile
         // with factor*halo to spare each side, which [Rescaler.resolve] cuts off.
@@ -1734,13 +1894,14 @@ export class TileRenderer {
         const centerY = st.centerYOffset * (scale / st.scale)
         const dst = ts + 2 * inset
         const filtered = this.filtered()
-        st.page.forEachImage((image, srcOffsetX) => {
+        st.page.forEachImage((image, srcOffsetX, imageScale) => {
             if (image.mipmaps.length > 0) {
-                // In raw (unscaled) pixels since solveImagePlacement scales by s itself.
-                const targetX = -tx * ts + inset + s * (srcOffsetX + image.x)
-                const targetY = centerY - ty * ts + inset + s * image.y
-                const [x, y] = solveImagePlacement(targetX, targetY, s, image, dst, dst)
-                RenderPage.render(pass, image, texture, x, y, s, filtered)
+                const si = s * imageScale
+                // In raw (unscaled) pixels since solveImagePlacement scales by si itself.
+                const targetX = -tx * ts + inset + s * srcOffsetX + si * image.x
+                const targetY = centerY - ty * ts + inset + si * image.y
+                const [x, y] = solveImagePlacement(targetX, targetY, si, image, dst, dst)
+                RenderPage.render(pass, image, texture, x, y, si, filtered)
             }
         })
     }
@@ -1755,7 +1916,7 @@ export class TileRenderer {
         page: ImageSingle,
         dst: GPUTexture,
     ): PageTiles | null {
-        if (page.destroyed || !page.highQuality || page.isAnimated) return null
+        if (page.destroyed || !page.highQuality) return null
         if (!page.hasUploadedImage) return null
 
         const a = this.pagedAnchor(page, dst, 0, 0, 1)
@@ -1834,6 +1995,26 @@ export class TileRenderer {
         // Still nothing - the worker comes back to this tile.
         if (origin < 0) return null
 
+        try {
+            return this.encodeTile(st, k, origin, pool, staged, prepare, render)
+        } catch (e) {
+            pool.release(st.tileSize, origin)
+            throw e
+        }
+    }
+
+    private encodeTile(
+        st: PageTiles,
+        k: number,
+        origin: number,
+        pool: TileAtlas,
+        staged: boolean,
+        prepare: (
+            encoder: GPUCommandEncoder,
+            timestamps: GPURenderPassTimestampWrites | undefined,
+        ) => void,
+        render: (pass: GPURenderPassEncoder, texture: GPUTexture) => void,
+    ): Promise<void> | null {
         const queries = this.timestampQuerySet
         if (!queries) {
             const encoder = device().createCommandEncoder()
@@ -1851,6 +2032,7 @@ export class TileRenderer {
             device().queue.submit([encoder.finish()])
             const tile = new Tile(origin)
             tile.lastUsed = this.frame
+            tile.plain = !staged
             st.tiles.set(k, tile)
             st.instancesDirty = true
             return null
@@ -1859,39 +2041,45 @@ export class TileRenderer {
         const timing = this.acquireTimestampBuffers()
         const encoder = device().createCommandEncoder()
 
-        // A rescaler's passes run before this one and would otherwise go unmeasured - which
-        // matters, since [nextBatchSize] divides a frame's budget by this number and would queue
-        // eight of a tile that reads as free. So a staged tile puts the opening timestamp on
-        // whatever pass [prepare] opens first, leaving only the closing one here; the GPU runs
-        // everything between the two. An omitted index is WebGPU's "no write", the JS spelling of
-        // the sentinel the Kotlin passes.
-        //
-        // Per tile, not per renderer: a rescaler declines any tile below its [Rescaler.factor],
-        // and those have no first pass to carry the opening write. Getting that wrong leaves query
-        // 0 unwritten and the elapsed time read off stale memory.
-        if (staged) prepare(encoder, { querySet: queries, beginningOfPassWriteIndex: 0 })
-        else prepare(encoder, undefined)
-
-        const pass = encoder.beginRenderPass(
-            this.clearedColorPass(pool.scratchView(st.tileSize), {
-                querySet: queries,
-                ...(staged ? {} : { beginningOfPassWriteIndex: 0 }),
-                endOfPassWriteIndex: 1,
-            }),
-        )
         try {
-            render(pass, pool.scratch(st.tileSize))
-        } finally {
-            pass.end()
+            // A rescaler's passes run before this one and would otherwise go unmeasured - which
+            // matters, since [nextBatchSize] divides a frame's budget by this number and would
+            // queue eight of a tile that reads as free. So a staged tile puts the opening
+            // timestamp on whatever pass [prepare] opens first, leaving only the closing one here;
+            // the GPU runs everything between the two. An omitted index is WebGPU's "no write",
+            // the JS spelling of the sentinel the Kotlin passes.
+            //
+            // Per tile, not per renderer: a rescaler declines any tile below its
+            // [Rescaler.factor], and those have no first pass to carry the opening write. Getting
+            // that wrong leaves query 0 unwritten and the elapsed time read off stale memory.
+            if (staged) prepare(encoder, { querySet: queries, beginningOfPassWriteIndex: 0 })
+            else prepare(encoder, undefined)
+
+            const pass = encoder.beginRenderPass(
+                this.clearedColorPass(pool.scratchView(st.tileSize), {
+                    querySet: queries,
+                    ...(staged ? {} : { beginningOfPassWriteIndex: 0 }),
+                    endOfPassWriteIndex: 1,
+                }),
+            )
+            try {
+                render(pass, pool.scratch(st.tileSize))
+            } finally {
+                pass.end()
+            }
+
+            pool.copyScratchInto(encoder, origin, st.tileSize)
+            encoder.resolveQuerySet(queries, 0, 2, timing.resolve, 0)
+            encoder.copyBufferToBuffer(timing.resolve, 0, timing.result, 0, 16)
+
+            device().queue.submit([encoder.finish()])
+        } catch (e) {
+            this.releaseTimestampBuffers(timing)
+            throw e
         }
-
-        pool.copyScratchInto(encoder, origin, st.tileSize)
-        encoder.resolveQuerySet(queries, 0, 2, timing.resolve, 0)
-        encoder.copyBufferToBuffer(timing.resolve, 0, timing.result, 0, 16)
-
-        device().queue.submit([encoder.finish()])
         const tile = new Tile(origin)
         tile.lastUsed = this.frame
+        tile.plain = !staged
         st.tiles.set(k, tile)
         st.instancesDirty = true
 
@@ -1908,10 +2096,13 @@ export class TileRenderer {
             // its own, so mapAsync's promise is enough.
             await result.mapAsync(GPUMapMode.READ, 0, 16)
         } catch (e) {
-            // Still in flight, possibly - not safe to hand back.
+            // A lost device fails every pending map. The timing only paces tile batches, and
+            // rethrowing would fail the worker's whole batch. Still in flight, possibly - not safe
+            // to hand back.
             timing.resolve.destroy()
             result.destroy()
-            throw e
+            console.warn("TileRenderer: tile timing unavailable:", e)
+            return
         }
         const timestamps = new BigInt64Array(result.getMappedRange(0, 16).slice(0))
         result.unmap()

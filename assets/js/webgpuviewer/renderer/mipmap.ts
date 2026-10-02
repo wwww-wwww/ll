@@ -1,4 +1,4 @@
-import { FrameBudget, yieldToEventLoop } from "../util"
+import { FrameBudget, Rect, coerceIn, yieldToEventLoop } from "../util"
 import { WebGpuRenderer } from "./renderer"
 
 /**
@@ -245,6 +245,10 @@ export class Mipmap {
     /** Allocate the tile textures and copy [pixels] into them a chunk at a time. */
     private async upload(pixels: Uint8Array) {
         const device = Mipmap.device
+        const need = this.width * this.height * 4
+        if (pixels.byteLength < need) {
+            throw new Error(`pixels hold ${pixels.byteLength} B, ${this.width}x${this.height} needs ${need}`)
+        }
         const rowsPerChunk = Math.max(1, Math.floor(Mipmap.UPLOAD_CHUNK_BYTES / (this.width * 4)))
         const budget = new FrameBudget()
 
@@ -259,6 +263,8 @@ export class Mipmap {
                 // on the back of the chunk just uploaded.
                 await yieldToEventLoop()
                 const texture = Mipmap.takeTexture(tileWidth, tileHeight)
+                this.textures.push(texture)
+                this.textureViews.push(texture.createView())
 
                 let row = 0
                 while (row < tileHeight) {
@@ -278,9 +284,6 @@ export class Mipmap {
                     row += rows
                     await budget.next()
                 }
-
-                this.textures.push(texture)
-                this.textureViews.push(texture.createView())
             }
         }
 
@@ -320,30 +323,57 @@ export class Mipmap {
         this.tiles.length = 0
     }
 
-    /** Rewrite every tile from [pixels] - for a level whose content changes in place. */
-    update(pixels: Uint8Array) {
+    /**
+     * Rewrites [rect] (default: all) from [pixels], a full image of this level, in yielding chunks
+     * like [upload]. False if cleaned up part way.
+     */
+    async update(pixels: Uint8Array, rect: Rect | null = null): Promise<boolean> {
         const device = Mipmap.device
-        let i = 0
+        const need = this.width * this.height * 4
+        if (pixels.byteLength < need) {
+            throw new Error(`pixels hold ${pixels.byteLength} B, ${this.width}x${this.height} needs ${need}`)
+        }
+        const left = coerceIn(rect?.left ?? 0, 0, this.width)
+        const top = coerceIn(rect?.top ?? 0, 0, this.height)
+        const right = coerceIn(rect?.right ?? this.width, left, this.width)
+        const bottom = coerceIn(rect?.bottom ?? this.height, top, this.height)
+        const rowsPerChunk = Math.max(1, Math.floor(Mipmap.UPLOAD_CHUNK_BYTES / (this.width * 4)))
+        const tileCount = this.tilesRows * this.tilesCols
+        const budget = new FrameBudget()
 
-        for (let r = 0; r < this.tilesRows; r++) {
-            const tileHeight = Math.min((r + 1) * this.tilesize, this.height) - r * this.tilesize
-            const y = r * this.tilesize
-            for (let c = 0; c < this.tilesCols; c++) {
-                const x = c * this.tilesize
-                const tileWidth = Math.min((c + 1) * this.tilesize, this.width) - c * this.tilesize
-
-                device.queue.writeTexture(
-                    { texture: this.textures[i++] },
-                    pixels,
-                    {
-                        offset: (y * this.width + x) * 4,
-                        bytesPerRow: this.width * 4,
-                        rowsPerImage: this.height,
-                    },
-                    { width: tileWidth, height: tileHeight },
-                )
+        for (let r = Math.floor(top / this.tilesize); r < Mipmap.ceilDiv(bottom, this.tilesize); r++) {
+            const tileY = r * this.tilesize
+            const y0 = Math.max(top, tileY)
+            const y1 = Math.min(bottom, tileY + this.tilesize, this.height)
+            for (let c = Math.floor(left / this.tilesize); c < Mipmap.ceilDiv(right, this.tilesize); c++) {
+                const tileX = c * this.tilesize
+                const x0 = Math.max(left, tileX)
+                const x1 = Math.min(right, tileX + this.tilesize, this.width)
+                let y = y0
+                while (y < y1) {
+                    // Cleanup can only land between chunks.
+                    if (this.textures.length !== tileCount) return false
+                    const rows = Math.min(rowsPerChunk, y1 - y)
+                    device.queue.writeTexture(
+                        { texture: this.textures[r * this.tilesCols + c], origin: { x: x0 - tileX, y: y - tileY } },
+                        pixels,
+                        {
+                            offset: (y * this.width + x0) * 4,
+                            bytesPerRow: this.width * 4,
+                            rowsPerImage: this.height,
+                        },
+                        { width: x1 - x0, height: rows },
+                    )
+                    y += rows
+                    await budget.next()
+                }
             }
         }
+        return this.textures.length === tileCount
+    }
+
+    private static ceilDiv(a: number, b: number) {
+        return Math.floor((a + b - 1) / b)
     }
 
     /**

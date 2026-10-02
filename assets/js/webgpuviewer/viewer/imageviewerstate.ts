@@ -3,8 +3,8 @@ import {
     OFFSET_ZERO,
     Offset,
     animate,
-    coerceAtLeast,
-    coerceAtMost,
+    argbToGPUColor,
+    invokeSafe,
     nextFrame,
     spring,
 } from "../util"
@@ -13,9 +13,15 @@ import { TileRenderer } from "../renderer/tilerenderer"
 import { FilterChain } from "../filter/filterchain"
 import { WebGpuRenderer } from "../renderer/renderer"
 import { Mipmap } from "../renderer/mipmap"
-import { Transition, invalidateCache, rotateCacheOnPageChange } from "../transition/transition"
+import { Transition, invalidateCache, releasePagesOf, rotateCacheOnPageChange } from "../transition/transition"
 import { TransitionBasic, TransitionBasicVerticalInstance } from "../transition/transitions"
 import { ImagePage, ImageSingle } from "./imagepage"
+import { Hdr } from "../renderer/hdr"
+import { Draw } from "../draw/draw"
+
+const MAX_RETRIES = 10
+
+const EMPTY_SNAPSHOT = {}
 
 interface RenderSnapshot {
     currentPage: ImagePage
@@ -79,6 +85,15 @@ export class ImageViewerState {
         this.filters.onInvalidate = () => this.invalidate()
     }
 
+    /**
+     * `Hdr.requestFrame` wakes whichever viewer's canvas is on screen when HDR content arrives or
+     * leaves while the loop is parked - see `hdr.ts`'s `markPresentationDirty`. Assigned here
+     * rather than in [init], which a resize calls repeatedly; released in [cleanup] only if still
+     * this instance's callback, so a second viewer replacing this one (`replaceState`) during an
+     * async teardown can't have its own hook clobbered.
+     */
+    private readonly requestFrame = () => this.invalidate()
+
     get width(): number {
         return this.renderer.width
     }
@@ -93,6 +108,12 @@ export class ImageViewerState {
     get viewportHeight(): number {
         return this.height - (this.avoidCutout ? this.cutoutTopPx : 0)
     }
+
+    /** Whether a double tap zooms. Off leaves the gesture inert. */
+    doubleTapZoomEnabled = true
+
+    /** Whether two fingers scale the page. Off leaves the scale as is. */
+    pinchZoomEnabled = true
 
     /** When true, images are positioned/scaled to avoid the display cutout. */
     avoidCutout = false
@@ -109,29 +130,35 @@ export class ImageViewerState {
     }
 
     set pageOffset(value: number) {
+        if (!Number.isFinite(value)) return
         let v = value
         let pageDelta = 0
 
         if (!this.suppressPageChange) {
-            while (v >= 1 && this.haveNext) {
+            // Guards a haveNext/havePrev stuck true against a pathological page provider.
+            let guard = 0
+            while (v >= 1 && this.haveNext && guard++ < 1000) {
                 pageDelta += 1
                 v -= 1
             }
-            while (v <= -1 && this.havePrev) {
+            guard = 0
+            while (v <= -1 && this.havePrev && guard++ < 1000) {
                 pageDelta -= 1
                 v += 1
             }
         }
 
-        if (!this.haveNext) v = coerceAtMost(v, 1)
-        if (!this.havePrev) v = coerceAtLeast(v, -1)
+        // Numeric test first: haveNext/havePrev reach fetchPage, which resolves a page and may
+        // trim a cache to do it, and every settling frame sets this with |v| already under 1.
+        if (v > 1 && !this.haveNext) v = 1
+        if (v < -1 && !this.havePrev) v = -1
 
         const settling = this._pageOffset !== 0 && v === 0
 
         this._pageOffset = v
 
         if (pageDelta !== 0) {
-            this.onPageChange?.(this.isReversed ? -pageDelta : pageDelta)
+            invokeSafe(this.onPageChange, this.isReversed ? -pageDelta : pageDelta)
         }
 
         // Rotate rather than invalidate: onPageChange has already updated whatever backs
@@ -183,6 +210,10 @@ export class ImageViewerState {
 
     fetchPage: ((index: number) => ImagePage | null) | null = null
 
+    /** Once per outage, on the render loop - see `FrameResult`'s `"unavailable"`. */
+    onRenderUnavailable: ((reason: string) => void) | null = null
+    private reportedUnavailable = false
+
     onPageChange: ((delta: number) => void) | null = null
     onTap: ((position: Offset) => void) | null = null
     onLongTap: ((position: Offset) => void) | null = null
@@ -207,7 +238,18 @@ export class ImageViewerState {
      * The pages the last snapshot drew with, which is what `ImagePage.isOnScreen` answers from -
      * a page can then decide for itself whether a redraw is worth asking for.
      */
-    protected onScreenPages: ImagePage[] = []
+    private _onScreenPages: ImagePage[] = []
+
+    protected get onScreenPages(): ImagePage[] {
+        return this._onScreenPages
+    }
+
+    protected set onScreenPages(value: ImagePage[]) {
+        const was = this._onScreenPages
+        this._onScreenPages = value
+        // After the assignment, so a page woken by it finds itself on screen.
+        for (const page of value) if (!was.includes(page)) page.cameOnScreen()
+    }
 
     isOnScreen(page: ImagePage): boolean {
         return this.onScreenPages.some(p => p.covers(page))
@@ -225,6 +267,7 @@ export class ImageViewerState {
 
     /** Attach to [canvas] and start the frame loop. */
     init(canvas: HTMLCanvasElement, width: number, height: number) {
+        Hdr.requestFrame = this.requestFrame
         this.renderer.init(canvas, width, height)
     }
 
@@ -236,6 +279,7 @@ export class ImageViewerState {
     // Anything changed since the last frame drawn - all [collect] needs, however many
     // invalidates said so.
     private dirty = true
+    private retries = 0
     private wake: (() => void) | null = null
     private running = false
 
@@ -285,9 +329,22 @@ export class ImageViewerState {
             drawingActive = true
             drawing = this.renderer
                 .render((encoder, texture) => this.renderSnapshot(encoder, texture, snapshot))
-                // Nothing drawn - ask for the frame again.
-                .then(drawn => {
-                    if (!drawn) this.invalidate()
+                .then(result => {
+                    if (result === "drawn") {
+                        this.reportedUnavailable = false
+                        this.retries = 0
+                    } else if (result === "retry") {
+                        // Past the cap, park until something else invalidates.
+                        if (++this.retries <= MAX_RETRIES) this.invalidate()
+                    } else if (!this.reportedUnavailable) {
+                        // No invalidate: spinning the frame clock on a permanent outage would
+                        // just burn frames forever. A later `invalidate()` (e.g. a resize) still
+                        // wakes the loop and gets a fresh chance to draw.
+                        this.reportedUnavailable = true
+                        const reason = WebGpuRenderer.unavailableReason ?? "no render surface"
+                        console.error("ImageViewerState: nothing can be drawn:", reason)
+                        invokeSafe(this.onRenderUnavailable, reason)
+                    }
                 })
                 .finally(() => {
                     drawingActive = false
@@ -311,7 +368,10 @@ export class ImageViewerState {
      */
     protected captureRenderState(): unknown {
         const currentPage = this.getPage(0)
-        if (!currentPage) return null
+        if (!currentPage) {
+            this.onScreenPages = []
+            return EMPTY_SNAPSHOT
+        }
         const offset = this.pageOffset
         const adjacentPage =
             offset === 0 ? null
@@ -345,6 +405,7 @@ export class ImageViewerState {
     protected renderPass(
         encoder: GPUCommandEncoder,
         texture: GPUTexture,
+        clearColor: number,
         block: (pass: GPURenderPassEncoder) => void,
     ) {
         const pass = encoder.beginRenderPass({
@@ -353,7 +414,7 @@ export class ImageViewerState {
                     view: texture.createView(),
                     loadOp: "clear",
                     storeOp: "store",
-                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                    clearValue: argbToGPUColor(clearColor),
                 },
             ],
             // Cleared fresh every frame so the tile blit can mark which pixels it just covered
@@ -378,6 +439,10 @@ export class ImageViewerState {
         texture: GPUTexture,
         rawSnapshot: unknown,
     ) {
+        if (rawSnapshot === EMPTY_SNAPSHOT) {
+            Draw.clear(encoder, texture, 0)
+            return
+        }
         const snapshot = rawSnapshot as RenderSnapshot
         this.tiles.newFrame()
         const page = snapshot.currentPage
@@ -406,7 +471,6 @@ export class ImageViewerState {
             if (
                 next instanceof ImageSingle &&
                 next.highQuality &&
-                !next.isAnimated &&
                 next.atHome
             ) {
                 this.tiles.prewarm(next, texture)
@@ -417,8 +481,12 @@ export class ImageViewerState {
     cleanup() {
         this.stop()
         this.animationJob?.cancel()
+        this.onScreenPages = []
+        releasePagesOf(this)
         this.tiles.cleanup()
         this.renderer.cleanup()
+        // Ownership guard - see [requestFrame]'s doc.
+        if (Hdr.requestFrame === this.requestFrame) Hdr.requestFrame = null
         // The pool is static: without this a later viewer on a new device gets the old one's
         // textures.
         Mipmap.clearPool()

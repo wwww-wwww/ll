@@ -91,6 +91,7 @@ export class FilterLut3d extends FilterFullscreen {
     }
 
     set lut(value: Lut3d | null) {
+        if (this._lut === value) return
         this._lut = value
         this.pending = value
         this.limitedRange = value?.limitedRange ?? false
@@ -109,6 +110,7 @@ export class FilterLut3d extends FilterFullscreen {
     }
 
     set intensity(value: number) {
+        if (this._intensity === value) return
         this._intensity = value
         this.uniformsDirty = true
         this.invalidate()
@@ -125,6 +127,7 @@ export class FilterLut3d extends FilterFullscreen {
     }
 
     set limitedRange(value: boolean) {
+        if (this._limitedRange === value) return
         this._limitedRange = value
         this.uniformsDirty = true
         this.invalidate()
@@ -209,6 +212,8 @@ export class FilterLut3d extends FilterFullscreen {
         this.view = null
         // Not just the texture: upload() skips creating one when the size already matches.
         this.lutSize = 0
+        this.pending = this._lut
+        this.uniformsDirty = true
         this.rebind()
     }
 

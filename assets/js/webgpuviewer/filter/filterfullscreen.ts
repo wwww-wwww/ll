@@ -1,3 +1,4 @@
+import { FormatKeyed } from "../renderer/formatkeyed"
 import { Fullscreen } from "../renderer/fullscreen"
 import { Filter } from "./filter"
 import type { FilterChain } from "./filterchain"
@@ -21,13 +22,13 @@ export abstract class FilterFullscreen extends Filter {
     /** WGSL fragment stage. [Fullscreen.VERTEX] is prepended, so `VertexOutput` and `in.uv` are in scope. */
     protected abstract get code(): string
 
-    private pipelineOrNull: GPURenderPipeline | null = null
+    // Per format: [outputFormat] follows [Hdr.frameFormat], which an HDR toggle changes.
+    private readonly pipelines = new FormatKeyed(format =>
+        Fullscreen.buildPipeline(this.code, format, this.label),
+    )
 
     protected get pipeline(): GPURenderPipeline {
-        if (!this.pipelineOrNull) {
-            this.pipelineOrNull = Fullscreen.buildPipeline(this.code, this.outputFormat, this.label)
-        }
-        return this.pipelineOrNull
+        return this.pipelines.get(this.outputFormat)
     }
 
     /** Group 0 bindings for this pass, with the chain's current input as [src]. */
@@ -38,14 +39,29 @@ export abstract class FilterFullscreen extends Filter {
     private readonly bindGroups: (GPUBindGroup | null)[] = new Array(CACHED_BIND_GROUPS).fill(null)
     private nextBindGroup = 0
 
-    /** Drop the cached bind groups, for a filter whose own bindings have changed. */
-    protected rebind() {
+    // The pipeline the cached groups were built against - an auto layout is per pipeline.
+    private boundPipeline: GPURenderPipeline | null = null
+
+    private dropBindGroups() {
         this.bound.fill(null)
         this.bindGroups.fill(null)
+    }
+
+    /** Drop the cached bind groups, for a filter whose own bindings have changed. */
+    protected rebind() {
+        this.dropBindGroups()
         this.invalidate()
     }
 
-    private bindGroupFor(src: GPUTextureView): GPUBindGroup {
+    override cleanup() {
+        this.dropBindGroups()
+    }
+
+    private bindGroupFor(src: GPUTextureView, pipeline: GPURenderPipeline): GPUBindGroup {
+        if (pipeline !== this.boundPipeline) {
+            this.dropBindGroups()
+            this.boundPipeline = pipeline
+        }
         for (let i = 0; i < this.bound.length; i++) {
             if (this.bound[i] === src) {
                 const group = this.bindGroups[i]
@@ -54,7 +70,7 @@ export abstract class FilterFullscreen extends Filter {
         }
 
         const group = this.device.createBindGroup({
-            layout: this.pipeline.getBindGroupLayout(0),
+            layout: pipeline.getBindGroupLayout(0),
             label: this.label,
             entries: this.entries(src),
         })
@@ -80,11 +96,12 @@ export abstract class FilterFullscreen extends Filter {
         this.prepare(srcWidth, srcHeight)
 
         // Before the pass opens: prepare() may have replaced a binding and dropped the cache.
-        const group = this.bindGroupFor(src)
+        const pipeline = this.pipeline
+        const group = this.bindGroupFor(src, pipeline)
 
         const pass = Fullscreen.beginPass(encoder, dst, this.label)
         try {
-            pass.setPipeline(this.pipeline)
+            pass.setPipeline(pipeline)
             pass.setBindGroup(0, group)
             pass.draw(3)
         } finally {
