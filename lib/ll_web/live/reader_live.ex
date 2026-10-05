@@ -54,6 +54,14 @@ defmodule LLWeb.ReaderLive do
               <label for="chk_3dlut">3dlut</label>
               <input id="chk_3dlut" type="checkbox" checked />
             </div>
+            <div>
+              <label for="sel_transition_single">single page transition</label>
+              <select id="sel_transition_single"></select>
+            </div>
+            <div>
+              <label for="sel_transition_dual">double page transition</label>
+              <select id="sel_transition_dual"></select>
+            </div>
           </div>
 
           <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>

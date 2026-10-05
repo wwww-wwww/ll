@@ -18,7 +18,8 @@ defmodule LLWeb.ApiController do
               genre: entry.genre,
               status: entry.status || -1,
               thumbnail_url: ~p"/thumbnail/#{Path.basename(entry.thumbnail_path)}",
-              multi: true
+              multi: true,
+              aliases: entry.aliases |> Enum.map(& &1.name)
             }
 
           series ->
@@ -29,7 +30,8 @@ defmodule LLWeb.ApiController do
               author: series.author,
               genre: series.genre,
               status: series.status || -1,
-              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
+              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
+              aliases: entry.aliases |> Enum.map(& &1.name)
             }
         end
       end)

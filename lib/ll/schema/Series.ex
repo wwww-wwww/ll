@@ -23,6 +23,8 @@ defmodule LL.Series do
     belongs_to :multi_series, LL.MultiSeries
     field :priority, :integer
 
+    has_many :aliases, LL.Alias
+
     timestamps()
   end
 end

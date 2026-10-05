@@ -126,4 +126,10 @@
             height: 8em;
         }
     }
+
+    .aliases {
+        >div>span {
+            display: inline-block;
+        }
+    }
 }

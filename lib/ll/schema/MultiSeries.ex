@@ -17,6 +17,8 @@ defmodule LL.MultiSeries do
     belongs_to :series, LL.Series
 
     has_many :children, LL.Series
+
+    has_many :aliases, LL.Alias
   end
 
   def get_chapters(multi) do

@@ -5,6 +5,7 @@ import { LiveSocket } from "phoenix_live_view"
 import { hooks as colocatedHooks } from "phoenix-colocated/ll"
 import topbar from "../vendor/topbar"
 import more_hooks from "./hooks"
+import library from "./hooks/library"
 
 // Show progress bar on live navigation and form submits
 topbar.config({ barColors: { 0: "#29d" }, shadowColor: "rgba(0, 0, 0, .3)" })
@@ -115,7 +116,7 @@ const hooks = {
 
 let liveSocket = new LiveSocket("/live", Socket, {
     params: { _csrf_token: csrfToken },
-    hooks: { ...colocatedHooks, ...hooks, ...more_hooks },
+    hooks: { ...colocatedHooks, ...hooks, ...more_hooks, library },
 })
 
 // connect if there are any LiveViews on the page

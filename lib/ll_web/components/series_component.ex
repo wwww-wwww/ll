@@ -3,7 +3,10 @@ defmodule LLWeb.SeriesComponent do
 
   def render(assigns) do
     ~H"""
-    <div class="SeriesComponent">
+    <div
+      class="SeriesComponent"
+      data-search={aliases(@series) |> Enum.map(& &1.name) |> Enum.join(",")}
+    >
       <.slink {assigns}>
         <img
           :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
@@ -52,6 +55,9 @@ defmodule LLWeb.SeriesComponent do
 
     {:ok, socket}
   end
+
+  def aliases(%{aliases: aliases}) when is_list(aliases), do: aliases
+  def aliases(_), do: []
 
   defmacro __using__(_opts) do
     quote do

@@ -14,7 +14,8 @@ defmodule LLWeb.SeriesLive do
     LibraryMulti,
     LibrarySeries,
     MultiSeries,
-    Message
+    Message,
+    Alias
   }
 
   def title(), do: "Series"
@@ -95,6 +96,20 @@ defmodule LLWeb.SeriesLive do
                       </button>
                     </div>
                   </span>
+                </div>
+              </div>
+
+              <div class="aliases">
+                Aliases
+                <form phx-submit="alias-add">
+                  <div>
+                    <input type="text" name="name" value="" />
+                    <input type="submit" value="add" />
+                  </div>
+                </form>
+                <div :for={a <- @entry.aliases}>
+                  <span>{a.name}</span>
+                  <button phx-click="alias-remove" phx-value-id={a.id}>close</button>
                 </div>
               </div>
 
@@ -307,7 +322,11 @@ defmodule LLWeb.SeriesLive do
 
     multi =
       Repo.get(MultiSeries, multi_id)
-      |> Repo.preload(series: [:source, :chapters], children: [:source, :chapters])
+      |> Repo.preload([
+        [series: [:source, :chapters]],
+        [children: [:source, :chapters]],
+        :aliases
+      ])
 
     if not is_nil(multi.thumbnail_path) and not File.exists?(multi.thumbnail_path) do
       LL.Anilist.download_cover(multi)
@@ -344,7 +363,7 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload(source: :extension, multi_series: :series)
+      |> Repo.preload([[source: :extension], [multi_series: :series], :aliases])
 
     if not is_nil(series.thumbnail_path) and not File.exists?(series.thumbnail_path) do
       LL.Anilist.download_cover(series)
@@ -691,6 +710,71 @@ defmodule LLWeb.SeriesLive do
 
       err ->
         Message.error(err)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("alias-add", %{"name" => name}, socket) do
+    name = String.trim(name)
+
+    case socket.assigns.entry do
+      %MultiSeries{id: id} ->
+        %Alias{name: name, multi_series_id: id}
+        |> Repo.insert()
+
+        entry =
+          socket.assigns.entry
+          |> Repo.preload(
+            [
+              [series: [:source, :chapters]],
+              [children: [:source, :chapters]],
+              :aliases
+            ],
+            force: true
+          )
+
+        Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+
+      %Series{id: id} ->
+        %Alias{name: name, series_id: id}
+        |> Repo.insert()
+
+        entry =
+          socket.assigns.entry
+          |> Repo.preload([[source: :extension], [multi_series: :series], :aliases], force: true)
+
+        Endpoint.broadcast("series:#{entry.id}", "update", entry)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("alias-remove", %{"id" => id}, socket) do
+    Repo.get(Alias, id)
+    |> Repo.delete()
+
+    case socket.assigns.entry do
+      %MultiSeries{} ->
+        entry =
+          socket.assigns.entry
+          |> Repo.preload(
+            [
+              [series: [:source, :chapters]],
+              [children: [:source, :chapters]],
+              :aliases
+            ],
+            force: true
+          )
+
+        Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+
+      %Series{} ->
+        entry =
+          socket.assigns.entry
+          |> Repo.preload([[source: :extension], [multi_series: :series], :aliases], force: true)
+
+        Endpoint.broadcast("series:#{entry.id}", "update", entry)
     end
 
     {:noreply, socket}
