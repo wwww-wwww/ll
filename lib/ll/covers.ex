@@ -3,19 +3,23 @@ defmodule LL.Covers do
 
   def encode(path) do
     filename = Path.basename(path)
-    thumbnail_path = "thumbnails/#{filename}"
+    thumbnail_path = "thumbnails/#{filename}.webp"
     System.cmd("uv", ["run", "covers.py", path, thumbnail_path])
     thumbnail_path
   end
 
   def encode_all() do
-    LL.Repo.all(Series)
-    []
-    |> Kernel.++(LL.Repo.all(MultiSeries))
+    LLWeb.MainLibraryLive.main_libraries()
+    |> LLWeb.MainLibraryLive.libraries_series()
     |> Enum.filter(&(!is_nil(&1.thumbnail_path)))
-    |> Enum.each(fn %{thumbnail_path: path} ->
+    |> Enum.each(fn %{thumbnail_path: path} = series ->
       if File.exists?("covers/#{Path.basename(path)}") do
-        encode(path) |> IO.inspect
+        IO.inspect(path)
+        thumbnail_path = encode(path)
+
+        series
+        |> Ecto.Changeset.change(%{thumbnail_path: thumbnail_path})
+        |> Repo.update()
       end
     end)
   end

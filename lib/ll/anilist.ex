@@ -114,7 +114,7 @@ defmodule LL.Anilist do
         thumbnail_path = LL.Covers.encode(path)
 
         {:ok, entry} =
-          Ecto.Changeset.change(entry, %{thumbnail_path: path})
+          Ecto.Changeset.change(entry, %{thumbnail_path: thumbnail_path})
           |> Repo.update()
 
         case entry do
