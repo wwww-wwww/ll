@@ -76,7 +76,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 `
 
 /**
- * Applies a 3D colour lookup table to the finished frame - the port of `filter/FilterLut3d.kt`.
+ * Applies a 3D colour lookup table to the finished frame.
  *
  * One fragment pass, so as the last filter in the chain it writes the canvas directly. The table is
  * a 3D texture sampled trilinearly, which is what makes a coarse LUT (a 33- or 64-point cube) look

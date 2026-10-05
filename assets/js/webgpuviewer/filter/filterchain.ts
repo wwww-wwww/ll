@@ -26,7 +26,7 @@ class Slot {
 }
 
 /**
- * The output filter chain - the port of `filter/FilterChain.kt`.
+ * The output filter chain.
  *
  * The viewer draws its frame into an offscreen texture, each enabled [Filter] runs over the result
  * of the one before, and the last writes the canvas. Held by [WebGpuRenderer] and reachable as

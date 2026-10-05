@@ -4,8 +4,7 @@ import { WebGpuRenderer } from "../renderer/renderer"
 import type { ImagePage } from "../viewer/imagepage"
 
 /**
- * Page-turn animations and the two-slot render cache they sample - the port of
- * `transition/Transition.kt`.
+ * Page-turn animations and the two-slot render cache they sample.
  *
  * A turn only animates the offset, so each page is rendered into a cache texture once and every
  * later frame is a cache hit plus a 1:1 blit. [getCachedTexture] keys on the page's own transform

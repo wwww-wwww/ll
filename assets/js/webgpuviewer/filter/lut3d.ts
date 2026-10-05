@@ -1,5 +1,5 @@
 /**
- * A cubic colour lookup table - the port of `filter/Lut3d.kt`.
+ * A cubic colour lookup table.
  *
  * [size]^3 RGB triples in [data], red varying fastest, then green, then blue: the layout a 3D
  * texture wants, with red on x.
@@ -112,8 +112,7 @@ export class Lut3d {
      * Resampled to [size]^3 rather than kept at the file's own 256 points, which would be 200MB of
      * floats. 64 is visually indistinguishable for the smooth tables madVR writes.
      *
-     * Takes the whole buffer rather than the Kotlin's stream: a fetch hands over an `ArrayBuffer`
-     * already, and there is no way to skip forward through one without having it.
+     * Takes the whole buffer rather than a stream: a fetch hands over an `ArrayBuffer` already.
      */
     static parseMadVr(buffer: ArrayBuffer, size = 64): Lut3d {
         if (!(size >= 2 && size <= Lut3d.MAX_SIZE)) {

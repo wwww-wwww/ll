@@ -4,24 +4,20 @@ import { FilterChain } from "../filter/filterchain"
 import { Hdr } from "./hdr"
 
 /**
- * Device ownership and the frame loop - the port of `renderer/WebGpuRenderer.kt`.
+ * Device ownership and the frame loop.
  *
- * The Kotlin runs every GPU call on a dedicated render thread behind a mutex, since a long upload
- * elsewhere stalls a queued frame. There is one thread here and no mutex, but the hazard survives:
- * an upload that never yields blocks the next `requestAnimationFrame` just as thoroughly. So the
- * split remains, with awaiting the lock standing in for taking the mutex:
+ * An upload that never yields blocks the next `requestAnimationFrame`, so GPU work is split:
  *
  *  - [withLock] serialises work that must appear atomically to the renderer.
  *  - [unlocked] runs long resource work that yields as it goes, so a frame woken by one of those
  *    yields gets through instead of blocking on the lock and handing the turn straight back.
  *
- * The surface is a [GPUCanvasContext], and there is no `present()` - the browser composites the
- * canvas once the frame's work is submitted.
+ * The browser composites the canvas once the frame's work is submitted.
  */
 /**
- * `Drawn` - a frame was recorded and submitted. `Retry` - nothing drawn this frame but the
+ * `"drawn"` - a frame was recorded and submitted. `"retry"` - nothing drawn this frame but the
  * renderer is otherwise fine (a transient `getCurrentTexture` failure); ask again next frame.
- * `Unavailable` - nothing can be drawn until something external changes (WebGPU never
+ * `"unavailable"` - nothing can be drawn until something external changes (WebGPU never
  * initialized, or this instance has no canvas) - repeatedly invalidating would just spin
  * `requestAnimationFrame` forever, so a caller should stop asking until told otherwise.
  */
@@ -53,8 +49,7 @@ export class WebGpuRenderer {
     private static initPromise: Promise<GPUDevice> | null = null
 
     /**
-     * Acquire the adapter and device once for the page. Every later `WebGpuRenderer` shares them,
-     * the way the Kotlin's companion object does.
+     * Acquire the adapter and device once for the page. Every later `WebGpuRenderer` shares them.
      */
     static async initDevice(): Promise<GPUDevice> {
         if (WebGpuRenderer.initPromise) return WebGpuRenderer.initPromise
@@ -63,8 +58,7 @@ export class WebGpuRenderer {
             const adapter = await navigator.gpu?.requestAdapter()
             if (!adapter) throw new Error("need a browser that supports WebGPU")
 
-            // The Kotlin asks for TimestampQuery when the adapter has it, and falls back to a
-            // fixed batch size when it doesn't - see TileRenderer.nextBatchSize.
+            // Optional: without it, TileRenderer.nextBatchSize falls back to a fixed batch size.
             const requiredFeatures: GPUFeatureName[] = []
             if (adapter.features.has("timestamp-query")) requiredFeatures.push("timestamp-query")
 
@@ -113,11 +107,10 @@ export class WebGpuRenderer {
         return WebGpuRenderer.device?.features.has("timestamp-query") ?? false
     }
 
-    // The lock is a promise chain: awaiting it is the equivalent of taking the render mutex, and
-    // it serialises in the same order requests arrive.
+    // A promise chain, so it serialises in the order requests arrive.
     private static lock: Promise<unknown> = Promise.resolve()
 
-    /** `WebGpuRenderer.withContext` - runs [block] with the render lock held. */
+    /** Runs [block] with the render lock held. */
     static withLock<R>(block: (device: GPUDevice) => R | Promise<R>): Promise<R> {
         const run = WebGpuRenderer.lock.then(() => block(WebGpuRenderer.device))
         // Swallowed only so a failing block doesn't poison later acquisitions; the caller still
@@ -127,7 +120,7 @@ export class WebGpuRenderer {
     }
 
     /**
-     * `WebGpuRenderer.onDispatcher` - runs [block] *without* the lock.
+     * Runs [block] *without* the lock.
      *
      * Only for work that owns its resources outright (an image not yet reachable from a page) or
      * cannot be observed mid-flight. Anything needing to appear atomically belongs in [withLock].
@@ -212,7 +205,6 @@ export class WebGpuRenderer {
     /** What the canvas was last configured as - see `configure`. */
     private configuredFormat: GPUTextureFormat = "rgba8unorm"
 
-    /** `init(scope, surface, width, height)` - the canvas is the surface here. */
     init(canvas: HTMLCanvasElement, width: number, height: number) {
         this.canvas = canvas
         this.width = width
@@ -240,7 +232,7 @@ export class WebGpuRenderer {
             colorSpace: "srgb",
             usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
             alphaMode: "premultiplied",
-            // Chrome's extended-range canvas config - not yet in the upstream WebGPU types.
+            // Chrome's extended-range canvas config - not yet in the WebGPU types.
             ...(format === "rgba16float" ?
                 ({ toneMapping: { mode: "extended" } } as object)
                 : {}),
@@ -252,9 +244,8 @@ export class WebGpuRenderer {
      * Record and submit one frame. Holds the render lock for the whole of it, so a tile
      * generation batch can never land halfway through a frame's recording.
      *
-     * The Kotlin reads a status off the surface and reconfigures on anything but `Lost`; a
-     * browser reconfigures its own swapchain, so the retry is all that is left of that - apart
-     * from re-configuring the context, which is what a canvas of no size needs. See `FrameResult`.
+     * The browser manages its own swapchain, so a failed `getCurrentTexture` only retries -
+     * reconfiguring the context, which a canvas of no size needs. See `FrameResult`.
      */
     async render(
         fn: (encoder: GPUCommandEncoder, texture: GPUTexture) => void | Promise<void>,

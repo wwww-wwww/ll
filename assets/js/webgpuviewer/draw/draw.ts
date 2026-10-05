@@ -3,11 +3,7 @@ import { WebGpuRenderer } from "../renderer/renderer"
 import { drawText } from "./text"
 
 /**
- * Immediate-mode primitives - the port of the `draw/` package (`Draw`, `Rect`, `Circle`,
- * `Clear`).
- *
- * `Line` is not ported - nothing draws through it. `Text` is, in `text.ts`, but by rasterising
- * on a 2D canvas rather than rebuilding Android's glyph atlas.
+ * Immediate-mode primitives: clear, rect, circle, and text (in `text.ts`).
  *
  * Every call allocates a fresh uniform buffer rather than reusing one: several rects can share a
  * pass, and `queue.writeBuffer` is ordered against `submit` rather than against other writes, so
@@ -106,7 +102,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 `
 
-/** Pipelines are built on first use, as the Kotlin's `by lazy` does. */
+/** Pipelines are built on first use. */
 function lazyPipeline(code: string, depthStencil?: GPUDepthStencilState) {
     let pipeline: GPURenderPipeline | null = null
     return () => {
@@ -210,7 +206,7 @@ export const Draw = {
         pass.end()
     },
 
-    /** `Draw.text` - see `text.ts`. */
+    /** See `text.ts`. */
     text: drawText,
 
     /**

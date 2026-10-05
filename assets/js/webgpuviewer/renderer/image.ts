@@ -13,10 +13,8 @@ export const BUFFER_SIZE = 96
  * Distinct from `TileRenderer`'s own `TILE_SIZE`, which is a *screen*-space tile in the sharp-tile
  * cache. This one bounds how large a single texture gets.
  *
- * Kept at the Kotlin's 2048. It was briefly halved on the theory that a 16MB `createTexture` was
- * an unsplittable multi-frame block - profiling says otherwise: allocation measures 0.04ms at the
- * worst, because the driver defers the real allocation until first use. With that premise gone
- * there is no reason to deviate, and 2048 means fewer textures and fewer per-frame draw calls in
+ * Not smaller: a 16MB `createTexture` measures 0.04ms at worst, since the driver defers the real
+ * allocation until first use, and 2048 means fewer textures and fewer per-frame draw calls in
  * `prepareTilesForRender`.
  */
 export const MIPMAP_TILE_SIZE = 2048
@@ -31,7 +29,7 @@ export interface ImageOptions {
 }
 
 /**
- * A decoded page image and its mip pyramid - the port of `renderer/Image.kt`.
+ * A decoded page image and its mip pyramid.
  *
  * Placement lives here rather than in the shader wrapper: [placement] answers where the image
  * lands for callers that only want geometry, [prepareForRender] resolves a mip level and one 2x2
@@ -69,15 +67,11 @@ export class Image {
     /**
      * Build an [Image] from an already-decoded [bitmap], without the pixels ever entering JS.
      *
-     * **This is the path to prefer on the web**, and it is a real departure from the Kotlin.
+     * **The path to prefer.** A CPU box filter (`resize`) plus `writeTexture` measures 75-175ms of
+     * *blocking* work per page, plus a `getImageData` copy of tens of megabytes - landing exactly
+     * on a page turn, a dozen dropped frames.
      *
-     * The Kotlin builds its mip pyramid with a CPU box filter (`ImageUtil.resize`) and uploads
-     * through `writeTexture`. It can: that filter is NEON-optimised C++ on a background thread. The
-     * TypeScript equivalent measures 75-175ms of *blocking* work per page, plus a `getImageData`
-     * copy of tens of megabytes to get the pixels in the first place - and it lands exactly on a
-     * page turn, which is a dozen dropped frames.
-     *
-     * The browser already has both operations natively and off the main thread, so this uses them:
+     * The browser has both operations off the main thread, so this uses them:
      * `createImageBitmap`'s resize for each level, and `copyExternalImageToTexture` to upload. No
      * JS pixel loop, no readback.
      *
@@ -331,11 +325,10 @@ export class Image {
     }
 
     /**
-     * Build an [Image] from tightly packed RGBA8 [pixels] - the direct port of the Kotlin's
-     * constructor.
+     * Build an [Image] from tightly packed RGBA8 [pixels].
      *
-     * Trim and background detection run before any upload, so neither has to park on a GPU
-     * readback - the reason the Kotlin prefers `Trim`'s CPU pass over its compute shaders here.
+     * Trim and background detection run on the CPU before any upload, so neither has to park on a
+     * GPU readback.
      * Mip levels are built by repeated halving, then uploaded without the render lock: the image
      * is not reachable from any page yet, and [Mipmap.create] yields between chunks so queued
      * frames get the thread back.
@@ -434,7 +427,7 @@ export class Image {
             await WebGpuRenderer.unlocked(async () => {
                 for (const level of levels) extra.push(await level.upload())
             })
-            await WebGpuRenderer.withContext(() => {
+            await WebGpuRenderer.withLock(() => {
                 if (this.mipmaps.length !== 1 || this.mipmaps[0] !== base) {
                     throw new Error("Image was cleaned up")
                 }
@@ -482,13 +475,13 @@ export class Image {
             trimThreshold,
             backgroundColor,
         )
-        await WebGpuRenderer.withContext(() => {
+        await WebGpuRenderer.withLock(() => {
             this.trim = newTrim
             if (background !== null) this.backgroundColor = background
         })
     }
 
-    /** An empty, writable image - what a `Render` page draws into. */
+    /** An empty, writable image - what a `RenderPageBase` draws into. */
     static blank(width: number, height: number): Image {
         const image = new Image(width, height)
         image.mipmaps.push(Mipmap.blank(width, height))

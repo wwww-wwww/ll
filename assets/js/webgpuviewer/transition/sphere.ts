@@ -5,7 +5,7 @@ import type { ImagePage } from "../viewer/imagepage"
 import { Transition, blendBackgroundColor, getCachedTexture } from "./transition"
 
 /**
- * Port of `TransitionSphere` - the two pages wrap onto a sphere, which spins half a turn.
+ * The two pages wrap onto a sphere, which spins half a turn.
  *
  * Three phases over the turn: the flat page curls onto a hemisphere, the sphere rotates by pi, and
  * the far hemisphere flattens back out. Each page is rendered flat into a cached screen-sized

@@ -1,26 +1,17 @@
 /**
- * Whether the viewer is presenting HDR, and the texture format that follows from it - the port of
- * `renderer/Hdr.kt`.
+ * Whether the viewer is presenting HDR, and the texture format that follows from it.
  *
  * Two independent questions, and conflating them is the mistake to avoid. [supportedByDevice] is
  * fixed once a surface exists and is what the *decoder* keys off, because tone mapping at decode
  * is irreversible and a decoded page outlives whatever is on screen. [presentFormat] follows the
  * content, so an SDR-only stretch of a session costs what it always did.
  *
- * Ported only as far as the browser gives it a floor to stand on. The Kotlin's other half -
- * `applyExtendedRange`'s `SurfaceControl` transaction and `attachColorModeHost`'s window colour
- * mode - has no equivalent here: a `GPUCanvasContext` declares its own extended range at
- * `configure()` (`format: "rgba16float"` with `toneMapping: { mode: "extended" }`), so there is no
- * separate surface object to hand a data space to and no window to retint. That single call is
- * this module's [presentFormat] and [desiredHeadroomRatio] combined - whatever configures the
- * canvas reads both from here and configures once, rather than the Kotlin's two-step surface-then-
- * window dance.
+ * A `GPUCanvasContext` declares its own extended range at `configure()` (`format: "rgba16float"`
+ * with `toneMapping: { mode: "extended" }`), so whatever configures the canvas reads
+ * [presentFormat] and [desiredHeadroomRatio] from here and configures once.
  *
- * Left out entirely, not merely unported: [displayPeakRatio] has no browser source at all - no API
- * reports a panel's HDR/SDR brightness ratio the way `Display.getHighestHdrSdrRatio` does - so
- * [presentPeak] can only ever be the configured ceiling, never narrowed to what the panel actually
- * offers. And `requestHdrColorMode`/`clearHdrColorMode` (pinning the OS colour mode outside of
- * what the viewer itself is presenting) simply do not apply to a canvas.
+ * No browser API reports a panel's HDR/SDR brightness ratio, so [presentPeak] is always the
+ * configured ceiling, never narrowed to what the panel offers.
  */
 export class Hdr {
     private constructor() { }
@@ -47,8 +38,7 @@ export class Hdr {
 
     /**
      * `(dynamic-range: high)` is the whole of what a browser exposes about the panel - no ratio,
-     * no nit value, just a boolean. Call once a canvas exists, the way [attachDisplay] read the
-     * `Display` before the Kotlin's renderer initialised.
+     * no nit value, just a boolean. Call once a canvas exists.
      */
     static attachDisplay() {
         if (typeof matchMedia !== "function") {
@@ -91,7 +81,7 @@ export class Hdr {
                 device,
                 format: "rgba16float",
                 // Chrome's extended-range canvas config - "toneMapping" is not yet in the
-                // upstream WebGPU types, hence the cast.
+                // WebGPU types, hence the cast.
                 ...({ toneMapping: { mode: "extended" } } as object),
                 usage: GPUTextureUsage.RENDER_ATTACHMENT,
                 alphaMode: "premultiplied",
@@ -142,10 +132,8 @@ export class Hdr {
 
     /**
      * A ceiling, not a target: content below it keeps its own peak, so a 500-nit image stays a
-     * 500-nit image. Only what the panel cannot show is compressed.
-     *
-     * The Kotlin narrows this by `displayPeakRatio` when the display reports one; nothing in a
-     * browser does, so this is the ceiling itself, always - see the class doc.
+     * 500-nit image. Only what the panel cannot show is compressed. Always the ceiling itself -
+     * see the class doc.
      */
     static get presentPeak(): number {
         const ceiling = Hdr.maxPeakValue

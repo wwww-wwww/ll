@@ -1,14 +1,9 @@
-/**
- * Small helpers shared across the port - the TypeScript stand-ins for the bits of Kotlin,
- * Compose and the Android framework the original leaned on.
- */
+/** Small shared helpers: math, colour, scheduling, animation. */
 
-/** Kotlin's `Float.coerceIn`. */
 export function coerceIn(value: number, lo: number, hi: number): number {
     return Math.max(lo, Math.min(hi, value))
 }
 
-/** Kotlin's `Float.coerceAtLeast`/`coerceAtMost`. */
 export function coerceAtLeast(value: number, lo: number): number {
     return Math.max(value, lo)
 }
@@ -17,17 +12,17 @@ export function coerceAtMost(value: number, hi: number): number {
     return Math.min(value, hi)
 }
 
-/** `Float.orZero()` - NaN reads as 0 rather than poisoning a transform. */
+/** NaN reads as 0 rather than poisoning a transform. */
 export function orZero(value: number): number {
     return Number.isNaN(value) ? 0 : value
 }
 
-/** `Float.closeTo` - the epsilon-equality `atHome`/`atHomeScale` are built on. */
+/** The epsilon-equality `atHome`/`atHomeScale` are built on. */
 export function closeTo(a: number, b: number, eps: number = 0.0001): boolean {
     return Math.abs(a - b) < eps
 }
 
-/** An 0xAARRGGBB int (Android's `Color`) as a `GPUColor`, alpha from the top byte. */
+/** An 0xAARRGGBB int as a `GPUColor`, alpha from the top byte. */
 export function argbToGPUColor(color: number): GPUColor {
     return {
         r: ((color >> 16) & 0xff) / 255,
@@ -37,7 +32,7 @@ export function argbToGPUColor(color: number): GPUColor {
     }
 }
 
-/** Kotlin's `runCatching { fn(arg) }` - an app callback throwing shouldn't corrupt viewer state. */
+/** Calls [fn], logging a throw - an app callback throwing shouldn't corrupt viewer state. */
 export function invokeSafe<T>(fn: ((arg: T) => void) | null | undefined, arg: T) {
     try {
         fn?.(arg)
@@ -61,7 +56,7 @@ export function distance(o: Offset): number {
     return Math.sqrt(o.x * o.x + o.y * o.y)
 }
 
-/** `android.graphics.Rect` - integer bounds, exclusive right/bottom. */
+/** Integer bounds, exclusive right/bottom. */
 export class Rect {
     constructor(
         public left: number,
@@ -83,7 +78,7 @@ export class Rect {
 // Colour
 // ---------------------------------------------------------------------------
 
-/** Colours are ARGB ints, the same 0xAARRGGBB packing the Kotlin uses throughout. */
+/** Colours are 0xAARRGGBB ints throughout. */
 export function argb(a: number, r: number, g: number, b: number): number {
     return (a << 24) | (r << 16) | (g << 8) | b | 0
 }
@@ -128,11 +123,8 @@ interface SchedulerLike {
 const scheduler = (globalThis as { scheduler?: SchedulerLike }).scheduler
 
 /**
- * `kotlinx.coroutines.yield()`.
- *
- * The Kotlin hands the render thread back mid-upload so a queued frame gets through; here that means
- * giving the event loop a turn. `scheduler.yield()` where it exists, since it resumes ahead of
- * ordinary tasks, else a macrotask. A microtask would not do: it runs before the next rAF callback,
+ * Gives the event loop a turn, so a queued frame gets through mid-upload. `scheduler.yield()`
+ * where it exists, since it resumes ahead of ordinary tasks, else a macrotask. A microtask would not do: it runs before the next rAF callback,
  * which is the thing that has to get in.
  */
 export function yieldToEventLoop(): Promise<void> {
@@ -147,9 +139,8 @@ export function delay(ms: number): Promise<void> {
 /**
  * Cooperative pacing for a long job: work for [budgetMs], hand the frame loop a turn, repeat.
  *
- * The Kotlin yields per unit of work, which costs it a function call on an idle dispatcher. Here
- * every yield is an event-loop turn, clamped in the `setTimeout` fallback, so per-unit yielding
- * becomes the bottleneck - a page's upload runs to well over a hundred turns, slower than the work
+ * Every yield is an event-loop turn, clamped in the `setTimeout` fallback, so per-unit yielding
+ * would be the bottleneck - a page's upload runs to well over a hundred turns, slower than the work
  * it protects.
  *
  * Budgeting by time keeps both properties: no turn long enough to drop a frame, and a turn count
@@ -173,7 +164,7 @@ export class FrameBudget {
     }
 }
 
-/** A cancellable unit of async work - the port's stand-in for `kotlinx.coroutines.Job`. */
+/** A cancellable unit of async work. */
 export class Job {
     private _cancelled = false
     readonly promise: Promise<void>
@@ -183,8 +174,8 @@ export class Job {
             .catch(e => {
                 if (!(e instanceof JobCancelled)) throw e
             })
-            // Here, not in [join]: nothing calls join, so [isActive] used to stay true for the life
-            // of a finished job - the opposite of what `Job.isActive` means in the Kotlin.
+            // Here, not in [join]: nothing calls join, so [isActive] would stay true for the life
+            // of a finished job.
             .finally(() => {
                 this._settled = true
             })
@@ -204,7 +195,7 @@ export class Job {
         this._cancelled = true
     }
 
-    /** Throws out of the job body once cancelled - `ensureActive()`. */
+    /** Throws out of the job body once cancelled. */
     ensureActive() {
         if (this._cancelled) throw new JobCancelled()
     }
@@ -231,7 +222,6 @@ export function launch(body: (job: Job) => Promise<void>): Job {
 // Animation
 // ---------------------------------------------------------------------------
 
-/** Compose's `Spring.StiffnessMedium` / `StiffnessMediumLow` / `StiffnessLow`. */
 export const STIFFNESS_MEDIUM = 1500
 export const STIFFNESS_MEDIUM_LOW = 400
 
@@ -258,9 +248,7 @@ export interface AnimationFrame {
  * An animation resolved for a specific run: where it starts, where it is going, and how fast the
  * value was already moving.
  *
- * Compose's `AnimationSpec` is a factory in the same way - `Animatable.animateTo(target,
- * initialVelocity, spec)` binds the spec to those three before anything is integrated. Keeping
- * that shape is what lets a flick's velocity carry into the spring that settles it, which a
+ * Binding all three before anything is integrated is what lets a flick's velocity carry into the spring that settles it, which a
  * normalised 0..1 easing curve cannot express.
  */
 export type AnimationSpec = (
@@ -270,16 +258,16 @@ export type AnimationSpec = (
 ) => (t: number) => AnimationFrame
 
 /**
- * Compose's `spring(dampingRatio, stiffness, visibilityThreshold)`, as the closed-form solution
- * of the same second-order system rather than a per-frame integration.
+ * A damped spring, as the closed-form solution of the second-order system rather than a
+ * per-frame integration.
  *
  * The closed form matters for more than tidiness: a browser drops frames, and re-integrating from
  * the previous frame's state accumulates whatever error a long frame introduced. Evaluating at
  * absolute time means a 200ms stall resumes exactly where the physics says it should be, so a
  * page turn that hitches still lands where and when it should.
  *
- * All three damping regimes are here because Compose's presets span them; the default
- * ([DAMPING_NO_BOUNCY]) is the critically damped case, which is what the viewer uses throughout.
+ * All three damping regimes are handled; the default (1) is critically damped, which is what the
+ * viewer uses throughout.
  */
 export function spring(
     stiffness: number = STIFFNESS_MEDIUM_LOW,
@@ -293,8 +281,7 @@ export function spring(
         const d0 = from - to
         const v0 = initialVelocity
 
-        // Velocity settles on a different scale from position; Compose derives its velocity
-        // threshold from the same visibility threshold, and this is that relationship.
+        // Velocity settles on a different scale from position, so its threshold is scaled by omega.
         const velocityThreshold = visibilityThreshold * omega
 
         let solve: (t: number) => { offset: number; velocity: number }
@@ -347,11 +334,11 @@ export function spring(
     }
 }
 
-/** Compose's `tween(durationMillis)` with its default `FastOutSlowIn` easing. */
+/** A fixed-duration ease-in-out tween. */
 export function tween(durationMillis: number): AnimationSpec {
     const duration = Math.max(durationMillis, 1) / 1000
 
-    // FastOutSlowIn is cubic-bezier(0.4, 0, 0.2, 1); smoothstep tracks it to within a couple of
+    // Smoothstep: tracks cubic-bezier(0.4, 0, 0.2, 1) to within a couple of
     // percent across the whole curve and needs no root solver.
     return (from, to) => t => {
         const progress = Math.min(t / duration, 1)
@@ -367,17 +354,17 @@ export function tween(durationMillis: number): AnimationSpec {
 export interface AnimateOptions {
     /** Velocity the value already had - what makes a flick settle faster than a slow release. */
     initialVelocity?: number
-    /** `Animatable.updateBounds` - reaching a bound clamps the value and ends the animation. */
+    /** Reaching a bound clamps the value and ends the animation. */
     lowerBound?: number
     upperBound?: number
 }
 
 /**
- * `androidx.compose.animation.core.animate` - drives [block] once per frame until [spec] settles.
+ * Drives [block] once per frame until [spec] settles.
  *
  * The last frame always lands exactly on [to] (or on whichever bound stopped it), so a caller can
- * rely on the animation having arrived rather than on it having got close. Returns a [Job] so
- * callers can cancel it the way the Kotlin does.
+ * rely on the animation having arrived rather than on it having got close. Returns a cancellable
+ * [Job].
  */
 export function animate(
     from: number,
@@ -430,11 +417,8 @@ export function animate(
 }
 
 /**
- * `Animatable.animateDecay(initialVelocity, exponentialDecay())`.
- *
- * Compose's exponential decay is `v(t) = v0 e^(kt)` with `k = -4.2 * frictionMultiplier`, ending
- * at `absVelocityThreshold` (0.1 by default) - reproduced here so a fling glides for the same
- * distance and duration it does on Android.
+ * Exponential decay fling: `v(t) = v0 e^(kt)` with `k = -4.2 * frictionMultiplier`, ending at
+ * [absVelocityThreshold].
  */
 export function animateDecay(
     initialVelocity: number,
@@ -489,8 +473,7 @@ export function nextFrame(): Promise<number> {
 }
 
 /**
- * `VelocityTracker` - least-squares fit over the last 100ms of samples, the same window Android
- * uses, in pixels per second.
+ * Pointer velocity over the last 100ms of samples, in pixels per second.
  */
 export class VelocityTracker {
     private samples: { t: number; x: number; y: number }[] = []

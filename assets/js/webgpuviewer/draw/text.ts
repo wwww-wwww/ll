@@ -2,13 +2,9 @@ import { colorToFloats } from "../util"
 import { WebGpuRenderer } from "../renderer/renderer"
 
 /**
- * Text drawing - the role of `draw/Text.kt`, by a different route.
- *
- * The Kotlin builds a glyph atlas by hand: measure each glyph through `Typeface`, pack it, upload
- * it, then assemble runs from the atlas - about a thousand lines, because Android hands it glyph
- * outlines and nothing else. The browser already has a text engine with shaping, fallback fonts
- * and subpixel positioning, so the whole atlas collapses into "rasterise the run on a 2D canvas
- * and upload that". Wrapping and alignment come from `measureText` for the same reason.
+ * Text drawing: each run is rasterised on a 2D canvas and uploaded, using the browser's shaping,
+ * fallback fonts and subpixel positioning rather than a glyph atlas. Wrapping and alignment come
+ * from `measureText`.
  *
  * Rasters are cached by their full appearance, so a label redrawn every frame (a progress
  * readout, a chapter name) uploads once. Straight-alpha out of the canvas, premultiplied in the

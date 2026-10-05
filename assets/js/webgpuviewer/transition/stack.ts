@@ -4,7 +4,7 @@ import type { ImagePage } from "../viewer/imagepage"
 import { Transition, beginClearedPass, blitCached, getCachedTexture } from "./transition"
 
 /**
- * Port of the `TransitionStack{Up,Down,Left,Right}` family.
+ * The `TransitionStack{Up,Down,Left,Right}` family.
  *
  * One page stays put while the other slides over or out from under it, which is the whole
  * difference from [TransitionBasic]: there both pages move together, here only one does. Which one

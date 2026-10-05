@@ -1,9 +1,9 @@
-import { Job, alphaOf, animate, closeTo, coerceIn, launch, spring } from "./webgpuviewer/util"
-import { DecodeAborted, ImageDecoder, closeLevels } from "./webgpuviewer/decoder"
-import { MIPMAP_TILE_SIZE, Image } from "./webgpuviewer/renderer/image"
-import { applyDisplayCorrection } from "./webgpuviewer/filter/colormanagement"
-import { WebGpuRenderer } from "./webgpuviewer/renderer/renderer"
-import { Transition, invalidateCache } from "./webgpuviewer/transition/transition"
+import { Job, alphaOf, animate, closeTo, coerceIn, launch, spring } from "../util"
+import { DecodeAborted, ImageDecoder, closeLevels } from "../decoder"
+import { MIPMAP_TILE_SIZE, Image } from "../renderer/image"
+import { applyDisplayCorrection } from "../filter/colormanagement"
+import { WebGpuRenderer } from "../renderer/renderer"
+import { Transition, invalidateCache } from "../transition/transition"
 import {
     TransitionBasic,
     TransitionBasicVerticalInstance,
@@ -20,35 +20,31 @@ import {
     TransitionStackLeft,
     TransitionStackRight,
     TransitionStackUp,
-} from "./webgpuviewer/transition/transitions"
+} from "../transition/transitions"
 import {
     DummyPage,
     ImagePage,
     ImageSingle,
     ImageSpread,
     RenderPageBase,
-} from "./webgpuviewer/viewer/imagepage"
-import { ImageViewerElement } from "./webgpuviewer/viewer/imageviewer"
-import { ImageViewerContinuousState } from "./webgpuviewer/viewer/imageviewercontinuousstate"
-import { UpscalerCatmullRom } from "./webgpuviewer"
+} from "./imagepage"
+import { ImageViewerElement } from "./imageviewer"
+import { ImageViewerContinuousState } from "./imageviewercontinuousstate"
+import { UpscalerCatmullRom } from "../renderer/upscalercatmullrom"
 
 /**
- * yuriyomi's reader - the port of Mihon's `WebGpuViewer.kt` onto this app's page model.
+ * yuriyomi's reader.
  *
- * The library underneath (`webgpuviewer/`) is the port of `ca.mpreg.webgpuviewer` and knows
- * nothing about either app: it asks for a page by index and draws whatever it gets. This is the
- * layer that decides *which* pages exist, when they load, and when they are thrown away.
- *
- * What carries over from the Kotlin more or less intact:
+ * The rest of `webgpuviewer/` knows nothing about the app: it asks for a page by index and draws
+ * whatever it gets. This is the layer that decides *which* pages exist, when they load, and when
+ * they are thrown away.
  *
  *  - **A bounded window.** Only `preloadBehind + 1 + preloadAhead` pages are ever cached, and
  *    nothing outside it is even fetched - and leaving the window aborts a transfer still in
- *    flight. This is the part yuriyomi was missing: the hook used to set `src` on every `<img>` in
- *    the chapter at mount, so opening a page one started every download at once, uncancellably.
+ *    flight.
  *  - **LIFO decoding.** [decodeQueue] is drained newest-first, so the page the reader is actually
- *    looking at jumps the queue instead of waiting behind a speculative preload. Unlike the
- *    Kotlin's single decode thread, a few drain at once - see [startWorkers] for why that became
- *    the right call once the work left the main thread.
+ *    looking at jumps the queue instead of waiting behind a speculative preload. A few drain at
+ *    once - see [startWorkers].
  *  - **Distance-based eviction.** [evictFarthest] walks outward from the current page and drops
  *    the furthest cached page, never the current one and never what a running turn is animating
  *    away from ([pinnedFrom]).
@@ -56,13 +52,11 @@ import { UpscalerCatmullRom } from "./webgpuviewer"
  *    it loads and its own [ErrorPage] if it fails, so a spread's two halves - separate downloads
  *    that finish at different times - report and fail independently, and a spread composes
  *    whatever each side is currently holding rather than waiting for both.
- *  - **Fit modes and wide-page zoom**, from `applyFitModeAnchor`/`applyWideZoomIfNeeded`.
+ *  - **Fit modes and wide-page zoom.**
  *  - **Spread pairing** via [SpreadPosition], and navigation by spread rather than by file.
  *
- * What is app-shaped and therefore different: Mihon walks a chapter graph through `prev`/`next`
- * getters, because a page's neighbour can live in another chapter that may not be loaded yet.
- * yuriyomi is handed one chapter's files up front, so the page list is just an array and
- * neighbours are index ± 1. Chapter boundaries are the LiveView hook's business, not this file's.
+ * The page list is just an array, so neighbours are index ± 1. Chapter boundaries are the
+ * LiveView hook's business, not this file's.
  */
 
 /** Which half of a spread a page belongs on - see [buildSpreadPage]. */
@@ -86,7 +80,7 @@ function isAbort(e: unknown): boolean {
     return e instanceof DecodeAborted || (e instanceof DOMException && e.name === "AbortError")
 }
 
-/** Page processing state, as `WebGpuViewer.PageState`. */
+/** Page processing state. */
 const enum PageState {
     Idle,
     Queued,
@@ -94,28 +88,30 @@ const enum PageState {
     Decoding,
 }
 
-/** How a page's home transform is chosen - `config.imageScaleType`. */
+/** How a page's home transform is chosen. */
 export type FitMode = "fit-screen" | "fit-width" | "fit-height" | "original"
 
-/** Where a zoomed-in page starts horizontally - `ZoomStartPosition`. */
+/** Where a zoomed-in page starts horizontally. */
 export type ZoomStart = "left" | "right" | "center"
 
-/** Every animation `ReaderPreferences.TransitionAnimation` offers. */
-export type TransitionName =
-    | "default"
-    | "fade"
-    | "fade-white"
-    | "flip"
-    | "flip-left"
-    | "flip-right"
-    | "stack-up"
-    | "stack-down"
-    | "stack-left"
-    | "stack-right"
-    | "cube-inside"
-    | "cube-outside"
-    | "sphere"
-    | "none"
+/** Every page-turn animation. */
+export const TRANSITIONS = [
+    "default",
+    "fade",
+    "fade-white",
+    "flip",
+    "flip-left",
+    "flip-right",
+    "stack-up",
+    "stack-down",
+    "stack-left",
+    "stack-right",
+    "cube-inside",
+    "cube-outside",
+    "sphere",
+    "none",
+] as const
+export type TransitionName = (typeof TRANSITIONS)[number]
 
 export interface ViewerConfig {
     /** Pages to keep and prefetch ahead of / behind the current one. */
@@ -123,17 +119,17 @@ export interface ViewerConfig {
     preloadBehind: number
     fitMode: FitMode
     zoomStart: ZoomStart
-    /** `config.landscapeZoom` - a double-page scan zooms to one half on a portrait screen. */
+    /** A double-page scan zooms to one half on a portrait screen. */
     landscapeZoom: boolean
-    /** `config.imageCropBorders` - trim uniform margins off each page. */
+    /** Trim uniform margins off each page. */
     cropBorders: boolean
-    /** `config.imageCropBordersWebtoon` - as [cropBorders], while continuous. */
+    /** As [cropBorders], while continuous. */
     cropBordersContinuous: boolean
-    /** `config.automaticBackground` - infer each page's letterbox colour from its own edges. */
+    /** Infer each page's letterbox colour from its own edges. */
     automaticBackground: boolean
     /** When set, and [automaticBackground] is off, every page uses this ARGB colour. */
     backgroundColor: number
-    /** `config.navigateToPan` - a tap at the edge pans a zoomed page before turning it. */
+    /** A tap at the edge pans a zoomed page before turning it. */
     navigateToPan: boolean
     /** Pages decoded at once. See [Viewer.startWorkers]. */
     decodeConcurrency: number
@@ -150,13 +146,13 @@ export interface ViewerConfig {
     reversed: boolean
     vertical: boolean
     /**
-     * `WebGpuViewer.isContinuous` - pages stack and scroll as one document.
+     * Pages stack and scroll as one document.
      *
      * Fixed for the life of the element: the state object differs (see [Viewer.setContinuous]) and
      * swapping it after connect would leave the old frame loop running.
      */
     continuous: boolean
-    /** Compose spreads out of `order`-paired files. */
+    /** Build spreads out of `order`-paired files. */
     dualPage: boolean
     /**
      * Apply the display's colour transform to the frame - see `filter/colormanagement.ts`. Only
@@ -194,7 +190,7 @@ const DEFAULT_CONFIG: ViewerConfig = {
 
 /**
  * One page of the chapter: the files it is made of, whatever [ImagePage] currently stands for it,
- * and where it is in the load/decode pipeline. `WebGpuViewer.ViewerReaderPage`.
+ * and where it is in the load/decode pipeline.
  */
 class ViewerPage {
     state = PageState.Idle
@@ -202,7 +198,7 @@ class ViewerPage {
     /** A [ProgressPage] until the decode lands, then an [ImageSingle]. */
     imagePage: ImagePage
 
-    /** Cached spread when this page is the anchor of one - `ViewerReaderPage.spreadPage`. */
+    /** Cached spread when this page is the anchor of one. */
     spreadPage: ImageSpread | null = null
 
     /**
@@ -289,7 +285,7 @@ class PlaceholderPage extends RenderPageBase {
 }
 
 /**
- * The loading ring shown in a page's place - `WebGpuViewer.ProgressPage`.
+ * The loading ring shown in a page's place.
  *
  * The background is transparent by default: a page that has not arrived yet should leave whatever
  * is behind the canvas showing, rather than painting a slab over it. The ring itself carries its
@@ -357,7 +353,7 @@ export class ProgressPage extends PlaceholderPage {
     }
 }
 
-/** A failed page, with the reason on it - `WebGpuViewer.ErrorPage`. */
+/** A failed page, with the reason on it. */
 export class ErrorPage extends PlaceholderPage {
     private _message: string
     private _background: number
@@ -429,7 +425,7 @@ export class Viewer extends ImageViewerElement {
      */
     private readonly pageCache = new Map<number, ViewerPage>()
 
-    /** Pages waiting to decode, drained newest-first - `WebGpuViewer.decodeQueue`. */
+    /** Pages waiting to decode, drained newest-first. */
     private readonly decodeQueue: ViewerPage[] = []
     /** Drain loops currently running. See [startWorkers] for why there is more than one. */
     private readonly workers = new Set<Job>()
@@ -518,12 +514,12 @@ export class Viewer extends ImageViewerElement {
             this.continuousState.cropBorders = this.cropBorders
         }
 
-        // A pure lookup, as in Mihon's own `fetchPage`: admission belongs to [preloadAround].
+        // A pure lookup: admission belongs to [preloadAround].
         //
-        // It used to admit through [acquire], which was harmless while only -1/0/+1 were ever
-        // asked for. The continuous viewer walks up to MAX_VISIBLE_PAGES either way, so up to nine
-        // indices per frame against a five-page window - every frame admitting pages that evict
-        // each other, cancelling decodes and releasing pages still on screen. Eviction leaves a
+        // Admitting through [acquire] would break continuous mode, which walks up to
+        // MAX_VISIBLE_PAGES either way - up to nine indices per frame against a five-page window,
+        // every frame admitting pages that evict each other, cancelling decodes and releasing
+        // pages still on screen. Eviction leaves a
         // fresh placeholder behind (see [release]), so a page outside the window still has
         // something to lay out and draw.
         this.state.fetchPage = delta => {
@@ -543,8 +539,7 @@ export class Viewer extends ImageViewerElement {
 
             // Everything else is posted. This fires from inside the turn's spring callback, and
             // admitting pages starts a decode - doing that here would land the work in the middle
-            // of the frame that is animating. Mihon posts the same tail to its own scope, and for
-            // the same reason.
+            // of the frame that is animating.
             queueMicrotask(() => {
                 if (this.currentIndex !== index) return
                 this.preloadAround(index)
@@ -582,16 +577,16 @@ export class Viewer extends ImageViewerElement {
     /** Acquires the GPU device before constructing, so the element is usable on return. */
     static async new(continuous: boolean = false): Promise<Viewer> {
         await WebGpuRenderer.initDevice()
-        const element = document.createElement("canvas", { is: "webgpu-viewer" }) as Viewer
+        const element = document.createElement("webgpu-viewer") as Viewer
         if (continuous) element.setContinuous()
         return element
     }
 
     /**
-     * Switch to continuous reading - `WebGpuViewerContinuous`.
+     * Switch to continuous reading.
      *
-     * Before connect, so the swap lands before any loop starts. Also adopts that viewer's own
-     * preload window (ahead 3, behind 1: scrolling only ever reveals what is below) and turns dual
+     * Before connect, so the swap lands before any loop starts. Also adopts a continuous preload
+     * window (ahead 3, behind 1: scrolling only ever reveals what is below) and turns dual
      * page off, which is never active for a continuous viewer.
      */
     setContinuous() {
@@ -620,9 +615,8 @@ export class Viewer extends ImageViewerElement {
     /**
      * Adopt [changes] and rebuild.
      *
-     * `WebGpuConfig`'s `imagePropertyChangedListener` does the same: anything that changes how a
-     * page is decoded or laid out invalidates every cached page, since their images were built
-     * under the old settings.
+     * Anything that changes how a page is decoded or laid out invalidates every cached page, since
+     * their images were built under the old settings.
      */
     configure(changes: Partial<ViewerConfig>) {
         Object.assign(this.config, changes)
@@ -656,6 +650,12 @@ export class Viewer extends ImageViewerElement {
         this.dropCache()
         this.preloadAround(this.currentIndex)
         this.state.invalidate()
+    }
+
+    /** Change turn animations without [configure]'s cache drop - no page depends on them. */
+    setTransitions(changes: Partial<Pick<ViewerConfig, "transition" | "singleTransition">>) {
+        Object.assign(this.config, changes)
+        this.applyTransition()
     }
 
     /**
@@ -696,13 +696,13 @@ export class Viewer extends ImageViewerElement {
             case "none":
                 return TransitionNone
             default:
-                // The slide, matching `TransitionAnimation.DEFAULT`.
+                // The slide.
                 return this.config.vertical ? TransitionBasicVerticalInstance : TransitionBasic
         }
     }
 
     /**
-     * `Configuration.ORIENTATION_LANDSCAPE` - a screen wider than it is tall.
+     * A screen wider than it is tall.
      *
      * Zero until the first measurement, so nothing pairs before the size is known - see
      * [bindState]'s `onViewportChanged`, which regroups once it is.
@@ -712,10 +712,10 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
-     * `isDualPageMode` - whether pages pair into spreads at all. Never in continuous, which
-     * scrolls one column however wide the screen is, and never on a portrait screen: two halves
-     * sharing a seam there are each narrower than either would be alone. Mihon decides the same
-     * way, rebuilding its adapter when a rotation changes the answer - see [rebuildPages].
+     * Whether pages pair into spreads at all. Never in continuous, which scrolls one column
+     * however wide the screen is, and never on a portrait screen: two halves sharing a seam there
+     * are each narrower than either would be alone. A rotation that changes the answer regroups -
+     * see [rebuildPages].
      */
     private isDualPageMode(): boolean {
         return this.config.dualPage && !this.config.continuous && this.isWideViewport
@@ -739,9 +739,8 @@ export class Viewer extends ImageViewerElement {
      *
      * [order] is yuriyomi's own spread grouping, one entry per file: **0 is a right half, 1 is a
      * left half**, 2 is a standalone page. Right-first, because the file list is in reading order
-     * and reading is right-to-left - so a spread arrives as 0 then 1. Mihon reads the same
-     * information out of each image's EXIF `PageName` tag inside the decoder; here it arrives with
-     * the file list, so the pairing is already decided and [SpreadPosition] just records it.
+     * and reading is right-to-left - so a spread arrives as 0 then 1. The pairing is already
+     * decided, so [SpreadPosition] just records it.
      *
      * Ignored entirely outside dual mode - continuous, or a portrait screen. There is no seam to
      * sit at, so each file becomes its own whole [SpreadPosition.Single] page rather than a half
@@ -831,8 +830,8 @@ export class Viewer extends ImageViewerElement {
         const pages: ViewerPage[] = []
         // Recorded, so a viewport that later disagrees knows the list needs regrouping.
         this.builtDual = this.isDualPageMode()
-        // Outside dual mode every file stands alone, as Mihon's `setJoinedItems` pairs each item
-        // with null - no seam to sit at, so no half slot and no [SpreadPosition] worth keeping.
+        // Outside dual mode every file stands alone - no seam to sit at, so no half slot and no
+        // [SpreadPosition] worth keeping.
         const grouping = this.builtDual ? order : null
 
         if (grouping === null) {
@@ -886,7 +885,7 @@ export class Viewer extends ImageViewerElement {
     /**
      * Regroup every batch under the current [isDualPageMode], keeping the reader on the file they
      * were on - pairing changes how many pages there are and which one holds that file, so the
-     * index it had means something else afterwards. Mihon's `setJoinedItems` rebuilds the same way.
+     * index it had means something else afterwards.
      *
      * Everything decoded is dropped with it: the files move between pages, and a page's decoded
      * images belong to the slots it had.
@@ -1065,7 +1064,7 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
-     * Evict the page furthest from [reference] - `evictFarthestPage`.
+     * Evict the page furthest from [reference].
      *
      * Never the reference, [keep], the current page, never what a running turn is animating away
      * from. Returns false when nothing was evictable, so a trim loop stops instead of spinning.
@@ -1135,9 +1134,9 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
-     * Admit and queue the window around [index] - `preloadPages`.
+     * Admit and queue the window around [index].
      *
-     * Priority order matches the Kotlin's: behind first (lowest), then ahead, then the current
+     * Priority order: behind first (lowest), then ahead, then the current
      * page and its spread partner last with the priority flag, since the queue is drained from
      * the back.
      */
@@ -1176,7 +1175,7 @@ export class Viewer extends ImageViewerElement {
         return page.spreadPosition === anchor && next.spreadPosition === partner
     }
 
-    /** `queueForDecode` - admit the page and put it in the queue, or move it forward. */
+    /** Admit the page and put it in the queue, or move it forward. */
     private enqueue(index: number, prioritize: boolean) {
         const page = this.acquire(index)
         if (!page) return
@@ -1213,12 +1212,10 @@ export class Viewer extends ImageViewerElement {
     /**
      * Drain the queue, newest request first, up to [ViewerConfig.decodeConcurrency] pages at once.
      *
-     * The Kotlin has a single decode thread, and this followed it: with `getImageData` and a JS mip
-     * filter on the main thread, running pages concurrently only interleaved their blocking work.
-     * None of that is on the main thread any more - profiling puts a page's whole main-thread share
-     * at about 6ms - so serialising buys nothing and costs latency. A page is ~210ms of mostly
-     * *waiting* (fetch, then an off-thread decode), and six in sequence left the preload window a
-     * second and a half behind a reader turning pages quickly.
+     * Profiling puts a page's whole main-thread share at about 6ms, so serialising buys nothing
+     * and costs latency. A page is ~210ms of mostly *waiting* (fetch, then an off-thread decode),
+     * and six in sequence left the preload window a second and a half behind a reader turning
+     * pages quickly.
      *
      * Several loops over one LIFO queue rather than a queue each, so the priority ordering still
      * holds: whichever page the reader is looking at is pulled first, whichever loop gets there.
@@ -1281,12 +1278,10 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
-     * Load and decode [page] - `decodeReaderPage` plus `startPageLoad`.
+     * Load and decode [page].
      *
-     * Setting `src` is what starts the fetch, so it happens here rather than when the page list is
-     * built: a page outside the window is never requested at all. `decode()` waits for the browser
-     * to produce a bitmap, and progress comes from the element's own load events - the closest
-     * thing here to Mihon's `progressFlow`.
+     * The fetch starts here rather than when the page list is built, so a page outside the window
+     * is never requested.
      */
     private async decodePage(page: ViewerPage) {
         page.state = PageState.Loading
@@ -1460,11 +1455,10 @@ export class Viewer extends ImageViewerElement {
      * Fetch [url] as bytes, reporting real download progress into slot [slot]'s ring, then decode
      * it to an [ImageBitmap].
      *
-     * This is the `startPageLoad` half of Mihon's `decodeReaderPage` - and the reason it is a
-     * `fetch` and a stream reader rather than an `<img>`. An `<img>` reports load as a single
-     * event, so the ring could only ever jump from nothing to done; reading `response.body` gives
-     * the byte counter `page.progressFlow` supplies on Android, and an [AbortController] gives
-     * eviction a way to actually cancel a transfer that is no longer wanted.
+     * A `fetch` and a stream reader rather than an `<img>`: an `<img>` reports load as a single
+     * event, so the ring could only ever jump from nothing to done. Reading `response.body` gives
+     * a byte counter, and an [AbortController] gives eviction a way to actually cancel a transfer
+     * that is no longer wanted.
      *
      * Returns null if the transfer was aborted. `createImageBitmap` does the decode off the main
      * thread, which `<img>.decode()` only promises to try.
@@ -1519,7 +1513,7 @@ export class Viewer extends ImageViewerElement {
     // -----------------------------------------------------------------------------------------
 
     /**
-     * `applyWideZoomIfNeeded` - a double-page scan on a portrait screen starts zoomed to one half
+     * A double-page scan on a portrait screen starts zoomed to one half
      * rather than shrunk to fit the whole spread.
      */
     private applyWideZoom(page: ImageSingle): boolean {
@@ -1552,7 +1546,7 @@ export class Viewer extends ImageViewerElement {
         return true
     }
 
-    /** `applyFitModeAnchor` - fit-width / fit-height / original, and where the page starts. */
+    /** Fit-width / fit-height / original, and where the page starts. */
     private applyFitMode(page: ImageSingle) {
         const mode = this.config.fitMode
         if (mode === "fit-screen") return
@@ -1598,7 +1592,7 @@ export class Viewer extends ImageViewerElement {
     // -----------------------------------------------------------------------------------------
 
     /**
-     * `buildSpreadPage` - compose [page] with its partner when the two make a spread.
+     * Combine [page] with its partner when the two make a spread.
      *
      * Whatever each side is holding takes its half of the seam, decoded or not: an [ImageSpread]
      * draws a self-rendering side into its own half, and a side left out would take the whole
@@ -1656,7 +1650,7 @@ export class Viewer extends ImageViewerElement {
         this.moveToIndex(this.pageIndexOfFile(fileIndex))
     }
 
-    /** `moveToPage` - go to page [index], sliding if the move is one step. */
+    /** Go to page [index], sliding if the move is one step. */
     moveToIndex(index: number) {
         if (index < 0 || index >= this.pageList.length) return
 
@@ -1678,8 +1672,7 @@ export class Viewer extends ImageViewerElement {
 
         const direction = Math.sign(index - previous)
 
-        // `WebGpuViewerContinuous.moveToPage`/`animateTurn`: the new page starts at its own top,
-        // and the jump is announced by sliding it in rather than by a page turn. resetScroll runs
+        // Continuous: the new page starts at its own top, and the jump is announced by sliding it in rather than by a page turn. resetScroll runs
         // even for a jump to the page already showing, which has nothing to slide.
         const continuous = this.continuousState
         if (continuous) {
@@ -1699,12 +1692,12 @@ export class Viewer extends ImageViewerElement {
         }
     }
 
-    /** `moveToNext` / `moveRight`. */
+    /** One step screen-right - see [moveWithPan]. */
     moveRight() {
         this.moveWithPan(1)
     }
 
-    /** `moveToPrevious` / `moveLeft`. */
+    /** One step screen-left - see [moveWithPan]. */
     moveLeft() {
         this.moveWithPan(-1)
     }
@@ -1721,12 +1714,12 @@ export class Viewer extends ImageViewerElement {
     }
 
     /**
-     * `moveRight`/`moveLeft` - pan a zoomed page by a screenful before turning it, when
+     * Pan a zoomed page by a screenful before turning it, when
      * [ViewerConfig.navigateToPan] is on.
      */
     private moveWithPan(screenDirection: number) {
-        // `WebGpuViewerContinuous.scrollByHalfPage` - there is no page to pan, and a turn is just
-        // more scrolling.
+        // Continuous scrolls half a viewport - there is no page to pan, and a turn is just more
+        // scrolling.
         const continuous = this.continuousState
         if (continuous) {
             continuous.animateScroll((screenDirection * continuous.height) / 2)
@@ -1753,7 +1746,7 @@ export class Viewer extends ImageViewerElement {
         this.moveToIndex(this.currentIndex + step)
     }
 
-    /** `handleKeyEvent`, for whatever the host binds it to. Returns true if it consumed [e]. */
+    /** For whatever the host binds it to. Returns true if it consumed [e]. */
     handleKeyEvent(e: KeyboardEvent): boolean {
         switch (e.key) {
             case "ArrowRight":
@@ -1795,4 +1788,4 @@ export class Viewer extends ImageViewerElement {
     }
 }
 
-customElements.define("webgpu-viewer", Viewer, { extends: "canvas" })
+customElements.define("webgpu-viewer", Viewer)

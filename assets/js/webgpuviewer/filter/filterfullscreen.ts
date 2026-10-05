@@ -7,8 +7,8 @@ import type { FilterChain } from "./filterchain"
 const CACHED_BIND_GROUPS = 4
 
 /**
- * A [Filter] that is one fragment pass over the whole frame - the port of
- * `filter/FilterFullscreen.kt`, and the shape every per-pixel filter takes.
+ * A [Filter] that is one fragment pass over the whole frame - the shape every per-pixel filter
+ * takes.
  *
  * Subclasses supply [code] (an `fs_main` taking [Fullscreen.VERTEX]'s `VertexOutput`) and [entries]
  * (its group 0 bindings). Bind groups are kept per source texture rather than for the last one

@@ -1,13 +1,8 @@
 import { Rect, linearToSrgb } from "./util"
 
 /**
- * Port of `cpp/trim.cpp` plus `Trim.findAllCpu`/`findCpu`/`detectBackgroundCpu`.
- *
- * The Kotlin also carries compute-shader versions of both passes ([Trim]'s `findInContext` /
- * `detectBackgroundInContext`). Those exist for callers that already have an uploaded texture,
- * and they pay for a GPU readback the render thread has to park on. The CPU path reads the
- * decoded pixels before upload and needs no round trip, which is exactly what `Image` uses - so
- * that is what is ported here.
+ * Margin trim and background detection, on the CPU over decoded pixels before upload - no GPU
+ * readback to wait on.
  *
  * Pixel layout is RGBA8, row-major, tightly packed: byte 0 is red, byte 3 is alpha. Channels are
  * read individually, so the identity does not depend on any word-order assumption.
@@ -20,12 +15,12 @@ const CHANNELS = 4
 // ---------------------------------------------------------------------------
 
 /**
- * Foreground test for one background colour, matching `is_foreground` in the WGSL trim shaders.
+ * Foreground test for one background colour.
  *
- * The shader composites the pixel over the background before comparing:
+ * The pixel is composited over the background before comparing:
  *   diff = |rgb * a + bg * (1 - a) - bg| = a * |rgb - bg|
  * so the blend collapses to a single multiply by alpha. Everything is kept in 0..255 units to
- * avoid normalising every pixel: the shader's `a01 * |c01 - bg01| > threshold` scales to
+ * avoid normalising every pixel: `a01 * |c01 - bg01| > threshold` scales to
  * `a * |c - bg255| > threshold * 255 * 255`.
  */
 class ColorTest {
@@ -74,9 +69,8 @@ function isForeground(test: ColorTest, pixels: Uint8Array, idx: number): boolean
 /**
  * Bounding box of the foreground pixels.
  *
- * Seeded the way the shader seeds its result buffer - min at the image extent, max at zero - so
- * an image with no foreground at all produces the same `(width, height, 0, 0)` the GPU path
- * produces, and the callers that already handle that degenerate result keep working.
+ * Seeded min at the image extent, max at zero, so an image with no foreground at all produces
+ * `(width, height, 0, 0)`, a degenerate result callers already handle.
  */
 class Bounds {
     minX: number
@@ -98,9 +92,8 @@ class Bounds {
  * scans, and only a row that is entirely background has to be read end to end (there is no way to
  * prove it empty otherwise).
  *
- * The C++ splits the image into bands across up to eight threads. There is no equivalent here
- * without moving the whole pass into a worker - `Image` already runs this off the frame path, and
- * splitting it across workers would mean copying the pixels to each one.
+ * Single-threaded: `Image` already runs this off the frame path, and splitting it across workers
+ * would mean copying the pixels to each one.
  */
 function scanBand(
     pixels: Uint8Array,
@@ -145,7 +138,7 @@ function scanBand(
 /**
  * One [Rect] per colour in [colors] (`[r, g, b]` in 0..1), in input order.
  *
- * All colours are resolved in a single pass over the image instead of one dispatch each.
+ * All colours are resolved in a single pass over the image.
  */
 export function findAllCpu(
     pixels: Uint8Array,
@@ -169,7 +162,7 @@ export function findAllCpu(
 
     scanBand(pixels, width, 0, height, tests, bounds)
 
-    // Same max -> exclusive-edge conversion the GPU readback does.
+    // Inclusive max -> exclusive edge.
     return bounds.map(
         b => new Rect(b.minX, b.minY, Math.min(b.maxX + 1, width), Math.min(b.maxY + 1, height)),
     )
@@ -279,8 +272,8 @@ function classifyEdge(pixels: Uint8Array, line: EdgeLine): EdgeResult {
 
 /**
  * The background colour implied by the image edges, as 0xAARRGGBB, or opaque white when no edge
- * is a solid colour. [threshold] is accepted for parity with the Kotlin signature and, as in the
- * C++, plays no part - the edge classifier has its own coverage and tolerance constants.
+ * is a solid colour. [threshold] is unused - the edge classifier has its own coverage and
+ * tolerance constants.
  */
 export function detectBackgroundCpu(
     pixels: Uint8Array,

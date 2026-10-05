@@ -5,8 +5,7 @@ import type { ImagePage } from "../viewer/imagepage"
 import { Transition, blendBackgroundColor, getCachedTexture } from "./transition"
 
 /**
- * Port of `TransitionFlipLeft` and `TransitionFlipRight` - the outgoing page folds back across an
- * angled crease.
+ * The outgoing page folds back across an angled crease.
  *
  * Each page is rendered flat into a cached screen-sized texture first, then the shader folds that
  * texture, so the flat render happens once per transition while only the fold is per-frame.

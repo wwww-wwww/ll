@@ -1,7 +1,6 @@
 /**
- * The ArtCNN C4F16 network, generated - the WGSL from `renderer/UpscalerArtCnn.kt`, itself the
- * mpv/ArtCNN shaders with their weights baked in and regenerated at 8x8 workgroups (see
- * `UpscalerArtCnn` for why 8). Nothing here should be edited by hand.
+ * The ArtCNN C4F16 network, generated: the mpv/ArtCNN shaders with their weights baked in and
+ * regenerated at 8x8 workgroups (see `UpscalerArtCnn` for why 8). Nothing here should be edited by hand.
  */
 
 const RGB_TO_YUV = `

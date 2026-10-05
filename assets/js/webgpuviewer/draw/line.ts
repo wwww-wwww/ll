@@ -2,16 +2,16 @@ import { colorToFloats } from "../util"
 import { WebGpuRenderer } from "../renderer/renderer"
 
 /**
- * Port of `draw/Line.kt` - an anti-aliased line, drawn by a compute shader.
+ * An anti-aliased line, drawn by a compute shader.
  *
  * Unlike the rest of `draw/`, this writes to a storage texture rather than drawing into a render
  * pass, so **[texture] must have been created with `STORAGE_BINDING`**. A canvas surface is not:
  * the swapchain texture only carries `RENDER_ATTACHMENT` (plus `TEXTURE_BINDING`), so this can only
- * target an offscreen texture the caller allocated itself - `Mipmap.blank` is one. The same
- * restriction applies on Android; nothing in the viewer core draws through here.
+ * target an offscreen texture the caller allocated itself - `Mipmap.blank` is one. Nothing in the
+ * viewer core draws through here.
  *
  * The shader stores rather than blends, so overlapping lines replace each other instead of
- * compositing - again as in the Kotlin.
+ * compositing.
  */
 
 const LINE_SHADER = `

@@ -1,27 +1,22 @@
 /**
- * `ca.mpreg.webgpuviewer`, ported to TypeScript.
+ * WebGPU image viewer.
  *
- * Layout mirrors the Kotlin package so the two can be read side by side:
- *
- *   renderer/renderer.ts     WebGpuRenderer.kt      device, surface, frame loop
- *   renderer/image.ts        renderer/Image.kt      a decoded page and its mip pyramid
- *   renderer/mipmap.ts       renderer/Mipmap.kt     one mip level, cut into tiles
- *   renderer/renderpage.ts   renderer/RenderPage.kt the image shaders
- *   renderer/fullscreen.ts   renderer/Fullscreen.kt one triangle over the destination
- *   renderer/rescaler.ts     renderer/Rescaler.kt   how a tile is resized
- *   renderer/tilerenderer.ts renderer/TileRenderer.kt  the progressive sharp-tile cache
- *   draw/draw.ts             draw/{Draw,Rect,Circle,Clear}.kt
- *   draw/text.ts             draw/Text.kt           (canvas-rasterised, not a glyph atlas)
- *   draw/line.ts             draw/Line.kt
- *   viewer/imagepage.ts      viewer/ImagePage.kt    page geometry, bounds, animation
- *   viewer/imageviewerstate.ts viewer/ImageViewerState.kt  paging and the draw loop
- *   viewer/imageviewer.ts    viewer/ImageViewer.kt  the gesture state machine
- *   viewer/gestures.ts       extensions.kt          the pointer plumbing Compose supplied
- *   transition/*.ts          transition/*.kt        page-turn animations and their cache
- *   imageutil.ts             cpp/resize.cpp         the mipmap box filter
- *   trim.ts                  cpp/trim.cpp           margin trim and background detection
- *
- * The two native libraries are implemented in TypeScript here rather than called through wasm.
+ *   renderer/renderer.ts        device, surface, frame loop
+ *   renderer/image.ts           a decoded page and its mip pyramid
+ *   renderer/mipmap.ts          one mip level, cut into tiles
+ *   renderer/renderpage.ts      the image shaders
+ *   renderer/fullscreen.ts      one triangle over the destination
+ *   renderer/rescaler.ts        how a tile is resized
+ *   renderer/tilerenderer.ts    the progressive sharp-tile cache
+ *   draw/                       immediate-mode primitives and text
+ *   viewer/imagepage.ts         page geometry, bounds, animation
+ *   viewer/imageviewerstate.ts  paging and the draw loop
+ *   viewer/imageviewer.ts       the gesture state machine
+ *   viewer/gestures.ts          pointer plumbing
+ *   transition/                 page-turn animations and their cache
+ *   filter/                     output filters
+ *   imageutil.ts                the mipmap box filter
+ *   trim.ts                     margin trim and background detection
  */
 
 export * from "./util"
@@ -85,3 +80,12 @@ export {
     TransitionStackRight,
     TransitionStackUp,
 } from "./transition/transitions"
+
+export {
+    TRANSITIONS,
+    SpreadPosition,
+    ProgressPage,
+    ErrorPage,
+    Viewer,
+} from "./viewer/viewer"
+export type { FitMode, ZoomStart, TransitionName, ViewerConfig } from "./viewer/viewer"

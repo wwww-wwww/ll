@@ -105,8 +105,8 @@ function unpackY(origin: number): number {
 }
 
 /**
- * Tile keys are `(tx, ty)` pairs. The Kotlin packs them into a `Long`; JS numbers can't hold two
- * 32-bit halves losslessly under bitwise ops, so they are packed into a 48-bit number instead -
+ * Tile keys are `(tx, ty)` pairs. JS numbers can't hold two 32-bit halves losslessly under bitwise
+ * ops, so they are packed into a 48-bit number instead -
  * plenty for tile indices, which stay within a few thousand of the origin either way.
  */
 const KEY_BIAS = 0x800000
@@ -123,7 +123,7 @@ function keyTy(k: number): number {
     return (k % 0x1000000) - KEY_BIAS
 }
 
-/** A crop in page pixels, the shape of Android's `Rect`. */
+/** A crop in page pixels. */
 export interface Rect {
     left: number
     top: number
@@ -437,9 +437,8 @@ interface Request {
 }
 
 /**
- * A cache of the filtered render, cut into square screen-resolution tiles - the port of
- * `renderer/TileRenderer.kt`. Every tile is a slot in one atlas texture, so a grid draws in a
- * single instanced call.
+ * A cache of the filtered render, cut into square screen-resolution tiles. Every tile is a slot in
+ * one atlas texture, so a grid draws in a single instanced call.
  *
  * `RenderPage.render` is too expensive every frame; `renderFast` is cheap but unfiltered. Each
  * frame draws the fast path, blits whatever filtered tiles exist on top, and fills in the rest a
@@ -630,7 +629,7 @@ export class TileRenderer {
      * A settled page queues its whole wanted range at once - a hundred or so tiles, each its own
      * encoder, render pass and `submit`. Fine alone; not fine during a page load, where the uploads
      * and tile passes contend for one queue and frames stop presenting however finely the CPU side
-     * is chunked. No counterpart in the Kotlin, whose decode is threaded and uploads native.
+     * is chunked.
      *
      * Cached tiles keep being blitted; only generation stops.
      */
@@ -867,7 +866,7 @@ export class TileRenderer {
     }
 
     /**
-     * Access-ordered, like the Kotlin's `LinkedHashMap(16, 0.75f, true)`: [touch] re-inserts so
+     * Access-ordered: [touch] re-inserts so
      * the most recently drawn page is always last, whether or not it was already present - see
      * [RETAIN_MARGIN].
      */
@@ -1682,10 +1681,8 @@ export class TileRenderer {
     /**
      * Start the generation worker if it isn't running.
      *
-     * The Kotlin runs this on the render thread without the render mutex, so a suspend between
-     * batches lets a queued frame through. Here the awaits do that directly: the loop hands the
-     * event loop back after every batch, so a pending `requestAnimationFrame` runs before the
-     * next one starts. Batch size comes from [nextBatchSize], re-read every batch as the cost
+     * The loop hands the event loop back after every batch, so a pending `requestAnimationFrame`
+     * runs before the next one starts. Batch size comes from [nextBatchSize], re-read every batch as the cost
      * measurements accumulate.
      */
     private schedule() {
@@ -2046,8 +2043,7 @@ export class TileRenderer {
             // matters, since [nextBatchSize] divides a frame's budget by this number and would
             // queue eight of a tile that reads as free. So a staged tile puts the opening
             // timestamp on whatever pass [prepare] opens first, leaving only the closing one here;
-            // the GPU runs everything between the two. An omitted index is WebGPU's "no write",
-            // the JS spelling of the sentinel the Kotlin passes.
+            // the GPU runs everything between the two. An omitted index is WebGPU's "no write".
             //
             // Per tile, not per renderer: a rescaler declines any tile below its
             // [Rescaler.factor], and those have no first pass to carry the opening write. Getting
@@ -2092,8 +2088,6 @@ export class TileRenderer {
     ) {
         const result = timing.result
         try {
-            // The Kotlin has to pump the instance's event queue while waiting; the browser drives
-            // its own, so mapAsync's promise is enough.
             await result.mapAsync(GPUMapMode.READ, 0, 16)
         } catch (e) {
             // A lost device fails every pending map. The timing only paces tile batches, and

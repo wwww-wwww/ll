@@ -26,18 +26,15 @@ import {
 } from "./gestures"
 
 /**
- * The gesture layer and canvas element - the port of `viewer/ImageViewer.kt` and `ImageView.kt`.
+ * The gesture layer and canvas element.
  *
- * The Kotlin is a Compose `pointerInput` block: one `awaitEachGesture` that reads the pointer
- * stream top to bottom, branching into tap / double tap / double-tap-drag-zoom / pan-pinch. That
- * shape survives intact here - [PointerStream] supplies the same awaitable event sequence - so
- * the branches below line up with the original one for one.
+ * Each gesture is read from [PointerStream] top to bottom, branching into tap / double tap /
+ * double-tap-drag-zoom / pan-pinch.
  *
- * Registered as a customised built-in `<canvas is="webgpu-viewer">`, matching how the existing
- * viewer was constructed.
+ * Registered as the autonomous custom element `<webgpu-viewer>` wrapping a canvas.
  */
 
-/** Android's `viewConfiguration` values, which the gesture logic is tuned against. */
+/** Gesture timeouts (ms) and touch slop (CSS px). */
 const DOUBLE_TAP_TIMEOUT = 300
 const LONG_PRESS_TIMEOUT = 500
 const TOUCH_SLOP_DP = 8
@@ -76,7 +73,9 @@ function wheelNotches(e: WheelEvent): number {
     return coerceIn(notches, -3, 3)
 }
 
-export class ImageViewerElement extends HTMLCanvasElement {
+export class ImageViewerElement extends HTMLElement {
+    /** The drawing surface. A child canvas, since customised built-ins are unsupported in Safari. */
+    readonly canvas = document.createElement("canvas")
     private _state: ImageViewerState
 
     get state(): ImageViewerState {
@@ -90,6 +89,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
 
     constructor(isVertical: boolean = false, isReversed: boolean = false) {
         super()
+        this.canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none"
         this._state = new ImageViewerState(isVertical, isReversed)
     }
 
@@ -123,15 +123,18 @@ export class ImageViewerElement extends HTMLCanvasElement {
         isReversed: boolean = false,
     ): Promise<ImageViewerElement> {
         await WebGpuRenderer.initDevice()
-        const element = document.createElement("canvas", {
-            is: "webgpu-viewer",
-        }) as ImageViewerElement
+        const element = document.createElement("webgpu-viewer") as ImageViewerElement
         element.state.isVertical = isVertical
         element.state.isReversed = isReversed
         return element
     }
 
     connectedCallback() {
+        // Not in the constructor: createElement rejects a custom element that gains children or attributes there.
+        if (!this.canvas.isConnected) {
+            this.style.display = "block"
+            this.append(this.canvas)
+        }
         this.abort = new AbortController()
         this.stream = new PointerStream(this.toLocal)
 
@@ -141,7 +144,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             const height = Math.max(1, Math.round(rect.height * window.devicePixelRatio))
             if (width === this.state.width && height === this.state.height) return
             const first = this.state.width === 0 || this.state.height === 0
-            this.state.init(this, width, height)
+            this.state.init(this.canvas, width, height)
             this.state.onViewportChanged?.(first)
             this.state.invalidate()
         })
@@ -174,11 +177,10 @@ export class ImageViewerElement extends HTMLCanvasElement {
                 // Before the button filter, so a right-click still identifies itself.
                 this.lastPointerType = e.pointerType
                 if (e.button !== 0 && e.pointerType === "mouse") return
-                this.setPointerCapture(e.pointerId)
+                this.canvas.setPointerCapture(e.pointerId)
                 e.preventDefault()
-                // The stylesheets style `canvas.grabbing` with a grab cursor; nothing on the
-                // Android side needs this, so it has no counterpart in the Kotlin.
-                this.classList.toggle("grabbing", true)
+                // The stylesheets style `canvas.grabbing` with a grab cursor.
+                this.canvas.classList.toggle("grabbing", true)
                 this.stream.handle(e, "down")
             },
             { signal },
@@ -189,7 +191,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             e => {
                 if (this.hasPointerCapture(e.pointerId)) this.releasePointerCapture(e.pointerId)
                 this.stream.handle(e, "up")
-                if (this.stream.pressedCount === 0) this.classList.toggle("grabbing", false)
+                if (this.stream.pressedCount === 0) this.canvas.classList.toggle("grabbing", false)
             },
             { signal },
         )
@@ -197,7 +199,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
             "pointercancel",
             e => {
                 this.stream.handle(e, "cancel")
-                if (this.stream.pressedCount === 0) this.classList.toggle("grabbing", false)
+                if (this.stream.pressedCount === 0) this.canvas.classList.toggle("grabbing", false)
             },
             { signal },
         )
@@ -218,7 +220,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
     }
 
     /**
-     * Wheel zoom - no counterpart in the Kotlin, which only sees touch, but a mouse has no pinch.
+     * Wheel zoom, since a mouse has no pinch.
      *
      * Routed through [ImagePage.animateTo] for both halves of what a wheel needs: it animates, so a
      * notch glides rather than snapping, and it cancels `animationJob`, so a fling in flight stops
@@ -314,7 +316,7 @@ export class ImageViewerElement extends HTMLCanvasElement {
         )
     }
 
-    /** `awaitEachGesture` - one pass per gesture, forever. */
+    /** One pass per gesture, forever. */
     private async gestureLoop(job: Job) {
         while (true) {
             job.ensureActive()

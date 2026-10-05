@@ -5,7 +5,7 @@ import type { ImagePage } from "../viewer/imagepage"
 import { Transition, getCachedTexture } from "./transition"
 
 /**
- * Port of `TransitionCube` and `TransitionCubeOuter` - the page turn as a rotating cube.
+ * The page turn as a rotating cube.
  *
  * The outgoing page is the front face, the incoming one the side. Each renders flat into a cached
  * screen-sized texture, which a face then maps onto a rotating quad - so the flat render happens once
@@ -297,7 +297,7 @@ class TransitionCubeImpl extends Transition {
 export const TransitionCube = new TransitionCubeImpl()
 
 /**
- * Port of `TransitionCubeOuter` - the cube rotating the other way, seen from outside.
+ * The cube rotating the other way, seen from outside.
  *
  * Same faces and shader as [TransitionCube]. What differs: the rotation direction, which page
  * takes which face, and faces pushed back so the cube reads as a solid object, not a box interior.

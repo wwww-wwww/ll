@@ -44,7 +44,7 @@ interface Pass {
 }
 
 /**
- * ArtCNN C4F16 - the port of `renderer/UpscalerArtCnn.kt`. A small convolutional network that
+ * ArtCNN C4F16. A small convolutional network that
  * doubles resolution, run over each high-quality tile. See [Rescaler] for how it fits.
  *
  * Nine compute passes, in `artcnn/passes.ts`. Luma only: pass 1 converts to YCbCr, passes 2-8
@@ -57,7 +57,7 @@ interface Pass {
  * the same nine passes again against the previous run's result. Catmull-Rom still covers whatever
  * is left over below the next whole doubling.
  *
- * At 8x8 workgroups, not the 16x16 upstream ArtCNN ships: at 16x16 the shared tile is 4*18*18
+ * At 8x8 workgroups, not the 16x16 ArtCNN ships with: at 16x16 the shared tile is 4*18*18
  * vec4s, 20736 bytes, over the 16384-byte default `maxComputeWorkgroupStorageSize`, so the
  * pipelines would not build. At 8x8 it is 4*10*10, 6400 bytes.
  *

@@ -25,7 +25,7 @@ export const SCROLL_THRESHOLD_PX = 0.5
 /** Caps a page walk against a provider that never reports null/zero-height. */
 const MAX_PAGE_WALK = 10_000
 
-/** JS numbers are already double precision, so unlike the Kotlin this only screens NaN/Infinity. */
+/** Screens NaN/Infinity. */
 function isSane(n: number): boolean {
     return Number.isFinite(n)
 }
@@ -69,17 +69,14 @@ interface ContinuousRenderSnapshot {
 }
 
 /**
- * The continuous (webtoon) viewer's state and frame loop - the port of
- * `viewer/ImageViewerContinuousState.kt`.
+ * The continuous (webtoon) viewer's state and frame loop.
  *
  * Pages stack vertically and scroll as one document, fitted to the viewer's width, rather than
  * each owning the viewport as in the paged mode. So the transform lives here, on the viewer, not
  * on each page: [scale] and [offsetX] apply to everything, and [scrollY] is the position within
  * the current page.
  *
- * The Kotlin guards the scroll state with a lock, since its gestures and render thread are
- * separate. There is one thread here, so the lock has no counterpart - but the invariant it
- * protected still holds: nothing outside [scrollBy] may write [scrollY] and `anchorDocY` together.
+ * Invariant: nothing outside [scrollBy] may write [scrollY] and `anchorDocY` together.
  */
 export class ImageViewerContinuousState extends ImageViewerState {
     constructor() {
@@ -196,7 +193,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
     /**
      * Position within the page [getPage] answers 0 with, in page-space pixels at zoom 1. Written
      * only by [scrollBy] and the clamp below it, which are what walk page boundaries and hold the
-     * document's end - the Kotlin's `private set`.
+     * document's end.
      */
     get scrollY(): number {
         return this._scrollY
@@ -688,11 +685,11 @@ export class ImageViewerContinuousState extends ImageViewerState {
      * Only a scroll's own remainder counts. Any other animation taking the slot - a fling, a
      * slide-in - means the position it was heading for is no longer wanted.
      *
-     * [spec] defaults to a spring settling within half a pixel. The Kotlin asks for 0.002 here,
-     * which is the threshold for a 0..1 progress animation, not for one measured in pixels: on a
-     * ~120px notch it spent 336ms covering 99% of the distance and another 350ms drifting the last
-     * sub-pixel. That tail is invisible but not free - `animationJob` stays non-null through it, so
-     * WebGpuRenderer.animating holds texture uploads off for twice as long as the movement lasts.
+     * [spec] defaults to a spring settling within half a pixel. A 0.002 threshold (right for a 0..1
+     * progress animation, not one in pixels) spent 336ms covering 99% of a ~120px notch and another
+     * 350ms drifting the last sub-pixel. That tail is invisible but not free - `animationJob`
+     * stays non-null through it, so WebGpuRenderer.animating holds texture uploads off for twice as
+     * long as the movement lasts.
      */
     animateScroll(
         deltaPixels: number,
@@ -926,7 +923,7 @@ export class ImageViewerContinuousState extends ImageViewerState {
         if (s.pages.length === 0) {
             // Nothing to draw, but the texture still has to be written: `getCurrentTexture`
             // rotates buffers, so submitting no commands leaves a frame from several ago on
-            // screen. The Kotlin returns here instead - its surface is not a swap chain.
+            // screen.
             Draw.clear(encoder, texture, s.backgroundColor)
             return
         }
@@ -1006,8 +1003,8 @@ export class ImageViewerContinuousState extends ImageViewerState {
                             // Stencil-tested against the tile draw above, skipping pixels it
                             // already covered.
                             //
-                            // The page's fade rides in as the alpha multiplier rather than the
-                            // Kotlin's separate veil pass - see [ImagePage.fade].
+                            // The page's fade rides in as the alpha multiplier - see
+                            // [ImagePage.fade].
                             RenderPage.renderFast(
                                 pass,
                                 image,

@@ -2,7 +2,7 @@ import { WebGpuRenderer } from "./renderer"
 
 /**
  * One triangle covering the whole destination, for passes that are a function of every pixel
- * rather than a drawing of anything - the port of `renderer/Fullscreen.kt`. Used by
+ * rather than a drawing of anything. Used by
  * `FilterFullscreen`'s output filters and [UpscalerArtCnn]'s halo crop.
  *
  * Here rather than beside the filters so both can reach it: the filter modules already depend on

@@ -1,13 +1,11 @@
 import { Offset, VelocityTracker, distance } from "../util"
 
 /**
- * Pointer plumbing standing in for Compose's `awaitPointerEventScope` - the shape the gesture
- * port in `imageviewer.ts` is written against.
+ * Pointer plumbing for the gesture handlers in `imageviewer.ts`.
  *
- * Compose hands a gesture a stream of `PointerEvent`s, each carrying every pointer's current and
- * previous position, plus `calculatePan`/`calculateZoom`/`calculateCentroid` over that set. DOM
- * pointer events carry one pointer at a time and no history, so [PointerStream] keeps the set and
- * synthesises the same per-event snapshot.
+ * DOM pointer events carry one pointer at a time and no history, so [PointerStream] keeps the
+ * pointer set and synthesises a per-event snapshot of every pointer's current and previous
+ * position, with pan/zoom/centroid over that set.
  */
 
 export interface PointerInfo {
@@ -31,7 +29,7 @@ export class GestureEvent {
         return this.changes.filter(c => c.pressed)
     }
 
-    /** Compose's `calculateCentroid`. */
+    /** Mean position of the pressed pointers. */
     centroid(useCurrent: boolean = true): Offset {
         const pointers = this.pressed
         if (pointers.length === 0) return { x: 0, y: 0 }
@@ -58,7 +56,7 @@ export class GestureEvent {
         return sum / pointers.length
     }
 
-    /** Compose's `calculateZoom` - the ratio of current to previous centroid size. */
+    /** Ratio of current to previous centroid size. */
     zoom(): number {
         const previous = this.centroidSize(false)
         const current = this.centroidSize(true)
@@ -66,7 +64,7 @@ export class GestureEvent {
         return current / previous
     }
 
-    /** Compose's `calculatePan` - the mean movement of the pressed pointers. */
+    /** Mean movement of the pressed pointers. */
     pan(): Offset {
         const pointers = this.pressed
         if (pointers.length === 0) return { x: 0, y: 0 }
@@ -85,8 +83,7 @@ export class GestureEvent {
 }
 
 /**
- * A queue of [GestureEvent]s with an awaitable `next`, so a gesture reads as the same
- * straight-line sequence the Kotlin's `awaitEachGesture` block is.
+ * A queue of [GestureEvent]s with an awaitable `next`, so a gesture reads as straight-line code.
  */
 export class PointerStream {
     private readonly pointers = new Map<number, PointerInfo>()
@@ -170,7 +167,7 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | nul
 }
 
 /**
- * `AwaitPointerEventScope.waitForCleanUp` - the event on which [pointerId] lifts, provided it
+ * The event on which [pointerId] lifts, provided it
  * does so within [timeout] and without the gesture accumulating more than [touchSlop] of pan or
  * gaining a second pointer. Null otherwise, which is the caller's signal that this is a drag or
  * a hold rather than a tap.
@@ -203,7 +200,7 @@ export async function waitForCleanUp(
     }
 }
 
-/** `AwaitPointerEventScope.waitForDown` - the next pressed pointer within [timeout]. */
+/** The next pressed pointer within [timeout]. */
 export async function waitForDown(
     stream: PointerStream,
     timeout: number,

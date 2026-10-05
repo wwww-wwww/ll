@@ -1,5 +1,5 @@
 /**
- * A GPU object built once per target texture format and kept - the port of `renderer/FormatKeyed.kt`.
+ * A GPU object built once per target texture format and kept.
  *
  * A render pipeline bakes its colour target's format, so one cached pipeline serves one format -
  * letting an SDR page and an HDR page draw in the same frame. An SDR-only session still builds

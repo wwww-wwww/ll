@@ -11,10 +11,7 @@ import {
 } from "./transition"
 
 /**
- * A book page turn - the port of `transition/TransitionFlip.kt`.
- *
- * The file keeps its own name: `flip.ts` is the `TransitionFlipLeft`/`TransitionFlipRight` pair,
- * which the Kotlin has in files of their own.
+ * A book page turn. (`flip.ts` is the unrelated `TransitionFlipLeft`/`TransitionFlipRight` pair.)
  *
  * One leaf lifts off the spine, curls, and lands on the other side. Forward, the leaf shows page 1's
  * right half in front and page 2's left behind, each at its own size; a side with no page is blank
@@ -25,8 +22,8 @@ import {
  * attachment: height rises with the tangent angle while it stays inside PI, so strips emitted
  * spine-outwards land back to front.
  *
- * Two divergences from the Kotlin, both because this canvas is transparent: [surfaceFill], and a
- * blank face left unpainted rather than filled - see [blankFill].
+ * The canvas is transparent, so the surface fill is conditional - see [surfaceFill] - and a blank
+ * face can be left unpainted - see [blankFill].
  */
 
 const UNIFORM_SIZE = 96
@@ -102,7 +99,7 @@ function mirror(rect: Float32Array, spine: number): Float32Array {
 }
 
 /**
- * Whether the surface gets filled at all - not in the Kotlin, which always fills.
+ * Whether the surface gets filled at all.
  *
  * A page's background is ARGB 0 unless one was asked for and [blendBackgroundColor] forces its
  * result opaque, so filling outright blacks out a transparent canvas for the length of the turn.

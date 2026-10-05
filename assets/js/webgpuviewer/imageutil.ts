@@ -1,10 +1,5 @@
 /**
- * Port of `cpp/resize.cpp` - the half-size box filter each mipmap level is built with.
- *
- * The C++ works through `uint32_t` pixels and the NEON path unrolls by four; neither survives
- * the trip usefully, so this is the scalar path over the bytes directly. That is not a change of
- * behaviour: every channel gets the same treatment, so reading byte 0 as red rather than blue
- * lands on the same numbers.
+ * The half-size box filter each mipmap level is built with.
  *
  * Filtering is in linear light and alpha-weighted: colour is premultiplied on the way in, divided
  * back out at the end, so a transparent neighbour cannot drag a colour toward black. Pixel layout
@@ -35,8 +30,8 @@ function exactLinearToAlpha(linearAlpha: number): number {
 /**
  * Halve [source] (RGBA8, [width] x [height]) with an area filter, returning the new pixels.
  *
- * The destination is `floor(width / 2)` x `floor(height / 2)`, matching `ImageUtil.resize`'s
- * allocation - the caller derives the same dimensions for the mip level it is building.
+ * The destination is `floor(width / 2)` x `floor(height / 2)` - the caller derives the same
+ * dimensions for the mip level it is building.
  */
 export function resize(source: Uint8Array, width: number, height: number): Uint8Array {
     const dstWidth = Math.floor(width / 2)
@@ -131,8 +126,7 @@ export function resize(source: Uint8Array, width: number, height: number): Uint8
 /**
  * Decoded RGBA8 bytes for [source], via a 2D canvas.
  *
- * The Kotlin gets these straight from the decoder; the browser only hands out pixels through a
- * canvas, so this is the one extra step the web needs. `willReadFrequently` is deliberately off -
+ * The browser only hands out decoded pixels through a canvas. `willReadFrequently` is deliberately off -
  * this reads once per image, and the flag would push the canvas onto a slower software path.
  */
 export function decodeToPixels(

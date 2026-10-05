@@ -3,7 +3,7 @@ import type { FilterChain } from "./filterchain"
 
 /**
  * One post-processing step over the finished frame, run by [FilterChain] between the viewer's draw
- * and the canvas - the port of `filter/Filter.kt`.
+ * and the canvas.
  *
  * A filter reads [run]'s `src` and writes `dst`; the chain owns both and ping-pongs them, so a
  * filter never allocates its input or output. A multi-pass filter takes intermediates from

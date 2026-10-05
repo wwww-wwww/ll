@@ -31,7 +31,7 @@ const MIN_FRAME_MILLIS = 10
 
 /**
  * A page in the viewer, with shared transform (x, y, scale), pan/zoom-to-fit bounds, and
- * animation - the port of `viewer/ImagePage.kt`.
+ * animation.
  *
  * [ImageSingle] is the ordinary single-page case; [ImageSpread] composes two side by side for a
  * dual-page spread. [DummyPage] is a placeholder with known dimensions but no content.
@@ -254,11 +254,10 @@ export class ImagePage {
     /**
      * True until this page has snapped to its home transform.
      *
-     * The Kotlin snaps eagerly in the `parent` setter, since Android knows the surface size before
-     * any page attaches. Here the `ResizeObserver` fires a frame *after* the element connects, so a
-     * page attached in between computes [homeScale] against a zero viewport and lands on its 0.01
-     * fallback - rendered at 1% of its size. [attach] retries every frame instead, so the snap
-     * happens on the first frame the viewport is real.
+     * The `ResizeObserver` fires a frame *after* the element connects, so snapping in the `parent`
+     * setter would compute [homeScale] against a zero viewport and land on its 0.01 fallback -
+     * rendered at 1% of its size. [attach] retries every frame instead, so the snap happens on
+     * the first frame the viewport is real.
      */
     private homePending = true
 
@@ -268,7 +267,7 @@ export class ImagePage {
         const parent = this._parent
         if (!parent || parent.width <= 0 || parent.viewportHeight <= 0) return
         this.homePending = false
-        // Only if nothing has moved it since - the guard the Kotlin's setter applies.
+        // Only if nothing has moved it since.
         if (this.x !== 0 || this.y !== 0 || this.scale !== 1) return
         this.x = this.homeX
         this.y = this.homeY
@@ -280,7 +279,7 @@ export class ImagePage {
      *
      * [homeScale] recomputes from the viewport on every read unless set explicitly, so only
      * [x]/[y]/[scale] go stale - a page fitted to the old size keeps that fit. The caller decides
-     * when it is worth doing; Mihon wipes its whole page cache on the equivalent event.
+     * when it is worth doing.
      */
     resetHome() {
         this.homePending = true
@@ -298,10 +297,10 @@ export class ImagePage {
     /**
      * How far this page has faded in: 1 fully shown, 0 fully transparent.
      *
-     * The Kotlin veils the page with its own [backgroundColor] at `1 - fade` alpha, which fades
-     * nothing when that background is transparent. This scales the page's own alpha instead - the
-     * same `bg*(1-f) + img*f` where a background exists, since [renderBackground] still draws at
-     * full alpha underneath, and an actual fade where it does not. The multiply is in the tile
+     * Scales the page's own alpha rather than veiling it with [backgroundColor], which would fade
+     * nothing over a transparent background. Gives `bg*(1-f) + img*f` where a background exists,
+     * since [renderBackground] still draws at full alpha underneath, and an actual fade where it
+     * does not. The multiply is in the tile
      * shaders; see `RenderPage.drawTile`.
      */
     get fade(): number {

@@ -3,8 +3,8 @@ import type { Image, MipMapForDraw, TileForDraw } from "./image"
 import { WebGpuRenderer } from "./renderer"
 
 /**
- * Draws a single image into a render pass - the port of `renderer/RenderPage.kt`. Every path that
- * draws a page's live content comes through here.
+ * Draws a single image into a render pass. Every path that draws a page's live content comes
+ * through here.
  *
  * Two paths, picked per call:
  *  - [render] - the resolve a `Rescaler` supplies, in linear light: Catmull-Rom magnifying, a box

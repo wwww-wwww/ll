@@ -2,7 +2,7 @@ import { FrameBudget, Rect, coerceIn, yieldToEventLoop } from "../util"
 import { WebGpuRenderer } from "./renderer"
 
 /**
- * One mip level, cut into square tiles - the port of `renderer/Mipmap.kt`.
+ * One mip level, cut into square tiles.
  *
  * A page can be far larger than `maxTextureDimension2D`, so a level is never one texture: it is a
  * [tilesCols] x [tilesRows] grid of at most [tilesize] each. [getQuad] answers the fixed 2x2
@@ -207,7 +207,7 @@ export class Mipmap {
         return mipmap
     }
 
-    /** An empty, writable level - what a `Render` page draws into. */
+    /** An empty, writable level - what a `RenderPageBase` draws into. */
     static blank(width: number, height: number): Mipmap {
         const mipmap = new Mipmap(width, height, 1, 1, 1, 4096)
         mipmap.adoptSingle(

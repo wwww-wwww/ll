@@ -117,8 +117,7 @@ fn resolve_minify(src_start: vec2<f32>, scale: vec2<f32>) -> vec4<f32> {
 `
 
 /**
- * [TileRenderer.downscaler]'s only implementation - the port of `renderer/DownscalerBox.kt`:
- * every destination pixel is the average of the source pixels its footprint covers, weighted by
+ * [TileRenderer.downscaler]'s only implementation: every destination pixel is the average of the source pixels its footprint covers, weighted by
  * how much of each it covers, in linear light.
  *
  * Band-limiting the source's own detail is the right answer for shrinking, so unlike the

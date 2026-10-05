@@ -1,7 +1,7 @@
 import { WebGpuRenderer } from "./renderer"
 
 /**
- * How [TileRenderer] resizes a high-quality tile - the port of `renderer/Rescaler.kt`.
+ * How [TileRenderer] resizes a high-quality tile.
  * [Upscaler] magnifying, [Downscaler] shrinking.
  *
  * With no [factor] - the defaults - [RenderPage.render] resolves the tile in one step. A [factor]
@@ -46,8 +46,6 @@ export abstract class Rescaler {
     /**
      * Settle what this tile gets, before anything else here is asked about it. A rescaler whose
      * [factor] varies with the zoom latches it here, so every reader that follows agrees.
-     *
-     * Not in the Kotlin, whose rescalers all have a fixed [factor].
      */
     plan(_scale: number, _tileSize: number) { }
 
@@ -87,8 +85,8 @@ export abstract class Rescaler {
 /**
  * A [Rescaler] for tiles that magnify the page, where a filter has to invent detail the source
  * doesn't have. [UpscalerCatmullRom] by default, [UpscalerArtCnn] the alternative. Both supply
- * [code] themselves rather than inheriting Catmull-Rom's the way the Kotlin does: importing it
- * here would make a cycle these modules evaluate through, and `extends` is not deferred.
+ * [code] themselves rather than inheriting Catmull-Rom's: importing it here would make a cycle
+ * these modules evaluate through, and `extends` is not deferred.
  *
  * The first step resolves at `scale / factor`, so this only runs given a whole [factor] of zoom.
  * Below that the first step would shrink the page to make room, losing the detail this exists to

@@ -34,7 +34,7 @@ interface RenderSnapshot {
 }
 
 /**
- * The paged viewer's state and frame loop - the port of `viewer/ImageViewerState.kt`.
+ * The paged viewer's state and frame loop.
  *
  * Owns the renderer, the tile cache, the page offset a turn animates, and the once-per-display-
  * frame draw loop. Pages come from [fetchPage], indexed relative to the current one.
@@ -188,9 +188,8 @@ export class ImageViewerState {
         this.animationJob = job
         job.promise.then(() => {
             // Only if this turn is still the current one. A cancelled job's promise still settles,
-            // and the Kotlin's `finally` runs inside the coroutine that got cancelled - so it
-            // cannot reach a *later* turn's state. Here it can, and snapping the offset back to 0
-            // would abort whichever turn replaced this one mid-flight.
+            // and snapping the offset back to 0 would abort whichever turn replaced this one
+            // mid-flight.
             if (this.animationJob !== job) return
             // Otherwise always clear transitionFromPage - getPage provides the right page from
             // here on.
@@ -362,9 +361,9 @@ export class ImageViewerState {
     /**
      * This frame's render inputs, or null when there is nothing to draw.
      *
-     * Typed `unknown` for the same reason the Kotlin types it `Any`: the continuous mode captures a
-     * different shape entirely (see `ImageViewerContinuousState`). Each subclass casts in its own
-     * [renderSnapshot], so the pairing stays private to the class that owns both halves.
+     * Typed `unknown` since the continuous mode captures a different shape entirely (see
+     * `ImageViewerContinuousState`). Each subclass casts in its own [renderSnapshot], so the
+     * pairing stays private to the class that owns both halves.
      */
     protected captureRenderState(): unknown {
         const currentPage = this.getPage(0)

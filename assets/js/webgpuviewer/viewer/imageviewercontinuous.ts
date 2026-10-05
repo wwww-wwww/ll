@@ -13,7 +13,7 @@ import { GestureEvent, PointerStream, waitForCleanUp, waitForDown } from "./gest
 import { ImageViewerContinuousState } from "./imageviewercontinuousstate"
 
 /**
- * The continuous viewer's gestures - the port of `viewer/ImageViewerContinuous.kt`.
+ * The continuous viewer's gestures.
  *
  * Structurally the paged viewer's machine (tap / double tap / double-tap-drag zoom / pan-pinch),
  * but every transform lands on the viewer rather than on a page: there is one [scale] and one
@@ -31,7 +31,7 @@ export interface ContinuousGestureHost {
     longPressTimeout: number
 }
 
-/** Zoom-fling and pan-fling thresholds, in px/s - `abs(velocity) > n` in the Kotlin. */
+/** Zoom-fling and pan-fling thresholds, in px/s. */
 const ZOOM_FLING_VELOCITY = 200
 const PAN_FLING_VELOCITY = 400
 

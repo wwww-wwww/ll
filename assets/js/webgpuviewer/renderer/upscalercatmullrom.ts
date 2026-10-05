@@ -120,11 +120,11 @@ fn resolve_magnify(uv: vec2<f32>) -> vec4<f32> {
 `
 
 /**
- * [TileRenderer.upscaler]'s default - the port of `renderer/UpscalerCatmullRom.kt`: Catmull-Rom
- * over the 4x4 neighbourhood in linear light, with no passes of its own.
+ * [TileRenderer.upscaler]'s default: Catmull-Rom over the 4x4 neighbourhood in linear light, with
+ * no passes of its own.
  *
- * Also what every other [Upscaler] falls back to for the zoom its own passes leave over, which is
- * why [Upscaler.code] defaults to it.
+ * Also what every other [Upscaler] falls back to for the zoom its own passes leave over, hence
+ * [CATMULL_ROM_CODE] as their [code] too.
  */
 export class UpscalerCatmullRom extends Upscaler {
     override get code(): string {

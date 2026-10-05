@@ -4,7 +4,7 @@ import type { ImagePage } from "../viewer/imagepage"
 import { Transition, getCachedTexture } from "./transition"
 
 /**
- * Port of `TransitionFadeWhite` - a dip to white between the two pages.
+ * A dip to white between the two pages.
  *
  * Unlike [TransitionFade], which cross-fades the two directly, this is two half-length fades: the
  * outgoing page to white over the first half, then white to the incoming page over the second. So

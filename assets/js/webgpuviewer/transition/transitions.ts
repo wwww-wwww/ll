@@ -3,8 +3,7 @@ import type { TileRenderer } from "../renderer/tilerenderer"
 import type { ImagePage } from "../viewer/imagepage"
 import { Transition, beginClearedPass, blitCached, getCachedTexture } from "./transition"
 
-// The rest of the family lives in files of its own; re-exported here so callers have one
-// place to reach every transition, as the Kotlin package does.
+// Re-exported so callers have one place to reach every transition.
 export { TransitionCube, TransitionCubeOuter } from "./cube"
 export { TransitionFlip } from "./dualflip"
 export { TransitionFadeWhite } from "./fadewhite"
