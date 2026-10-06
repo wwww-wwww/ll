@@ -91,6 +91,25 @@ export class Reader extends ViewHook {
             }
         }
 
+        // Arrow cursor over the outer thirds; the canvas's own grabbing cursor wins mid-drag.
+        // Custom SVGs: browsers draw `w-resize`/`e-resize` differently (Firefox adds a bar).
+        const arrowCursor = (points: string) => {
+            const path = (stroke: string, width: number) =>
+                `<path d="${points}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`
+            return `url("data:image/svg+xml,${encodeURIComponent(
+                `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">${path("black", 7)}${path("white", 4)}</svg>`,
+            )}") 16 16, auto`
+        }
+        const leftCursor = arrowCursor("M20 5L9 16L20 27")
+        const rightCursor = arrowCursor("M12 5L23 16L12 27")
+        this.viewer.addEventListener("pointermove", e => {
+            if (e.pointerType !== "mouse") return
+            const rect = this.viewer.getBoundingClientRect()
+            const x = (e.clientX - rect.left) / rect.width
+            this.viewer.style.cursor = x < 0.33 ? leftCursor : x > 0.67 ? rightCursor : ""
+        })
+        this.viewer.addEventListener("pointerleave", () => (this.viewer.style.cursor = ""))
+
         // A long tap toggles fullscreen.
         this.viewer.onLongTap = () => {
             if (!document.fullscreenElement) this.viewer.requestFullscreen().catch(() => { })

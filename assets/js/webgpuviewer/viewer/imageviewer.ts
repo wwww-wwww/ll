@@ -16,7 +16,7 @@ import { WebGpuRenderer } from "../renderer/renderer"
 import { ImagePage } from "./imagepage"
 import { ImageViewerState } from "./imageviewerstate"
 import { ImageViewerContinuousState, SCROLL_THRESHOLD_PX } from "./imageviewercontinuousstate"
-import { handleContinuousGesture } from "./imageviewercontinuous"
+import { doubleTapZoom, handleContinuousGesture } from "./imageviewercontinuous"
 import {
     GestureEvent,
     PointerStream,
@@ -168,6 +168,9 @@ export class ImageViewerElement extends HTMLElement {
     /** Kind of the last pointer to go down - what [installPointerHandlers] judges a menu by. */
     private lastPointerType = "mouse"
 
+    /** Where the last press went down, for telling a drag from a click. */
+    private downPosition: Offset | null = null
+
     private installPointerHandlers() {
         const signal = this.abort!.signal
 
@@ -176,16 +179,32 @@ export class ImageViewerElement extends HTMLElement {
             e => {
                 // Before the button filter, so a right-click still identifies itself.
                 this.lastPointerType = e.pointerType
-                if (e.button !== 0 && e.pointerType === "mouse") return
+                if (e.button !== 0 && e.button !== 1 && e.pointerType === "mouse") return
                 this.canvas.setPointerCapture(e.pointerId)
                 e.preventDefault()
-                // The stylesheets style `canvas.grabbing` with a grab cursor.
-                this.canvas.classList.toggle("grabbing", true)
+                this.downPosition = this.toLocal(e)
                 this.stream.handle(e, "down")
             },
             { signal },
         )
-        this.addEventListener("pointermove", e => this.stream.handle(e, "move"), { signal })
+        this.addEventListener(
+            "pointermove",
+            e => {
+                this.stream.handle(e, "move")
+                // The stylesheets style `canvas.grabbing` with a grab cursor, shown once the
+                // press has moved past the touch slop - a plain click isn't a drag.
+                if (
+                    this.downPosition &&
+                    this.stream.pressedCount > 0 &&
+                    !this.canvas.classList.contains("grabbing")
+                ) {
+                    const p = this.toLocal(e)
+                    const d = { x: p.x - this.downPosition.x, y: p.y - this.downPosition.y }
+                    if (distance(d) > this.touchSlop) this.canvas.classList.toggle("grabbing", true)
+                }
+            },
+            { signal },
+        )
         this.addEventListener(
             "pointerup",
             e => {
@@ -337,6 +356,26 @@ export class ImageViewerElement extends HTMLElement {
         }
     }
 
+    /** Double tap's zoom toggle at [position]; a middle click does the same. */
+    private async doubleTapZoom(position: Offset, pageTurnJob: Job | null = null) {
+        const state = this.state
+        if (!state.doubleTapZoomEnabled) return
+        if (state instanceof ImageViewerContinuousState) {
+            doubleTapZoom(state, position)
+            return
+        }
+        const tapX = position.x / state.width
+        const tapY = position.y / state.height
+        // Let any in-progress page turn finish committing first.
+        await pageTurnJob?.join()
+        const zoomPage = state.getPage(0)
+        if (!zoomPage) return
+        zoomPage.animateTo({
+            origin: { x: tapX, y: tapY },
+            targetScale: zoomPage.atHomeScale ? zoomPage.doubleTapScale : zoomPage.homeScale,
+        })
+    }
+
     private async handleGesture(firstEvent: GestureEvent) {
         const continuous = this._state
         if (continuous instanceof ImageViewerContinuousState) {
@@ -401,11 +440,20 @@ export class ImageViewerElement extends HTMLElement {
             this.touchSlop,
         )
 
+        // Middle click zooms like a double tap; dragging it pans like the left button.
+        if (cleanUp && firstEvent.raw.pointerType === "mouse" && firstEvent.raw.button === 1) {
+            cancelLongPress()
+            await this.doubleTapZoom(firstPosition, pageTurnJob)
+            return
+        }
+
         if (cleanUp) {
             cancelLongPress()
             // A stop settles below and fires no tap, but still waits out the double tap window:
             // it can be the first of a pair.
-            const secondDown = await waitForDown(this.stream, DOUBLE_TAP_TIMEOUT)
+            // A mouse has no double click: tap now.
+            const isMouse = firstEvent.raw.pointerType === "mouse"
+            const secondDown = isMouse ? null : await waitForDown(this.stream, DOUBLE_TAP_TIMEOUT)
 
             if (!secondDown) {
                 pageTurnJob?.cancel()
@@ -433,18 +481,7 @@ export class ImageViewerElement extends HTMLElement {
             )
 
             if (secondCleanUp) {
-                // Double tap - let any in-progress page turn finish committing first.
-                if (!state.doubleTapZoomEnabled) return
-                const tapX = secondDown.current.x / state.width
-                const tapY = secondDown.current.y / state.height
-                await pageTurnJob?.join()
-                const zoomPage = state.getPage(0)
-                if (!zoomPage) return
-                zoomPage.animateTo({
-                    origin: { x: tapX, y: tapY },
-                    targetScale:
-                        zoomPage.atHomeScale ? zoomPage.doubleTapScale : zoomPage.homeScale,
-                })
+                await this.doubleTapZoom(secondDown.current, pageTurnJob)
                 return
             }
 
@@ -585,6 +622,8 @@ export class ImageViewerElement extends HTMLElement {
             while (true) {
                 const event = await this.stream.next()
                 cancelled = event.type === "cancel"
+                // The hold fired: let go there and then, ignoring whatever the finger does next.
+                if (longPress.longPressed) break
                 if (cancelled) {
                     longPress.cancelLongPress()
                     break

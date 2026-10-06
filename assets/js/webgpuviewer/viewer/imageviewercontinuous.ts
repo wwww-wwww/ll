@@ -74,11 +74,19 @@ export async function handleContinuousGesture(
 
     const cleanUp = await waitForCleanUp(stream, firstDownId, host.doubleTapTimeout, host.touchSlop)
 
+    // Middle click zooms like a double tap; dragging it pans like the left button.
+    if (cleanUp !== null && firstEvent.raw.pointerType === "mouse" && firstEvent.raw.button === 1) {
+        longPressJob?.cancel()
+        if (state.doubleTapZoomEnabled) doubleTapZoom(state, firstPosition)
+        return
+    }
+
     if (cleanUp !== null) {
         longPressJob?.cancel()
         // Tap - wait for a double tap. A touch that only stopped motion waits too: no single tap
-        // below, but it can still be the first of a pair.
-        const secondDown = await waitForDown(stream, host.doubleTapTimeout)
+        // below, but it can still be the first of a pair. A mouse has no double click: tap now.
+        const isMouse = firstEvent.raw.pointerType === "mouse"
+        const secondDown = isMouse ? null : await waitForDown(stream, host.doubleTapTimeout)
         if (secondDown === null) {
             if (!stoppedMotion) {
                 state.onTap?.({
@@ -110,7 +118,7 @@ export async function handleContinuousGesture(
 }
 
 /** Double tap: toggle between the state's minScale and doubleTapScale, anchored at the tap. */
-function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
+export function doubleTapZoom(state: ImageViewerContinuousState, position: Offset) {
     const py = position.y / state.height
     const zoomedIn = state.scale > state.minScale + 0.1
 
@@ -328,6 +336,8 @@ async function dragGesture(
             const event = await stream.next()
             const change = event.changes[0]
             if (!change) break
+            // The hold fired: let go there and then, ignoring whatever the finger does next.
+            if (longPressed()) break
 
             const multi = event.changes.length > 1 && event.changes.every(c => c.pressed)
             if (multi && single) {
