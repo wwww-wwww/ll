@@ -25,7 +25,7 @@ export * from "./trim"
 
 export { WebGpuRenderer } from "./renderer/renderer"
 export { Image, BUFFER_SIZE } from "./renderer/image"
-export type { ImageOptions, MipMapForDraw, TileForDraw } from "./renderer/image"
+export type { ImageOptions, MipMapForDraw, Placement, TileForDraw } from "./renderer/image"
 export { Mipmap, Quad } from "./renderer/mipmap"
 export type { TileRect } from "./renderer/mipmap"
 export { RenderPage, Variant } from "./renderer/renderpage"

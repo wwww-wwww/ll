@@ -19,6 +19,7 @@ import { ImageViewerContinuousState, SCROLL_THRESHOLD_PX } from "./imageviewerco
 import { doubleTapZoom, handleContinuousGesture } from "./imageviewercontinuous"
 import {
     GestureEvent,
+    PointerInfo,
     PointerStream,
     VelocityTracker,
     waitForCleanUp,
@@ -111,7 +112,7 @@ export class ImageViewerElement extends HTMLElement {
     }
 
     /** Element-relative position in the same pixel space as `state.width`/`state.height`. */
-    private toLocal = (e: PointerEvent): Offset => {
+    private toLocal = (e: { clientX: number; clientY: number }): Offset => {
         const rect = this.getBoundingClientRect()
         const dpr = window.devicePixelRatio
         return { x: (e.clientX - rect.x) * dpr, y: (e.clientY - rect.y) * dpr }
@@ -204,6 +205,45 @@ export class ImageViewerElement extends HTMLElement {
                 }
             },
             { signal },
+        )
+        // Firefox on Android sends pointermove for only one touch until the gesture ends;
+        // touchmove carries every finger, filling the gap.
+        this.addEventListener(
+            "touchmove",
+            e => {
+                if (e.touches.length < 2) return
+                for (const t of e.touches) {
+                    const pointerId = this.stream.touchPointerId(
+                        t.identifier,
+                        this.toLocal(t),
+                    )
+                    if (pointerId === null) continue
+                    this.stream.handle(
+                        new PointerEvent("pointermove", {
+                            pointerId,
+                            pointerType: "touch",
+                            clientX: t.clientX,
+                            clientY: t.clientY,
+                        }),
+                        "move",
+                    )
+                }
+            },
+            { signal, passive: true },
+        )
+        this.addEventListener(
+            "touchend",
+            e => {
+                for (const t of e.changedTouches) this.stream.forgetTouch(t.identifier)
+            },
+            { signal, passive: true },
+        )
+        this.addEventListener(
+            "touchcancel",
+            e => {
+                for (const t of e.changedTouches) this.stream.forgetTouch(t.identifier)
+            },
+            { signal, passive: true },
         )
         this.addEventListener(
             "pointerup",
@@ -485,7 +525,7 @@ export class ImageViewerElement extends HTMLElement {
                 return
             }
 
-            await this.doubleTapDragZoom(page, secondDown.id, secondDown.current)
+            await this.doubleTapDragZoom(page, secondDown)
             return
         }
 
@@ -498,10 +538,12 @@ export class ImageViewerElement extends HTMLElement {
     }
 
     /** The vertical drag after a double tap that scales continuously, and its fling. */
-    private async doubleTapDragZoom(page: ImagePage, dragPointerId: number, origin: Offset) {
+    private async doubleTapDragZoom(page: ImagePage, secondDown: PointerInfo) {
         const state = this.state
+        const dragPointerId = secondDown.id
+        const origin = secondDown.current
         const velocityTracker = new VelocityTracker()
-        velocityTracker.add(performance.now(), origin)
+        velocityTracker.addChange(secondDown)
 
         const originalScale = page.scale
         const originalX = page.x
@@ -518,7 +560,7 @@ export class ImageViewerElement extends HTMLElement {
                 const change = event.changes.find(c => c.id === dragPointerId)
                 if (!change || change.changedToUp) break
 
-                velocityTracker.add(event.raw.timeStamp, change.current)
+                velocityTracker.addChange(change)
 
                 if (event.positionChanged()) {
                     const pan = event.pan()
@@ -613,7 +655,7 @@ export class ImageViewerElement extends HTMLElement {
         if (wasScrolling) state.firstPos = firstPosition
 
         const velocityTracker = new VelocityTracker()
-        velocityTracker.add(firstEvent.raw.timeStamp, firstPosition)
+        velocityTracker.addChange(firstEvent.changes.find(c => c.id === firstDownId)!)
 
         page.animationJob?.cancel()
 
@@ -648,12 +690,12 @@ export class ImageViewerElement extends HTMLElement {
                         pointerCountChanged = true
                     }
                     if (!pageTurning) {
-                        velocityTracker.add(event.raw.timeStamp, change.current)
+                        velocityTracker.addChange(change)
                         single = false
                         scaleOrigin = { x: centroid.x / state.width, y: centroid.y / state.height }
                     }
                 } else if (single) {
-                    velocityTracker.add(event.raw.timeStamp, change.current)
+                    velocityTracker.addChange(change)
                 }
 
                 if (!pointerCountChanged) {

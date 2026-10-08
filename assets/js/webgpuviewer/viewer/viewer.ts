@@ -75,6 +75,9 @@ export const enum SpreadPosition {
  */
 const DOWNLOAD_SHARE = 0.9
 
+/** How far two pages' aspect ratios may differ and still count as the same shape. */
+const PAIR_ASPECT_TOLERANCE = 0.1
+
 /** True for the rejection an [AbortController] produces, which is a cancellation, not a failure. */
 function isAbort(e: unknown): boolean {
     return e instanceof DecodeAborted || (e instanceof DOMException && e.name === "AbortError")
@@ -244,6 +247,14 @@ class ViewerPage {
      */
     get isDecoded(): boolean {
         return this.progress.length === 0 && this.imagePage.isDecoded
+    }
+
+    /** The decoded image's shape, or null while this page is still a placeholder. */
+    get aspectRatio(): number | null {
+        const it = this.imagePage
+        if (!(it instanceof ImageSingle)) return null
+        const height = it.trimHeight
+        return it.isDecoded && height > 0 ? it.trimWidth / height : null
     }
 }
 
@@ -1512,6 +1523,12 @@ export class Viewer extends ImageViewerElement {
     // Fit modes
     // -----------------------------------------------------------------------------------------
 
+    /** The cached page whose [ImagePage] is [page]. */
+    private viewerPageFor(page: ImagePage): ViewerPage | undefined {
+        for (const p of this.pageCache.values()) if (p.imagePage === page) return p
+        return undefined
+    }
+
     /**
      * A double-page scan on a portrait screen starts zoomed to one half
      * rather than shrunk to fit the whole spread.
@@ -1531,8 +1548,18 @@ export class Viewer extends ImageViewerElement {
 
         const aspectRatio = Math.min(page.trimWidth / page.trimHeight, image.width / image.height)
 
-        // Wide page: half the image width is wider than the screen aspect ratio.
-        if (aspectRatio <= (2 * screenW) / screenH) return false
+        // Wide: its half is wider than the screen, or shaped like a decoded neighbour.
+        const at = this.viewerPageFor(page)?.index
+        const isWide =
+            (at !== undefined &&
+                [at - 1, at + 1].some(i => {
+                    const ratio = this.pageList[i]?.aspectRatio
+                    return (
+                        ratio != null && Math.abs(aspectRatio / 2 - ratio) <= PAIR_ASPECT_TOLERANCE
+                    )
+                })) ||
+            aspectRatio > (2 * screenW) / screenH
+        if (!isWide) return false
 
         // Positioning needs the parent.
         page.parent = this.state

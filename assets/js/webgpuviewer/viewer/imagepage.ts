@@ -359,8 +359,10 @@ export class ImagePage {
         return this._parent?.isOnScreen(this) === true
     }
 
-    /** Called as this page joins the drawn ones. */
-    cameOnScreen() { }
+    /** This page joined the drawn ones. Redraws: earlier invalidates were dropped. */
+    cameOnScreen() {
+        this.onInvalidate?.()
+    }
 
     /** True when drawing this page draws [other] - itself, or a side [ImageSpread] overrides in. */
     covers(other: ImagePage): boolean {
@@ -1010,6 +1012,7 @@ export class ImageSingle extends ImagePage {
     private wakeShown: (() => void) | null = null
 
     override cameOnScreen() {
+        super.cameOnScreen()
         this.wakeShown?.()
     }
 

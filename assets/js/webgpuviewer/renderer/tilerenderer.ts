@@ -33,7 +33,6 @@ export function solveImagePlacement(
 }
 
 export const TILE_SIZE = 256
-
 const TILES_PER_BATCH_FALLBACK = 1
 const BATCH_TARGET_NS = 4_000_000
 const MAX_TILES_PER_BATCH = 8
@@ -173,7 +172,8 @@ class GridRange {
 /**
  * Shared placement math for a page's tile grid: the tile region the viewport (plus a one-tile
  * margin) wants, clipped to the page's own extent, and the snapped clip rect the shader clamps
- * blits to.
+ * blits to. A [crop], in the page's pixels, narrows both to it: nothing outside is generated or
+ * drawn.
  */
 interface GridPlacement {
     ts: number
@@ -1099,16 +1099,25 @@ export class TileRenderer {
         centerYOffset: number,
         pageScale: number,
         tileSize: number,
+        crop: Rect | null = null,
     ): GridPlacement | null {
         const ts = tileSize
-        const [leftHalf, rightHalf] = this.pageHorizontalExtent(page, pageScale)
-        const halfH = (pageScale * page.height) / 2
-        if (leftHalf + rightHalf <= 0 || halfH <= 0) return null
+        // Drawn extent from the page's centre, narrowed to [crop].
+        let [left, right] = this.pageHorizontalExtent(page, pageScale)
+        let top = (pageScale * page.height) / 2
+        let bottom = top
+        if (crop) {
+            left = Math.min(left, pageScale * (page.width / 2 - crop.left))
+            right = Math.min(right, pageScale * (crop.right - page.width / 2))
+            top = Math.min(top, pageScale * (page.height / 2 - crop.top))
+            bottom = Math.min(bottom, pageScale * (crop.bottom - page.height / 2))
+        }
+        if (left + right <= 0 || top + bottom <= 0) return null
 
-        const wantL = Math.max(-anchorX - ts, -leftHalf)
-        const wantR = Math.min(dst.width - anchorX + ts, rightHalf)
-        const wantT = Math.max(-anchorY - ts, centerYOffset - halfH)
-        const wantB = Math.min(dst.height - anchorY + ts, centerYOffset + halfH)
+        const wantL = Math.max(-anchorX - ts, -left)
+        const wantR = Math.min(dst.width - anchorX + ts, right)
+        const wantT = Math.max(-anchorY - ts, centerYOffset - top)
+        const wantB = Math.min(dst.height - anchorY + ts, centerYOffset + bottom)
 
         const snapX = Math.round(anchorX)
         const snapY = Math.round(anchorY)
@@ -1117,10 +1126,10 @@ export class TileRenderer {
             ts,
             snapX,
             snapY,
-            clipL: snapX - leftHalf,
-            clipT: snapY + centerYOffset - halfH,
-            clipR: snapX + rightHalf,
-            clipB: snapY + centerYOffset + halfH,
+            clipL: snapX - left,
+            clipT: snapY + centerYOffset - top,
+            clipR: snapX + right,
+            clipB: snapY + centerYOffset + bottom,
             wantL,
             wantR,
             wantT,
@@ -1375,6 +1384,7 @@ export class TileRenderer {
             suppressGeneration,
             false,
             true,
+            crop,
         )
     }
 
@@ -1390,6 +1400,7 @@ export class TileRenderer {
         suppressGeneration: boolean,
         applyRetainWindow: boolean,
         useStencilMask: boolean = false,
+        crop: Rect | null = null,
     ): boolean {
         if (page.destroyed || !page.highQuality) return false
         if (!page.hasUploadedImage) return false
@@ -1442,6 +1453,7 @@ export class TileRenderer {
             centerYOffset,
             pageScale,
             st.tileSize,
+            crop,
         )
         if (!gp) {
             st.pending.clear()

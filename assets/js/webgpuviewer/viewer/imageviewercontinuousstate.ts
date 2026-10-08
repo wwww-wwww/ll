@@ -11,6 +11,7 @@ import {
     spring,
 } from "../util"
 import { Draw } from "../draw/draw"
+import type { Image } from "../renderer/image"
 import { RenderPage } from "../renderer/renderpage"
 import { WebGpuRenderer } from "../renderer/renderer"
 import { solveImagePlacement } from "../renderer/tilerenderer"
@@ -240,6 +241,22 @@ export class ImageViewerContinuousState extends ImageViewerState {
         this._cropBorders = value
         this.currentPageHeight = null
         this.invalidate()
+    }
+
+    /**
+     * [crop], in [page]'s pixels, in [image]'s - placed [offsetX] from the page's centre and
+     * [imageScale] times over, as [ImageSingle.forEachImage] gives it.
+     */
+    private cropInImage(
+        crop: Rect,
+        page: ImageSingle,
+        image: Image,
+        offsetX: number,
+        imageScale: number,
+    ): Rect {
+        const x = (px: number) => (px - page.width / 2 - offsetX) / imageScale - image.x + image.width / 2
+        const y = (py: number) => (py - page.height / 2) / imageScale - image.y + image.height / 2
+        return new Rect(x(crop.left), y(crop.top), x(crop.right), y(crop.bottom))
     }
 
     /** The part of [page] drawn, in its own pixels; null for all of it. */
@@ -887,32 +904,6 @@ export class ImageViewerContinuousState extends ImageViewerState {
         }
     }
 
-    /**
-     * Limits [pass] to [vp]'s content band, where a cropped page's margins would otherwise land
-     * on its neighbours. False when none of it is on screen.
-     */
-    private scissorToSlot(
-        pass: GPURenderPassEncoder,
-        anchorX: number,
-        anchorY: number,
-        vp: VisiblePage,
-        scale: number,
-        dstW: number,
-        dstH: number,
-    ): boolean {
-        const l = coerceIn(Math.round(anchorX - (scale * dstW) / 2), 0, Math.trunc(dstW))
-        const r = coerceIn(Math.round(anchorX + (scale * dstW) / 2), 0, Math.trunc(dstW))
-        const t = coerceIn(Math.round(anchorY + scale * vp.docTop), 0, Math.trunc(dstH))
-        const b = coerceIn(
-            Math.round(anchorY + scale * (vp.docTop + vp.contentHeight)),
-            0,
-            Math.trunc(dstH),
-        )
-        if (r <= l || b <= t) return false
-        pass.setScissorRect(l, t, r - l, b - t)
-        return true
-    }
-
     protected override renderSnapshot(
         encoder: GPUCommandEncoder,
         texture: GPUTexture,
@@ -961,10 +952,6 @@ export class ImageViewerContinuousState extends ImageViewerState {
                         crop ? pageScale * (page.width / 2 - (crop.left + crop.right) / 2) : 0
                     const shiftY =
                         crop ? pageScale * (page.height / 2 - (crop.top + crop.bottom) / 2) : 0
-                    if (
-                        crop &&
-                        !this.scissorToSlot(pass, anchorX, anchorY, vp, s.scale, dstW, dstH)
-                    ) continue
 
                     // Tiles first, marking the stencil; the sampler below shades only what is
                     // left, and nothing at all once the draw reports full coverage.
@@ -1015,10 +1002,10 @@ export class ImageViewerContinuousState extends ImageViewerState {
                                 true,
                                 true,
                                 page.fade,
+                                crop ? this.cropInImage(crop, page, image, srcOffsetX, sideScale) : null,
                             )
                         })
                     }
-                    if (crop) pass.setScissorRect(0, 0, texture.width, texture.height)
                 }
             })
         } else {

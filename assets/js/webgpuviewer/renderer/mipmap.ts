@@ -1,5 +1,9 @@
 import { FrameBudget, Rect, coerceIn, yieldToEventLoop } from "../util"
+import { RenderPage } from "./renderpage"
 import { WebGpuRenderer } from "./renderer"
+
+/** A tile the driver could not allocate - see [Mipmap.create]'s `checkOom`. */
+export class TextureOutOfMemory extends Error { }
 
 /**
  * One mip level, cut into square tiles.
@@ -103,6 +107,9 @@ export class Mipmap {
      * Yields between chunks, so it must run outside the render lock ([WebGpuRenderer.unlocked])
      * for those yields to be worth anything. Returned only once every chunk has landed, so no caller
      * can sample a half-filled texture.
+     *
+     * With [checkOom], a tile the driver cannot allocate throws [TextureOutOfMemory] instead of
+     * leaving an error texture behind - for oversized tiles a caller can retry smaller.
      */
     static async create(
         pixels: Uint8Array,
@@ -110,6 +117,7 @@ export class Mipmap {
         height: number,
         scale: number,
         tilesize: number,
+        checkOom: boolean = false,
     ): Promise<Mipmap> {
         const mipmap = new Mipmap(
             width,
@@ -120,7 +128,7 @@ export class Mipmap {
             tilesize,
         )
         try {
-            await mipmap.upload(pixels)
+            await mipmap.upload(pixels, checkOom)
         } catch (e) {
             // Yielding makes the upload interruptible, so a half-built level can exist. Free what
             // landed before rethrowing: the caller never sees this instance.
@@ -182,7 +190,8 @@ export class Mipmap {
                 const x = c * this.tilesize
                 const tileWidth = Math.min((c + 1) * this.tilesize, this.width) - c * this.tilesize
 
-                const texture = Mipmap.takeTexture(tileWidth, tileHeight)
+                // Aligned, for [writeSpan]: up to three padding columns, never read.
+                const texture = Mipmap.takeTexture(Mipmap.alignedWidth(tileWidth), tileHeight)
 
                 await WebGpuRenderer.pacedUpload(() =>
                     device.queue.copyExternalImageToTexture(
@@ -242,8 +251,14 @@ export class Mipmap {
      */
     private static readonly UPLOAD_CHUNK_BYTES = 1 << 20
 
+    /** Texel multiple every tile copy is widened to - see [writeSpan]. Two isn't enough. */
+    private static readonly COPY_ALIGNMENT = 4
+
+    /** [writeSpan]'s padded rows, grown, never shrunk. */
+    private static padScratch: Uint8Array | null = null
+
     /** Allocate the tile textures and copy [pixels] into them a chunk at a time. */
-    private async upload(pixels: Uint8Array) {
+    private async upload(pixels: Uint8Array, checkOom: boolean) {
         const device = Mipmap.device
         const need = this.width * this.height * 4
         if (pixels.byteLength < need) {
@@ -262,24 +277,21 @@ export class Mipmap {
                 // An allocation cannot be divided, so it gets its own turn rather than landing
                 // on the back of the chunk just uploaded.
                 await yieldToEventLoop()
-                const texture = Mipmap.takeTexture(tileWidth, tileHeight)
+                if (checkOom) device.pushErrorScope("out-of-memory")
+                // Aligned, for [writeSpan]: up to three padding columns, never read.
+                const texture = Mipmap.takeTexture(Mipmap.alignedWidth(tileWidth), tileHeight)
+                if (checkOom && (await device.popErrorScope())) {
+                    // Invalid, so not pooled by [cleanup].
+                    texture.destroy()
+                    throw new TextureOutOfMemory(`${tileWidth}x${tileHeight} tile`)
+                }
                 this.textures.push(texture)
                 this.textureViews.push(texture.createView())
 
                 let row = 0
                 while (row < tileHeight) {
                     const rows = Math.min(rowsPerChunk, tileHeight - row)
-
-                    device.queue.writeTexture(
-                        { texture, origin: { x: 0, y: row } },
-                        pixels,
-                        {
-                            offset: ((y + row) * this.width + x) * 4,
-                            bytesPerRow: this.width * 4,
-                            rowsPerImage: this.height,
-                        },
-                        { width: tileWidth, height: rows },
-                    )
+                    this.writeSpan(texture, pixels, x, tileWidth, x, x + tileWidth, y + row, row, rows)
 
                     row += rows
                     await budget.next()
@@ -328,7 +340,6 @@ export class Mipmap {
      * like [upload]. False if cleaned up part way.
      */
     async update(pixels: Uint8Array, rect: Rect | null = null): Promise<boolean> {
-        const device = Mipmap.device
         const need = this.width * this.height * 4
         if (pixels.byteLength < need) {
             throw new Error(`pixels hold ${pixels.byteLength} B, ${this.width}x${this.height} needs ${need}`)
@@ -354,15 +365,16 @@ export class Mipmap {
                     // Cleanup can only land between chunks.
                     if (this.textures.length !== tileCount) return false
                     const rows = Math.min(rowsPerChunk, y1 - y)
-                    device.queue.writeTexture(
-                        { texture: this.textures[r * this.tilesCols + c], origin: { x: x0 - tileX, y: y - tileY } },
+                    this.writeSpan(
+                        this.textures[r * this.tilesCols + c],
                         pixels,
-                        {
-                            offset: (y * this.width + x0) * 4,
-                            bytesPerRow: this.width * 4,
-                            rowsPerImage: this.height,
-                        },
-                        { width: x1 - x0, height: rows },
+                        tileX,
+                        Math.min(this.tilesize, this.width - tileX),
+                        x0,
+                        x1,
+                        y,
+                        y - tileY,
+                        rows,
                     )
                     y += rows
                     await budget.next()
@@ -374,6 +386,73 @@ export class Mipmap {
 
     private static ceilDiv(a: number, b: number) {
         return Math.floor((a + b - 1) / b)
+    }
+
+    private static alignedWidth(w: number) {
+        const a = Mipmap.COPY_ALIGNMENT
+        return Math.floor((w + a - 1) / a) * a
+    }
+
+    /**
+     * Copies columns [x0, x1) of rows [y, y + rows) of [pixels], a full image of this level, into
+     * [texture] - the tile at column [tileX], [tileWidth] wide - from its row [dstY].
+     *
+     * Copies are a multiple of [COPY_ALIGNMENT] texels wide: a PowerVR Rogue driver loses the
+     * device, reported as out-of-memory, on other widths, and padding only the texture or the
+     * source stride doesn't help. Past the image's columns the rows are packed with zeros, never
+     * read - draws clamp to [Placement]'s content.
+     */
+    private writeSpan(
+        texture: GPUTexture,
+        pixels: Uint8Array,
+        tileX: number,
+        tileWidth: number,
+        x0: number,
+        x1: number,
+        y: number,
+        dstY: number,
+        rows: number,
+    ) {
+        const align = Mipmap.COPY_ALIGNMENT
+        const start = Math.floor((x0 - tileX) / align) * align
+        const end = start + Mipmap.alignedWidth(x1 - tileX - start)
+        // Columns the image has; past them, only padding.
+        const real = Math.min(end, tileWidth)
+        const spanBytes = (end - start) * 4
+
+        let layout: GPUTexelCopyBufferLayout
+        let data: Uint8Array
+        if (end === real) {
+            data = pixels
+            layout = {
+                offset: (y * this.width + tileX + start) * 4,
+                bytesPerRow: this.width * 4,
+                rowsPerImage: this.height,
+            }
+        } else {
+            const need = spanBytes * rows
+            let scratch = Mipmap.padScratch
+            if (!scratch || scratch.byteLength < need) {
+                scratch = new Uint8Array(need)
+                Mipmap.padScratch = scratch
+            }
+            data = scratch
+            const realBytes = (real - start) * 4
+            for (let r = 0; r < rows; r++) {
+                const rowStart = ((y + r) * this.width + tileX + start) * 4
+                const out = r * spanBytes
+                data.set(pixels.subarray(rowStart, rowStart + realBytes), out)
+                data.fill(0, out + realBytes, out + spanBytes)
+            }
+            layout = { offset: 0, bytesPerRow: spanBytes, rowsPerImage: rows }
+        }
+
+        Mipmap.device.queue.writeTexture(
+            { texture, origin: { x: start, y: dstY } },
+            data,
+            layout,
+            { width: end - start, height: rows },
+        )
     }
 
     /**
@@ -392,7 +471,8 @@ export class Mipmap {
         let buffer = arr[index]
         if (!buffer) {
             buffer = Mipmap.device.createBuffer({
-                size: 32,
+                // Plus the page's alpha, which the tile shaders take after the placement.
+                size: RenderPage.PLACEMENT_BYTES + 16,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             })
             arr[index] = buffer
@@ -428,6 +508,8 @@ export class Mipmap {
                     view: this.textureViews[idx],
                     x: col * this.tilesize,
                     y: row * this.tilesize,
+                    width: Math.min(this.tilesize, this.width - col * this.tilesize),
+                    height: Math.min(this.tilesize, this.height - row * this.tilesize),
                     uniform: this.tileUniformFor(idx),
                 })
             }
@@ -484,7 +566,6 @@ export class Mipmap {
         const c0 = Math.min(tX, this.tilesCols - 1)
         const c1 = Math.min(tX + 1, this.tilesCols - 1)
 
-        const t00 = this.textures[r0 + c0]
         const quad = new Quad(
             [
                 this.textures[r0 + c0],
@@ -498,8 +579,8 @@ export class Mipmap {
                 this.textureViews[r1 + c0],
                 this.textureViews[r1 + c1],
             ],
-            tX * t00.width,
-            tY * t00.height,
+            tX * this.tilesize,
+            tY * this.tilesize,
         )
         this.lastQuadTX = tX
         this.lastQuadTY = tY
@@ -526,6 +607,9 @@ export interface TileRect {
     view: GPUTextureView
     x: number
     y: number
+    /** Image texels in the tile - the texture may be wider, see [Mipmap.writeSpan]. */
+    width: number
+    height: number
     uniform: GPUBuffer
 }
 

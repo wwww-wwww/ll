@@ -2,7 +2,7 @@ import { Rect, argb, coerceIn } from "../util"
 import { decodeToPixels, resize } from "../imageutil"
 import { detectBackgroundCpu, findAllCpu } from "../trim"
 import { DecodedImage, closeLevels } from "../decoder"
-import { Mipmap, Quad } from "./mipmap"
+import { Mipmap, Quad, TextureOutOfMemory } from "./mipmap"
 import { WebGpuRenderer } from "./renderer"
 
 export const BUFFER_SIZE = 96
@@ -549,15 +549,22 @@ export class Image {
         const vy = Math.round(-adjustedY * dst.height * mipmap.scale + mipmap.height / 2)
 
         const quad = mipmap.getQuad(vx, vy)
+        const levelScale = scale / mipmap.scale
 
         return {
             mipmap,
             quad,
-            x: (0.5 / scale + adjustedX) * mipmap.scale + (quad.x - 0.5 * mipmap.width) / dst.width,
-            y:
+            placement: Placement.whole(
+                dst,
+                (0.5 / scale + adjustedX) * mipmap.scale + (quad.x - 0.5 * mipmap.width) / dst.width,
                 (0.5 / scale + adjustedY) * mipmap.scale +
-                (quad.y - 0.5 * mipmap.height) / dst.height,
-            scale: scale / mipmap.scale,
+                    (quad.y - 0.5 * mipmap.height) / dst.height,
+                levelScale,
+                // Image texels in the window: two tiles, or the rest of the level.
+                Math.min(mipmap.width - quad.x, 2 * mipmap.tilesize),
+                Math.min(mipmap.height - quad.y, 2 * mipmap.tilesize),
+            ),
+            scale: levelScale,
         }
     }
 
@@ -566,8 +573,17 @@ export class Image {
      * - the fast/plain paths' answer to [prepareForRender]'s fixed one-window quad, which can
      * silently drop content once the viewport needs more than that window covers. No coarse-level
      * guard is needed here since any viewport is just whichever tiles it happens to overlap.
+     *
+     * [src], in this image's pixels, crops the draw: each tile draws only its part inside, in
+     * place.
      */
-    prepareTilesForRender(dst: GPUTexture, x: number, y: number, scale: number): TileForDraw[] {
+    prepareTilesForRender(
+        dst: GPUTexture,
+        x: number,
+        y: number,
+        scale: number,
+        src: Rect | null = null,
+    ): TileForDraw[] {
         if (this.mipmaps.length === 0) return []
 
         const level = Math.max(
@@ -586,19 +602,60 @@ export class Image {
         const halfW = (dst.width * mipmap.scale) / (2 * scale)
         const halfH = (dst.height * mipmap.scale) / (2 * scale)
 
-        return mipmap.tilesInRect(cx - halfW, cy - halfH, cx + halfW, cy + halfH).map(tile => ({
-            // Same reconstruction prepareForRender uses for quad.x/quad.y, evaluated at this
-            // tile's own offset instead - the formula was already general, it just happened
-            // to only ever be evaluated at one window's offset before.
-            texture: tile.texture,
-            view: tile.view,
-            uniform: tile.uniform,
-            x: (0.5 / scale + adjustedX) * mipmap.scale + (tile.x - 0.5 * mipmap.width) / dst.width,
-            y:
-                (0.5 / scale + adjustedY) * mipmap.scale +
-                (tile.y - 0.5 * mipmap.height) / dst.height,
-            scale: scale / mipmap.scale,
-        }))
+        // Crop in level texels; the whole level if none.
+        const s = mipmap.scale
+        const srcL = src ? src.left * s : 0
+        const srcT = src ? src.top * s : 0
+        const srcR = src ? src.right * s : mipmap.width
+        const srcB = src ? src.bottom * s : mipmap.height
+
+        const levelScale = scale / mipmap.scale
+        const tiles = mipmap.tilesInRect(
+            Math.max(cx - halfW, srcL),
+            Math.max(cy - halfH, srcT),
+            Math.min(cx + halfW, srcR),
+            Math.min(cy + halfH, srcB),
+        )
+        const result: TileForDraw[] = []
+        for (const tile of tiles) {
+            // Crop within this tile, in tile texels.
+            const l = Math.max(srcL - tile.x, 0)
+            const t = Math.max(srcT - tile.y, 0)
+            const r = Math.min(srcR - tile.x, tile.width)
+            const b = Math.min(srcB - tile.y, tile.height)
+            if (l >= r || t >= b) continue
+
+            // The tile's origin in target pixels: prepareForRender's quad.x/quad.y reconstruction,
+            // evaluated at this tile's offset.
+            const tileLeft =
+                levelScale *
+                ((0.5 / scale + adjustedX) * mipmap.scale * dst.width +
+                    tile.x -
+                    0.5 * mipmap.width)
+            const tileTop =
+                levelScale *
+                ((0.5 / scale + adjustedY) * mipmap.scale * dst.height +
+                    tile.y -
+                    0.5 * mipmap.height)
+            result.push({
+                texture: tile.texture,
+                view: tile.view,
+                uniform: tile.uniform,
+                placement: new Placement(
+                    tileLeft + levelScale * l,
+                    tileTop + levelScale * t,
+                    levelScale * (r - l),
+                    levelScale * (b - t),
+                    l,
+                    t,
+                    r - l,
+                    b - t,
+                    tile.width,
+                    tile.height,
+                ),
+            })
+        }
+        return result
     }
 }
 
@@ -610,16 +667,73 @@ class Level {
         readonly scale: number,
     ) { }
 
-    upload(): Promise<Mipmap> {
+    /**
+     * [MIPMAP_TILE_SIZE] bounds the smallest level, for shader speed. A larger level is only split
+     * where the device forces it, falling back to [MIPMAP_TILE_SIZE] tiles if one that big cannot
+     * be allocated.
+     */
+    async upload(): Promise<Mipmap> {
+        const single = WebGpuRenderer.maxTextureDimension2D
+        if ((this.w > MIPMAP_TILE_SIZE || this.h > MIPMAP_TILE_SIZE) && single > MIPMAP_TILE_SIZE) {
+            try {
+                return await Mipmap.create(this.pixels, this.w, this.h, this.scale, single, true)
+            } catch (e) {
+                if (!(e instanceof TextureOutOfMemory)) throw e
+                console.warn(
+                    `Renderer: ${e.message} out of memory, splitting ${this.w}x${this.h} at ${MIPMAP_TILE_SIZE}`,
+                )
+            }
+        }
         return Mipmap.create(this.pixels, this.w, this.h, this.scale, MIPMAP_TILE_SIZE)
+    }
+}
+
+/**
+ * Where a draw lands ([dstLeft].., target pixels), the bound texels mapped onto it
+ * ([srcLeft]..), and how many of those are image ([contentWidth]..) - reads clamp there.
+ */
+export class Placement {
+    constructor(
+        readonly dstLeft: number,
+        readonly dstTop: number,
+        readonly dstWidth: number,
+        readonly dstHeight: number,
+        readonly srcLeft: number,
+        readonly srcTop: number,
+        readonly srcWidth: number,
+        readonly srcHeight: number,
+        readonly contentWidth: number,
+        readonly contentHeight: number,
+    ) { }
+
+    /** All [width] x [height] texels, [scale] times over at normalised ([x], [y]). */
+    static whole(
+        dst: GPUTexture,
+        x: number,
+        y: number,
+        scale: number,
+        width: number,
+        height: number,
+    ): Placement {
+        return new Placement(
+            scale * x * dst.width,
+            scale * y * dst.height,
+            scale * width,
+            scale * height,
+            0,
+            0,
+            width,
+            height,
+            width,
+            height,
+        )
     }
 }
 
 export interface MipMapForDraw {
     mipmap: Mipmap
     quad: Quad
-    x: number
-    y: number
+    placement: Placement
     scale: number
 }
 
@@ -628,7 +742,5 @@ export interface TileForDraw {
     texture: GPUTexture
     view: GPUTextureView
     uniform: GPUBuffer
-    x: number
-    y: number
-    scale: number
+    placement: Placement
 }

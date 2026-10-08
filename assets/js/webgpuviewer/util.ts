@@ -468,32 +468,196 @@ export function animateDecay2d(
     })
 }
 
+// Compose's `splineBasedDecay`: Android's OverScroller fling curve.
+const SPLINE_INFLECTION = 0.35
+const SPLINE_START_TENSION = 0.5
+const SPLINE_P1 = SPLINE_INFLECTION * SPLINE_START_TENSION
+const SPLINE_P2 = SPLINE_INFLECTION
+const SPLINE_SAMPLES = 100
+const DECELERATION_RATE = Math.log(0.78) / Math.log(0.9)
+/** `ViewConfiguration.getScrollFriction()`. */
+const SCROLL_FRICTION = 0.015
+/** Gravity * inches per meter * 160 dp per inch * 0.84: per dp, times density for px. */
+const PHYSICAL_COEFFICIENT = 9.80665 * 39.37 * 160 * 0.84
+
+const splinePositions = (() => {
+    const positions = new Float32Array(SPLINE_SAMPLES + 1)
+    let xMin = 0
+    for (let i = 0; i < SPLINE_SAMPLES; i++) {
+        const alpha = i / SPLINE_SAMPLES
+        let xMax = 1
+        let x: number, coef: number
+        for (; ;) {
+            x = xMin + (xMax - xMin) / 2
+            coef = 3 * x * (1 - x)
+            const tx = coef * ((1 - x) * SPLINE_P1 + x * SPLINE_P2) + x * x * x
+            if (Math.abs(tx - alpha) < 1e-5) break
+            if (tx > alpha) xMax = x
+            else xMin = x
+        }
+        positions[i] = coef * ((1 - x) * SPLINE_START_TENSION + x) + x * x * x
+    }
+    positions[SPLINE_SAMPLES] = 1
+    return positions
+})()
+
+/**
+ * Spline fling over [initialVelocity] px/s, [density] px per dp. Ignores [animationScale], as
+ * Kotlin's `NormalMotionDurationScale`. [block] gets the distance travelled.
+ */
+export function animateSplineDecay(
+    initialVelocity: number,
+    density: number,
+    block: (value: number) => void,
+): Job {
+    const deceleration = SCROLL_FRICTION * PHYSICAL_COEFFICIENT * density
+    const speed = Math.abs(initialVelocity)
+    const l = Math.log((SPLINE_INFLECTION * speed) / deceleration)
+    const duration = speed === 0 ? 0 : Math.floor(1000 * Math.exp(l / (DECELERATION_RATE - 1)))
+    const distance =
+        deceleration * Math.exp((DECELERATION_RATE / (DECELERATION_RATE - 1)) * l)
+    const sign = Math.sign(initialVelocity)
+    return launch(async job => {
+        const start = performance.now()
+        while (true) {
+            const now = await nextFrame()
+            job.ensureActive()
+            // rAF's timestamp can predate `start`.
+            const t = duration > 0 ? Math.max(0, now - start) / duration : 1
+            const index = Math.floor(SPLINE_SAMPLES * t)
+            let coef = 1
+            if (index < SPLINE_SAMPLES) {
+                const tInf = index / SPLINE_SAMPLES
+                const dInf = splinePositions[index]
+                coef = dInf + (t - tInf) * (splinePositions[index + 1] - dInf) * SPLINE_SAMPLES
+            }
+            block(sign * distance * coef)
+            if (t >= 1) return
+        }
+    })
+}
+
 export function nextFrame(): Promise<number> {
     return new Promise(resolve => requestAnimationFrame(resolve))
 }
 
-/**
- * Pointer velocity over the last 100ms of samples, in pixels per second.
- */
-export class VelocityTracker {
-    private samples: { t: number; x: number; y: number }[] = []
+const VELOCITY_HISTORY_SIZE = 20
+const VELOCITY_HORIZON_MILLIS = 100
+const ASSUME_POINTER_STOPPED_MILLIS = 40
 
-    add(timeMillis: number, position: Offset) {
-        this.samples.push({ t: timeMillis, x: position.x, y: position.y })
-        const cutoff = timeMillis - 100
-        while (this.samples.length > 0 && this.samples[0].t < cutoff) this.samples.shift()
+/** Compose's Lsq2 `VelocityTracker1D`: a quadratic fit over the last 100ms of continuous motion. */
+class VelocityTracker1D {
+    private readonly times = new Float64Array(VELOCITY_HISTORY_SIZE)
+    private readonly values = new Float64Array(VELOCITY_HISTORY_SIZE)
+    private count = 0
+    private index = 0
+
+    add(timeMillis: number, value: number) {
+        this.index = (this.index + 1) % VELOCITY_HISTORY_SIZE
+        this.times[this.index] = timeMillis
+        this.values[this.index] = value
+        this.count = Math.min(this.count + 1, VELOCITY_HISTORY_SIZE)
     }
 
     reset() {
-        this.samples = []
+        this.count = 0
+        this.index = 0
+    }
+
+    /** In units per second. */
+    calculate(): number {
+        if (this.count === 0) return 0
+        const time: number[] = []
+        const data: number[] = []
+        const newest = this.times[this.index]
+        let previous = newest
+        let index = this.index
+        for (let i = 0; i < this.count; i++) {
+            const t = this.times[index]
+            const age = newest - t
+            const delta = Math.abs(t - previous)
+            previous = t
+            if (age > VELOCITY_HORIZON_MILLIS || delta > ASSUME_POINTER_STOPPED_MILLIS) break
+            data.push(this.values[index])
+            time.push(-age)
+            index = (index === 0 ? VELOCITY_HISTORY_SIZE : index) - 1
+        }
+        if (time.length < 3) return 0
+        // Slope at age 0, the newest sample.
+        const v = polyFitLeastSquares(time, data, 2)[1] * 1000
+        return Number.isFinite(v) ? v : 0
+    }
+}
+
+/** Compose's `polyFitLeastSquares`: Gram-Schmidt QR. */
+function polyFitLeastSquares(x: number[], y: number[], degree: number): number[] {
+    const m = x.length
+    const n = Math.min(degree, m - 1) + 1
+    const dot = (a: number[], b: number[]) => {
+        let r = 0
+        for (let i = 0; i < m; i++) r += a[i] * b[i]
+        return r
+    }
+    const a: number[][] = []
+    for (let i = 0; i < n; i++) a.push(x.map((xh, h) => (i === 0 ? 1 : a[i - 1][h] * xh)))
+    const q: number[][] = []
+    const r: number[][] = []
+    for (let j = 0; j < n; j++) {
+        const w = a[j].slice()
+        for (let i = 0; i < j; i++) {
+            const d = dot(w, q[i])
+            for (let h = 0; h < m; h++) w[h] -= d * q[i][h]
+        }
+        const inverseNorm = 1 / Math.max(Math.sqrt(dot(w, w)), 1e-6)
+        for (let h = 0; h < m; h++) w[h] *= inverseNorm
+        q.push(w)
+        r.push(a.map((ai, i) => (i < j ? 0 : dot(w, ai))))
+    }
+    const coefficients = new Array<number>(n).fill(0)
+    for (let i = n - 1; i >= 0; i--) {
+        let c = dot(q[i], y)
+        for (let j = n - 1; j > i; j--) c -= r[i][j] * coefficients[j]
+        coefficients[i] = c / r[i][i]
+    }
+    return coefficients
+}
+
+/** Compose's default (Lsq2) `VelocityTracker`, in pixels per second. */
+export class VelocityTracker {
+    private readonly x = new VelocityTracker1D()
+    private readonly y = new VelocityTracker1D()
+    private lastEventTime = 0
+
+    add(timeMillis: number, position: Offset) {
+        this.x.add(timeMillis, position.x)
+        this.y.add(timeMillis, position.y)
+    }
+
+    /** `addPointerInputChange`: a down resets, an up adds nothing and resets if it came late. */
+    addChange(change: {
+        current: Offset
+        time: number
+        changedToDown: boolean
+        changedToUp: boolean
+        historical: { time: number; position: Offset }[]
+    }) {
+        if (change.changedToDown) this.reset()
+        if (!change.changedToUp) {
+            for (const h of change.historical) this.add(h.time, h.position)
+            this.add(change.time, change.current)
+        } else if (change.time - this.lastEventTime > ASSUME_POINTER_STOPPED_MILLIS) {
+            this.reset()
+        }
+        this.lastEventTime = change.time
+    }
+
+    reset() {
+        this.x.reset()
+        this.y.reset()
+        this.lastEventTime = 0
     }
 
     calculateVelocity(): Offset {
-        if (this.samples.length < 2) return OFFSET_ZERO
-        const first = this.samples[0]
-        const last = this.samples[this.samples.length - 1]
-        const dt = (last.t - first.t) / 1000
-        if (dt <= 0) return OFFSET_ZERO
-        return { x: (last.x - first.x) / dt, y: (last.y - first.y) / dt }
+        return { x: this.x.calculate(), y: this.y.calculate() }
     }
 }

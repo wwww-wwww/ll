@@ -13,9 +13,14 @@ export interface PointerInfo {
     current: Offset
     previous: Offset
     pressed: boolean
+    /** True on the event where this pointer went down. */
+    changedToDown: boolean
     /** True on the event where this pointer transitioned to released. */
     changedToUp: boolean
     time: number
+    /** Coalesced positions before [current] since the last event, oldest first. */
+    historical: { time: number; position: Offset }[]
+    touch: boolean
 }
 
 export class GestureEvent {
@@ -91,7 +96,7 @@ export class PointerStream {
     private waiter: ((event: GestureEvent) => void) | null = null
 
     /** Positions are element-relative, in CSS pixels scaled to the backing store. */
-    constructor(private readonly toLocal: (e: PointerEvent) => Offset) { }
+    constructor(private readonly toLocal: (e: { clientX: number; clientY: number }) => Offset) { }
 
     get pressedCount(): number {
         let n = 0
@@ -99,9 +104,41 @@ export class PointerStream {
         return n
     }
 
+    /** Touch identifier -> pointer id, for [touchPointerId]. */
+    private readonly touchIds = new Map<number, number>()
+
+    /**
+     * The pressed touch pointer for touch [identifier] at [position]. Touch and pointer ids differ,
+     * so an unseen identifier pairs with the nearest unpaired pressed touch pointer. Null if none.
+     */
+    touchPointerId(identifier: number, position: Offset): number | null {
+        const known = this.touchIds.get(identifier)
+        if (known !== undefined && this.pointers.get(known)?.pressed) return known
+        const paired = new Set(this.touchIds.values())
+        let best: PointerInfo | null = null
+        let bestDistance = Infinity
+        for (const p of this.pointers.values()) {
+            if (!p.pressed || !p.touch || paired.has(p.id)) continue
+            const d = distance({ x: p.current.x - position.x, y: p.current.y - position.y })
+            if (d < bestDistance) {
+                best = p
+                bestDistance = d
+            }
+        }
+        if (!best) return null
+        this.touchIds.set(identifier, best.id)
+        return best.id
+    }
+
+    forgetTouch(identifier: number) {
+        this.touchIds.delete(identifier)
+    }
+
     handle(e: PointerEvent, type: "down" | "move" | "up" | "cancel") {
         const position = this.toLocal(e)
         const existing = this.pointers.get(e.pointerId)
+        // A touchmove can repeat a position a pointermove already delivered - nothing moved.
+        if (type === "move" && existing && existing.current.x === position.x && existing.current.y === position.y) return
 
         if (type === "down") {
             this.pointers.set(e.pointerId, {
@@ -109,27 +146,38 @@ export class PointerStream {
                 current: position,
                 previous: position,
                 pressed: true,
+                changedToDown: true,
                 changedToUp: false,
                 time: e.timeStamp,
+                historical: [],
+                touch: e.pointerType === "touch",
             })
         } else if (existing) {
-            existing.previous = existing.current
+            // [previous] stays at the last emitted position, so every pointer's move is
+            // reported, not just this event's.
             existing.current = position
             existing.changedToUp = type === "up" || type === "cancel"
             if (existing.changedToUp) existing.pressed = false
             existing.time = e.timeStamp
+            // The last coalesced event is this one.
+            if (type === "move") {
+                const coalesced = e.getCoalescedEvents?.() ?? []
+                for (const c of coalesced.slice(0, -1)) {
+                    existing.historical.push({ time: c.timeStamp, position: this.toLocal(c) })
+                }
+            }
         } else {
             return
         }
 
         // A snapshot: the gesture may await several events before reading this one, and the live
         // map keeps moving underneath it.
-        //
-        // Only [e.pointerId] moved this event - zero the rest so pan()/zoom() don't re-sum a
-        // stale delta left over from some other pointer's last move.
-        const changes = [...this.pointers.values()].map(p =>
-            p.id === e.pointerId ? { ...p } : { ...p, previous: p.current },
-        )
+        const changes = [...this.pointers.values()].map(p => ({ ...p }))
+        for (const p of this.pointers.values()) {
+            p.previous = p.current
+            p.changedToDown = false
+            p.historical = []
+        }
         const event = new GestureEvent(changes, type, e)
 
         if (type === "up" || type === "cancel") this.pointers.delete(e.pointerId)
@@ -153,6 +201,7 @@ export class PointerStream {
 
     clear() {
         this.pointers.clear()
+        this.touchIds.clear()
         this.queue.length = 0
         this.waiter = null
     }

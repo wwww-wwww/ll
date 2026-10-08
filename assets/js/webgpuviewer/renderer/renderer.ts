@@ -2,6 +2,7 @@ import { nextFrame, yieldToEventLoop } from "../util"
 // Cyclic with this module, and benign: each side reaches the other only from inside a function.
 import { FilterChain } from "../filter/filterchain"
 import { Hdr } from "./hdr"
+import { isFirefox } from "../filter/colormanagement"
 
 /**
  * Device ownership and the frame loop.
@@ -30,9 +31,23 @@ export class WebGpuRenderer {
     /** Set once `device.lost` resolves - see `unavailableReason`. */
     private static deviceLost = false
 
+    /**
+     * Why the device was lost, plus the last uncaptured error before it. Carried in every later
+     * "device lost" message, since the log line from the loss itself is easily pruned.
+     */
+    private static deviceLostDetail = ""
+
+    private static lastUncapturedError: string | null = null
+
+    /**
+     * The device's texture size ceiling, requested at creation: the default limit is below the
+     * hardware's.
+     */
+    static maxTextureDimension2D = 4096
+
     /** Human-readable reason nothing can currently be drawn, or null if the device is fine. */
     static get unavailableReason(): string | null {
-        if (WebGpuRenderer.deviceLost) return "WebGPU device lost"
+        if (WebGpuRenderer.deviceLost) return `WebGPU device lost${WebGpuRenderer.deviceLostDetail}`
         if (!WebGpuRenderer.device) return "WebGPU never initialized"
         return null
     }
@@ -60,9 +75,20 @@ export class WebGpuRenderer {
 
             // Optional: without it, TileRenderer.nextBatchSize falls back to a fixed batch size.
             const requiredFeatures: GPUFeatureName[] = []
-            if (adapter.features.has("timestamp-query")) requiredFeatures.push("timestamp-query")
+            if (!isFirefox() && adapter.features.has("timestamp-query")) requiredFeatures.push("timestamp-query")
 
-            const device = await adapter.requestDevice({ requiredFeatures })
+            const adapterLimits = adapter.limits
+
+            const device = await adapter.requestDevice({
+                requiredFeatures,
+                requiredLimits: { maxTextureDimension2D: adapterLimits.maxTextureDimension2D },
+            })
+            WebGpuRenderer.maxTextureDimension2D = device.limits.maxTextureDimension2D
+            console.info(
+                "WebGpuRenderer: maxTextureDimension2D",
+                `adapter=${adapterLimits.maxTextureDimension2D}`,
+                `device=${WebGpuRenderer.maxTextureDimension2D}`,
+            )
 
             // Before any canvas configures - `Hdr.resolve` probes a disposable canvas since a
             // `GPUCanvasContext` has no `getCapabilities`.
@@ -70,6 +96,14 @@ export class WebGpuRenderer {
             Hdr.resolve(device)
 
             device.lost.then(info => {
+                if (!WebGpuRenderer.deviceLost) {
+                    WebGpuRenderer.deviceLostDetail =
+                        ` (reason=${info.reason}: ${info.message}` +
+                        (WebGpuRenderer.lastUncapturedError ?
+                            `; last error: ${WebGpuRenderer.lastUncapturedError}`
+                            : "") +
+                        ")"
+                }
                 WebGpuRenderer.deviceLost = true
                 console.error("WebGpuRenderer: device lost", info.reason, info.message)
                 WebGpuRenderer.deviceLostHandlers.forEach(fn => {
@@ -81,7 +115,9 @@ export class WebGpuRenderer {
                 })
             })
             device.addEventListener?.("uncapturederror", (e: Event) => {
-                console.error("WebGpuRenderer:", (e as GPUUncapturedErrorEvent).error)
+                const error = (e as GPUUncapturedErrorEvent).error
+                WebGpuRenderer.lastUncapturedError = `${error.constructor.name}: ${error.message}`
+                console.error("WebGpuRenderer:", error)
             })
 
             WebGpuRenderer.adapter = adapter

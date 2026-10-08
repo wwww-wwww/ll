@@ -1,5 +1,5 @@
-import { colorToFloats } from "../util"
-import type { Image, MipMapForDraw, TileForDraw } from "./image"
+import { Rect, colorToFloats } from "../util"
+import type { Image, MipMapForDraw, Placement, TileForDraw } from "./image"
 import { WebGpuRenderer } from "./renderer"
 
 /**
@@ -63,16 +63,19 @@ function buildPipeline(code: string, depthStencil?: GPUDepthStencilState): GPURe
 // Shader source
 // ---------------------------------------------------------------------------
 
-/** Uniforms, texture bindings and the vertex stage's view of the source, shared by both. */
+/**
+ * Uniforms, bindings and source helpers shared by both resolves. Geometry comes from the CPU:
+ * [dst_rect] in target pixels, [src_rect] the window texels mapped onto it, [content] the
+ * window's image texels. Texture sizes never enter in - tiles may be padded (see [Mipmap]),
+ * and reads clamp to [content].
+ */
 const HEADER = `
 struct Uniforms {
-    offset: vec2<f32>,
-    scale: f32,
+    dst_rect: vec4<f32>,
+    src_rect: vec4<f32>,
+    content: vec2<f32>,
+    dst_size: vec2<f32>,
     tile_size: f32,
-    tiles_width: f32,
-    tiles_height: f32,
-    dst_width: f32,
-    dst_height: f32,
 }
 
 @group(0) @binding(0) var<uniform> transform: Uniforms;
@@ -86,21 +89,20 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
 };
 
-fn totalDimensions() -> vec2<u32> {
-    let w = i32(transform.tiles_width);
-    let h = i32(transform.tiles_height);
-    if (w <= 0 || h <= 0) {
-        return vec2<u32>(0u);
-    }
+/** Image texels in the 2x2 window, padding excluded - what every read is clamped to. */
+fn contentSize() -> vec2<u32> {
+    return vec2<u32>(transform.content);
+}
 
-    let dim0 = textureDimensions(src_tex0);
-    var width = dim0.x;
-    if (w > 1) { width += textureDimensions(src_tex1).x; }
+/** The window position, in texels, that [uv] across the destination maps to. */
+fn src_at(uv: vec2<f32>) -> vec2<f32> {
+    return mix(transform.src_rect.xy, transform.src_rect.zw, uv);
+}
 
-    var height = dim0.y;
-    if (h > 1) { height += textureDimensions(src_tex2).y; }
-
-    return vec2<u32>(width, height);
+/** Source texels one destination pixel spans. */
+fn src_per_dst() -> vec2<f32> {
+    return (transform.src_rect.zw - transform.src_rect.xy) /
+        (transform.dst_rect.zw - transform.dst_rect.xy);
 }
 
 // Shared by both fragment variants: the fast path also filters in linear light now, so both need
@@ -155,36 +157,31 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     );
 
     let uv = uvs[vertex_index];
+    let pixel_pos = mix(transform.dst_rect.xy, transform.dst_rect.zw, uv);
 
-    let dst_size_f = vec2<f32>(transform.dst_width, transform.dst_height);
-    let src_size_f = vec2<f32>(totalDimensions());
-
-    // Calculate destination canvas pixel position
-    let pixel_pos = transform.scale * (transform.offset * dst_size_f + uv * src_size_f);
-
-    // Convert pixel coordinate to WebGPU NDC Space:
-    // X goes from [-1.0, 1.0] (left to right)
-    // Y goes from [1.0, -1.0] (top to bottom)
-    let ndc_x = (pixel_pos.x / dst_size_f.x) * 2.0 - 1.0;
-    let ndc_y = 1.0 - (pixel_pos.y / dst_size_f.y) * 2.0;
-
+    // Target pixels to NDC, y flipped.
     var out: VertexOutput;
-    out.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.position = vec4<f32>(
+        (pixel_pos.x / transform.dst_size.x) * 2.0 - 1.0,
+        1.0 - (pixel_pos.y / transform.dst_size.y) * 2.0,
+        0.0, 1.0
+    );
     out.uv = uv;
     return out;
 }
 `
 
 /**
- * Uniforms, single-texture binding and vertex stage shared by the per-tile draws - no
- * tile_size/tiles_width/tiles_height bookkeeping, since a draw through here is always one tile.
+ * Uniforms, single-texture binding and vertex stage shared by the per-tile draws - one tile a
+ * draw, so no window bookkeeping. As [HEADER], [dst_rect] and [src_rect] place it and [content]
+ * is the tile's image texels, padding excluded.
  */
 const TILE_HEADER = `
 struct TileUniforms {
-    offset: vec2<f32>,
-    scale: f32,
-    dst_width: f32,
-    dst_height: f32,
+    dst_rect: vec4<f32>,
+    src_rect: vec4<f32>,
+    content: vec2<f32>,
+    dst_size: vec2<f32>,
     // Page-wide opacity, for fading a freshly decoded page in. Applied to the already
     // premultiplied output, so scaling the whole vec4 is the correct operation.
     alpha: f32,
@@ -220,14 +217,12 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> TileVertexOutput {
     );
 
     let uv = uvs[vertex_index];
-    let dst_size_f = vec2<f32>(transform.dst_width, transform.dst_height);
-    let src_size_f = vec2<f32>(textureDimensions(src_tex));
-    let pixel_pos = transform.scale * (transform.offset * dst_size_f + uv * src_size_f);
+    let pixel_pos = mix(transform.dst_rect.xy, transform.dst_rect.zw, uv);
 
     var out: TileVertexOutput;
     out.position = vec4<f32>(
-        (pixel_pos.x / dst_size_f.x) * 2.0 - 1.0,
-        1.0 - (pixel_pos.y / dst_size_f.y) * 2.0,
+        (pixel_pos.x / transform.dst_size.x) * 2.0 - 1.0,
+        1.0 - (pixel_pos.y / transform.dst_size.y) * 2.0,
         0.0, 1.0
     );
     out.uv = uv;
@@ -242,12 +237,11 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> TileVertexOutput {
 const TILE_SAMPLER_FS = `
 @fragment
 fn fs_main(in: TileVertexOutput) -> @location(0) vec4<f32> {
-    let size = vec2<f32>(textureDimensions(src_tex));
-    let pos = in.uv * size;
+    let pos = mix(transform.src_rect.xy, transform.src_rect.zw, in.uv);
     let p = pos - 0.5;
     let base = floor(p);
 
-    let max_coord = vec2<i32>(size) - 1;
+    let max_coord = vec2<i32>(transform.content) - 1;
     let i0 = clamp(vec2<i32>(base), vec2<i32>(0), max_coord);
     let i1 = clamp(vec2<i32>(base) + 1, vec2<i32>(0), max_coord);
     let f = p - base;
@@ -270,12 +264,11 @@ fn fs_main(in: TileVertexOutput) -> @location(0) vec4<f32> {
 const TILE_PLAIN_FS = `
 @fragment
 fn fs_main(in: TileVertexOutput) -> @location(0) vec4<f32> {
-    let size = vec2<f32>(textureDimensions(src_tex));
-    let pos = in.uv * size;
+    let pos = mix(transform.src_rect.xy, transform.src_rect.zw, in.uv);
     let p = pos - 0.5;
     let base = floor(p);
 
-    let max_coord = vec2<i32>(size) - 1;
+    let max_coord = vec2<i32>(transform.content) - 1;
     let i0 = clamp(vec2<i32>(base), vec2<i32>(0), max_coord);
     let i1 = clamp(vec2<i32>(base) + 1, vec2<i32>(0), max_coord);
     let f = p - base;
@@ -297,7 +290,7 @@ fn fs_main(in: TileVertexOutput) -> @location(0) vec4<f32> {
 const MAGNIFY_MAIN = `
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let col = resolve_magnify(in.uv);
+    let col = resolve_magnify(src_at(in.uv));
     return vec4<f32>(col.rgb * col.a, col.a);
 }
 `
@@ -308,8 +301,7 @@ const MINIFY_MAIN = `
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // resolve_minify takes src_start, the footprint's position in source pixels, and the
     // footprint's own size - which is how many source pixels one destination pixel covers.
-    let src_start = in.uv * vec2<f32>(totalDimensions());
-    let col = resolve_minify(src_start, vec2<f32>(1.0 / transform.scale));
+    let col = resolve_minify(src_at(in.uv), src_per_dst());
     return vec4<f32>(col.rgb * col.a, col.a);
 }
 `
@@ -447,14 +439,35 @@ function getMaskedRectPipeline(): GPURenderPipeline {
 // Draw entry points
 // ---------------------------------------------------------------------------
 
-const scratch = new Float32Array(8)
+// Room for a placement plus its trailing floats.
+const scratch = new Float32Array(16)
 
 function writeUniform(buffer: GPUBuffer, values: number[]) {
     scratch.set(values)
     device().queue.writeBuffer(buffer, 0, scratch, 0, values.length)
 }
 
+/** dst_rect, src_rect, content, dst_size - the part [HEADER] and [TILE_HEADER] share. */
+function placementFloats(p: Placement, dst: GPUTexture): number[] {
+    return [
+        p.dstLeft,
+        p.dstTop,
+        p.dstLeft + p.dstWidth,
+        p.dstTop + p.dstHeight,
+        p.srcLeft,
+        p.srcTop,
+        p.srcLeft + p.srcWidth,
+        p.srcTop + p.srcHeight,
+        p.contentWidth,
+        p.contentHeight,
+        dst.width,
+        dst.height,
+    ]
+}
+
 export const RenderPage = {
+    PLACEMENT_BYTES: 48,
+
     /** The resolves the rescalers in force supply - see [Rescaler.code]. */
     filtered(magnify: string, minify: string): Filtered {
         return {
@@ -506,9 +519,11 @@ export const RenderPage = {
         linear: boolean = true,
         masked: boolean = true,
         alpha: number = 1,
+        /** Only this part of [image], in its pixels, in place - see [Image.prepareTilesForRender]. */
+        src: Rect | null = null,
     ) {
         const variant = RenderPage.variantFor(linear, masked)
-        for (const tile of image.prepareTilesForRender(dst, x, y, scale)) {
+        for (const tile of image.prepareTilesForRender(dst, x, y, scale, src)) {
             RenderPage.drawTile(pass, dst, tile, variant, alpha)
         }
     },
@@ -521,14 +536,8 @@ export const RenderPage = {
         variant: Variant,
     ) {
         writeUniform(image.buffer, [
-            res.x,
-            res.y,
-            res.scale,
+            ...placementFloats(res.placement, dst),
             res.mipmap.tilesize,
-            res.mipmap.tilesCols,
-            res.mipmap.tilesRows,
-            dst.width,
-            dst.height,
         ])
 
         const pipeline = variant.pipeline
@@ -556,7 +565,7 @@ export const RenderPage = {
         variant: Variant,
         alpha: number = 1,
     ) {
-        writeUniform(tile.uniform, [tile.x, tile.y, tile.scale, dst.width, dst.height, alpha])
+        writeUniform(tile.uniform, [...placementFloats(tile.placement, dst), alpha])
 
         const pipeline = variant.pipeline
         pass.setPipeline(pipeline)

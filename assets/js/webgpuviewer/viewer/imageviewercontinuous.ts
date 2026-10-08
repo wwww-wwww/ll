@@ -4,12 +4,13 @@ import {
     VelocityTracker,
     animate,
     animateDecay,
+    animateSplineDecay,
     coerceIn,
     delay,
     launch,
     spring,
 } from "../util"
-import { GestureEvent, PointerStream, waitForCleanUp, waitForDown } from "./gestures"
+import { GestureEvent, PointerInfo, PointerStream, waitForCleanUp, waitForDown } from "./gestures"
 import { ImageViewerContinuousState } from "./imageviewercontinuousstate"
 
 /**
@@ -31,9 +32,9 @@ export interface ContinuousGestureHost {
     longPressTimeout: number
 }
 
-/** Zoom-fling and pan-fling thresholds, in px/s. */
+/** Zoom-fling threshold in px/s, pan-fling in dp/s: Android's minimum fling. */
 const ZOOM_FLING_VELOCITY = 200
-const PAN_FLING_VELOCITY = 400
+const PAN_FLING_VELOCITY_DP = 50
 
 /** Raised to end a fling that is pinned on both axes - see the pan fling below. */
 class FlingStalled extends Error { }
@@ -110,11 +111,11 @@ export async function handleContinuousGesture(
             return
         }
 
-        await doubleTapDragZoom(host, secondDown.id, secondDown.current)
+        await doubleTapDragZoom(host, secondDown)
         return
     }
 
-    await dragGesture(host, firstEvent, firstPosition, longPressJob, () => longPressed)
+    await dragGesture(host, firstEvent, longPressJob, () => longPressed)
 }
 
 /** Double tap: toggle between the state's minScale and doubleTapScale, anchored at the tap. */
@@ -155,14 +156,12 @@ export function doubleTapZoom(state: ImageViewerContinuousState, position: Offse
 }
 
 /** Second tap held and dragged: vertical drag drives zoom, with a decay fling on release. */
-async function doubleTapDragZoom(
-    host: ContinuousGestureHost,
-    dragPointerId: number,
-    origin: Offset,
-) {
+async function doubleTapDragZoom(host: ContinuousGestureHost, secondDown: PointerInfo) {
     const { state, stream } = host
+    const dragPointerId = secondDown.id
+    const origin = secondDown.current
     const velocityTracker = new VelocityTracker()
-    velocityTracker.add(performance.now(), origin)
+    velocityTracker.addChange(secondDown)
 
     const originalScale = state.scale
     const originalOffsetX = state.offsetX
@@ -187,7 +186,7 @@ async function doubleTapDragZoom(
             const change = event.changes.find(c => c.id === dragPointerId)
             if (!change || change.changedToUp) break
 
-            velocityTracker.add(event.raw.timeStamp, change.current)
+            velocityTracker.addChange(change)
             totalDeltaY += event.pan().y
             if (totalDeltaY === 0) continue
 
@@ -316,13 +315,12 @@ function snapOffsetXIntoBounds(state: ImageViewerContinuousState) {
 async function dragGesture(
     host: ContinuousGestureHost,
     firstEvent: GestureEvent,
-    firstPosition: Offset,
     longPressJob: Job | null,
     longPressed: () => boolean,
 ) {
     const { state, stream } = host
     const velocityTracker = new VelocityTracker()
-    velocityTracker.add(firstEvent.raw.timeStamp, firstPosition)
+    velocityTracker.addChange(firstEvent.changes.find(c => c.id === firstEvent.raw.pointerId)!)
 
     let single = true
     let zoomOriginX = 0
@@ -346,7 +344,7 @@ async function dragGesture(
             }
             if (multi) single = false
 
-            velocityTracker.add(event.raw.timeStamp, change.current)
+            velocityTracker.addChange(change)
 
             const pan = event.pan()
             // Off leaves two fingers panning without scaling.
@@ -408,9 +406,10 @@ async function dragGesture(
     // Scale in bounds: fling pan or snap offsetX.
     const velocity = velocityTracker.calculateVelocity()
     // Held still before lifting: no fling, however fast it got there.
+    const minFlingVelocity = PAN_FLING_VELOCITY_DP * window.devicePixelRatio
     const flingable =
         lastEventTime - lastMoveTime < 100 &&
-        (Math.abs(velocity.y) > PAN_FLING_VELOCITY || Math.abs(velocity.x) > PAN_FLING_VELOCITY)
+        (Math.abs(velocity.y) > minFlingVelocity || Math.abs(velocity.x) > minFlingVelocity)
 
     if (flingable) {
         panFling(state, velocity)
@@ -428,7 +427,7 @@ function panFling(state: ImageViewerContinuousState, velocity: Offset) {
     let last = 0
 
     state.isFlinging = true
-    const job = animateDecay(speed, value => {
+    const job = animateSplineDecay(speed, window.devicePixelRatio, value => {
         const delta = value - last
         last = value
         const limit = state.maxOffsetX(state.scale)
