@@ -10,6 +10,7 @@ defmodule LLWeb.PageController do
          true <- File.exists?(path) do
       conn
       |> put_resp_content_type(MIME.from_path(path))
+      |> put_resp_header("cache-control", "private, max-age=86400")
       |> send_file(200, path)
     else
       _ ->

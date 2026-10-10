@@ -112,6 +112,49 @@ export class Reader extends ViewHook {
 
     private e_page!: HTMLElement
 
+    /** URLs already prefetched, or being so. */
+    private prefetched = new Set<string>()
+    private prefetching = false
+    private prefetchAbort = new AbortController()
+
+    private async prefetch() {
+        if (this.prefetching) return
+        this.prefetching = true
+        const signal = this.prefetchAbort.signal
+        try {
+            while (!signal.aborted) {
+                const chapter = this.reading
+                if (!chapter) return
+                const current = this.viewer.page - chapter.start
+                let best: string | null = null
+                let bestRank = Infinity
+                for (let i = 0; i < chapter.count; i++) {
+                    const url = this.files[chapter.start + i]
+                    if (!url || this.prefetched.has(url)) continue
+                    const d = i - current
+                    const rank = d >= 0 ? d * 2 : -d * 2 - 1
+                    if (rank < bestRank) {
+                        bestRank = rank
+                        best = url
+                    }
+                }
+                if (best === null) return
+                this.prefetched.add(best)
+                try {
+                    const res = await fetch(best, { signal, priority: "low" } as RequestInit)
+                    await res.arrayBuffer()
+                } catch (e) {
+                    if (signal.aborted) return
+                    this.prefetched.delete(best)
+                    // Back off so a failing page is not retried in a hot loop.
+                    await new Promise(r => setTimeout(r, 2000))
+                }
+            }
+        } finally {
+            this.prefetching = false
+        }
+    }
+
     /**
      * The chapters the viewer's page list holds, in reading order.
      *
@@ -195,6 +238,7 @@ export class Reader extends ViewHook {
         }
 
         this.showPage(index - chapter.start)
+        this.prefetch()
     }
 
     /**
@@ -310,6 +354,7 @@ export class Reader extends ViewHook {
         this.extend(-1)
 
         this.showPage(page, false)
+        this.prefetch()
     }
 
     /**
@@ -325,6 +370,7 @@ export class Reader extends ViewHook {
         this.files = files
         this.viewer.setPages(files, order, page)
         this.showPage(page, false)
+        this.prefetch()
     }
 
     /**
@@ -570,6 +616,7 @@ export class Reader extends ViewHook {
     }
 
     destroyed() {
+        this.prefetchAbort.abort()
         window.removeEventListener("keydown", this.key_event!)
         this.unbind.forEach(off => off())
         this.unbind.length = 0
