@@ -544,6 +544,8 @@ export function nextFrame(): Promise<number> {
 const VELOCITY_HISTORY_SIZE = 20
 const VELOCITY_HORIZON_MILLIS = 100
 const ASSUME_POINTER_STOPPED_MILLIS = 40
+/** How long after its last movement a coasting pointer's release still counts as a flick. */
+const COASTING_RELEASE_MILLIS = 200
 
 /** Compose's Lsq2 `VelocityTracker1D`: a quadratic fit over the last 100ms of continuous motion. */
 class VelocityTracker1D {
@@ -564,8 +566,11 @@ class VelocityTracker1D {
         this.index = 0
     }
 
-    /** In units per second. */
-    calculate(): number {
+    /**
+     * In units per second. [degree] 2 reads the slope at the newest sample, which a motion that
+     * is slowing to a stop drags down; 1 reads the average over the window.
+     */
+    calculate(degree: number = 2): number {
         if (this.count === 0) return 0
         const time: number[] = []
         const data: number[] = []
@@ -584,7 +589,7 @@ class VelocityTracker1D {
         }
         if (time.length < 3) return 0
         // Slope at age 0, the newest sample.
-        const v = polyFitLeastSquares(time, data, 2)[1] * 1000
+        const v = polyFitLeastSquares(time, data, degree)[1] * 1000
         return Number.isFinite(v) ? v : 0
     }
 }
@@ -628,6 +633,13 @@ export class VelocityTracker {
     private readonly y = new VelocityTracker1D()
     private lastEventTime = 0
 
+    /**
+     * [coasting] for a pointer that can't release mid-motion - a mouse button comes up well after
+     * the hand has stopped. Its release is then no sign the motion ended, and the velocity is the
+     * average over the last stretch of movement rather than the (stopping) speed at its end.
+     */
+    constructor(private readonly coasting: boolean = false) { }
+
     add(timeMillis: number, position: Offset) {
         this.x.add(timeMillis, position.x)
         this.y.add(timeMillis, position.y)
@@ -645,7 +657,10 @@ export class VelocityTracker {
         if (!change.changedToUp) {
             for (const h of change.historical) this.add(h.time, h.position)
             this.add(change.time, change.current)
-        } else if (change.time - this.lastEventTime > ASSUME_POINTER_STOPPED_MILLIS) {
+        } else if (
+            change.time - this.lastEventTime >
+            (this.coasting ? COASTING_RELEASE_MILLIS : ASSUME_POINTER_STOPPED_MILLIS)
+        ) {
             this.reset()
         }
         this.lastEventTime = change.time
@@ -658,6 +673,7 @@ export class VelocityTracker {
     }
 
     calculateVelocity(): Offset {
-        return { x: this.x.calculate(), y: this.y.calculate() }
+        const degree = this.coasting ? 1 : 2
+        return { x: this.x.calculate(degree), y: this.y.calculate(degree) }
     }
 }

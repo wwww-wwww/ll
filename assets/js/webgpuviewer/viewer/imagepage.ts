@@ -281,12 +281,19 @@ export class ImagePage {
      * [x]/[y]/[scale] go stale - a page fitted to the old size keeps that fit. The caller decides
      * when it is worth doing.
      */
-    resetHome() {
+    resetHome(animated = false) {
+        const from = this.scale
         this.homePending = true
         this.x = 0
         this.y = 0
         this.scale = 1
         this.applyHome()
+        // Starts at the scale it had - the same size on screen - and eases to the new fit.
+        if (animated && !this.homePending && from > 0 && !closeTo(from, this.homeScale)) {
+            const { x, y } = this
+            this.scale = from
+            this.animateTo({ targetScale: this.homeScale, targetX: x, targetY: y })
+        }
         this.onInvalidate?.()
     }
 

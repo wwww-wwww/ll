@@ -468,6 +468,9 @@ export class Viewer extends ImageViewerElement {
      */
     private pinnedFrom: ImagePage | null = null
 
+    /** Pages that sat at home when the viewport last began to change. */
+    private readonly homedPages = new WeakSet<object>()
+
     onPageChange: ((fileIndex: number) => void) | null = null
     onTap: ((x: number, y: number) => void) | null = null
     onLongTap: ((x: number, y: number) => void) | null = null
@@ -561,8 +564,20 @@ export class Viewer extends ImageViewerElement {
         this.state.onTap = position => this.onTap?.(position.x, position.y)
         this.state.onLongTap = position => this.onLongTap?.(position.x, position.y)
 
-        // A resize changes every page's fit. Placeholders are also sized in screen pixels, so
-        // they have to be rebuilt rather than just re-homed.
+        // Before the surface changes: [atHome] reads the viewport, so it has to be asked first.
+        this.state.onViewportChanging = () => {
+            this.pageCache.forEach(page => {
+                const p = page.imagePage
+                // Still easing home from the last resize keeps its place in the set. Not
+                // `animationJob`: it stays set after the animation ends.
+                const easingHome =
+                    p.animationTargetScale !== null && closeTo(p.animationTargetScale, p.homeScale)
+                if (p.atHome || easingHome) this.homedPages.add(p)
+                else this.homedPages.delete(p)
+            })
+        }
+
+        // A resize re-homes the pages that were at home; one the reader moved stays put.
         this.state.onViewportChanged = first => {
             // A rotation across the square decides spreads differently, and that regroups the
             // list from scratch - re-homing what the old grouping left behind would be wasted.
@@ -576,9 +591,7 @@ export class Viewer extends ImageViewerElement {
             this.pageCache.forEach(page => {
                 page.spreadPage?.cleanup()
                 page.spreadPage = null
-                // Placeholders take their size from the viewport as it is now - see
-                // [PlaceholderPage] - so like a decoded page they only need re-homing.
-                page.imagePage.resetHome()
+                if (this.homedPages.has(page.imagePage)) page.imagePage.resetHome(true)
             })
             invalidateCache()
             this.state.invalidate()

@@ -249,9 +249,10 @@ export class WebGpuRenderer {
         canvas.width = width
         canvas.height = height
 
-        if (!this.context) {
-            this.context = canvas.getContext("webgpu") as GPUCanvasContext
-        }
+        // A resize: the context adopts the new canvas size itself, and reconfiguring would stall the frame.
+        if (this.context) return
+
+        this.context = canvas.getContext("webgpu") as GPUCanvasContext
 
         // No images exist yet on a fresh canvas, so any stranded HDR claims are safe to drop.
         Hdr.resetContent()

@@ -264,6 +264,8 @@ export class ImageViewerState {
      */
     onViewportChanged: ((first: boolean) => void) | null = null
 
+    /** Just before the surface takes its new size, while the old one still reads back. */
+    onViewportChanging: (() => void) | null = null
     /** Attach to [canvas] and start the frame loop. */
     init(canvas: HTMLCanvasElement, width: number, height: number) {
         Hdr.requestFrame = this.requestFrame
@@ -320,6 +322,7 @@ export class ImageViewerState {
             WebGpuRenderer.animating =
                 this.animationJob !== null || this.getPage(0)?.animationJob != null
             this.dirty = false
+            this.syncSlide()
             // Capture render state before any await, so an invalidate from here belongs to the
             // next frame.
             const snapshot = this.captureRenderState()
@@ -352,7 +355,67 @@ export class ImageViewerState {
         }
     }
 
+    private slideJob: Job | null = null
+    private slideX = 0
+    private slideY = 0
+
+    /** Scale the global draw offset is multiplied by on screen. */
+    protected get slideScale(): number {
+        return this.getPage(0)?.scale ?? 1
+    }
+
+    /** Publish the slide, in surface pixels, as the renderer's draw offset. */
+    private syncSlide() {
+        const scale = Math.max(this.slideScale, 1e-6)
+        WebGpuRenderer.offsetX = this.width > 0 ? this.slideX / (scale * this.width) : 0
+        WebGpuRenderer.offsetY = this.height > 0 ? this.slideY / (scale * this.height) : 0
+    }
+
+    /**
+     * After a resize, show the content [dx],[dy] surface pixels from its new place and ease it
+     * across. The surface itself jumps - only what's drawn on it moves.
+     */
+    slideFrom(dx: number, dy: number) {
+        this.slideJob?.cancel()
+        // Carries on from a slide still in flight.
+        const startX = this.slideX + dx
+        const startY = this.slideY + dy
+        if (startX === 0 && startY === 0) return
+        this.slideX = startX
+        this.slideY = startY
+        const job = animate(0, 1, spring(), t => {
+            this.slideX = startX * (1 - t)
+            this.slideY = startY * (1 - t)
+            this.invalidate()
+        })
+        this.slideJob = job
+        job.promise.finally(() => {
+            // A newer slide owns the offset now.
+            if (this.slideJob !== job) return
+            this.slideX = 0
+            this.slideY = 0
+            this.invalidate()
+        })
+    }
+
+    /**
+     * Draw a frame now, outside the frame loop. A resize clears the canvas, so the redraw must land
+     * before the next paint rather than a frame later.
+     */
+    renderNow() {
+        this.syncSlide()
+        const snapshot = this.captureRenderState()
+        if (!snapshot) return
+        void this.renderer.render((encoder, texture) =>
+            this.renderSnapshot(encoder, texture, snapshot),
+        )
+    }
+
     stop() {
+        this.slideJob?.cancel()
+        this.slideJob = null
+        this.slideX = this.slideY = 0
+        WebGpuRenderer.offsetX = WebGpuRenderer.offsetY = 0
         this.running = false
         WebGpuRenderer.animating = false
         this.wake?.()

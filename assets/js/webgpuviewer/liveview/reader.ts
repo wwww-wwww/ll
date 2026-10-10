@@ -56,6 +56,8 @@ function sameOrder(used: number[], order: number[] | null): boolean {
     return order.every((o, i) => o === used[i])
 }
 
+const UI_SHOW_TIMEOUT = 250
+
 export class Reader extends ViewHook {
     viewer!: Viewer
 
@@ -109,12 +111,6 @@ export class Reader extends ViewHook {
             this.viewer.style.cursor = x < 0.33 ? leftCursor : x > 0.67 ? rightCursor : ""
         })
         this.viewer.addEventListener("pointerleave", () => (this.viewer.style.cursor = ""))
-
-        // A long tap toggles fullscreen.
-        this.viewer.onLongTap = () => {
-            if (!document.fullscreenElement) this.viewer.requestFullscreen().catch(() => { })
-            else document.exitFullscreen().catch(() => { })
-        }
 
         // Reports where the viewer went, and nothing here moves it in response - so a swipe, a
         // tap-to-turn and a programmatic move can all come through the one path.
@@ -358,6 +354,32 @@ export class Reader extends ViewHook {
         this.viewer.invalidate()
     }
 
+    /**
+     * Jump to the first page of the chapter [direction] away in reading order - forward is +1.
+     *
+     * The list runs newest first, so forward is the entry before the one being read. A neighbour
+     * the window already holds is a page jump, which [pageChanged] follows into the chapter; one
+     * it doesn't goes through the chapter list's own link, like a click there.
+     */
+    private turnChapter(direction: number) {
+        const at = this.reading?.at
+        if (at === undefined || at < 0) return
+
+        const target = this.chapterWindow.find(c => c.at === at - direction)
+        if (target) {
+            this.viewer.set_page(target.start)
+            this.viewer.invalidate()
+            return
+        }
+        this.chapterAt(at - direction)?.querySelector("a")?.click()
+    }
+
+    /** The whole page goes fullscreen, so the menu and the button stay with it. */
+    private toggleFullscreen() {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => { })
+        else document.documentElement.requestFullscreen().catch(() => { })
+    }
+
     private key_event!: ((e: KeyboardEvent) => void) | null
 
     get_storage(name: string): string | null {
@@ -421,6 +443,29 @@ export class Reader extends ViewHook {
 
     mounted() {
         this.e_page = this.el.querySelector(".info>.page")!
+
+        const fullscreenButton = this.el.querySelector<HTMLElement>("#btn_fullscreen")
+        if (fullscreenButton) {
+            const toggle = () => this.toggleFullscreen()
+            fullscreenButton.addEventListener("click", toggle)
+
+            let hideTimer: number | undefined
+            const reveal = () => {
+                this.el.classList.add("mouse-active")
+                clearTimeout(hideTimer)
+                hideTimer = window.setTimeout(
+                    () => this.el.classList.remove("mouse-active"),
+                    UI_SHOW_TIMEOUT,
+                )
+            }
+            this.el.addEventListener("pointermove", reveal)
+
+            this.unbind.push(
+                () => fullscreenButton.removeEventListener("click", toggle),
+                () => this.el.removeEventListener("pointermove", reveal),
+                () => clearTimeout(hideTimer),
+            )
+        }
 
         let mounted = false
 
@@ -494,6 +539,18 @@ export class Reader extends ViewHook {
                 document.activeElement?.tagName == "INPUT" ||
                 document.activeElement?.tagName == "TEXTAREA"
             ) {
+                return
+            }
+
+            if (e.key == "f" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault()
+                this.toggleFullscreen()
+                return
+            }
+
+            if (e.ctrlKey && (e.key == "ArrowLeft" || e.key == "ArrowRight")) {
+                e.preventDefault()
+                this.turnChapter(e.key == "ArrowLeft" ? 1 : -1)
                 return
             }
 

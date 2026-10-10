@@ -15,13 +15,6 @@
         flex: 1;
     }
 
-    .library:has(+ .SeriesPageComponent) {
-        .SeriesComponent {
-            width: 12.67em;
-            min-width: 12.67em;
-        }
-    }
-
     @media only screen and (max-width: calc(1000px + 19.67em)) {
         .library:has(~ .SeriesPageComponent) {
             display: none

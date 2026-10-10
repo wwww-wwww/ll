@@ -73,7 +73,17 @@ export async function handleContinuousGesture(
             })
         )
 
-    const cleanUp = await waitForCleanUp(stream, firstDownId, host.doubleTapTimeout, host.touchSlop)
+    // Starts at the press, so the motion inside the touch slop counts towards a fling.
+    const velocityTracker = new VelocityTracker(firstEvent.raw.pointerType === "mouse")
+    velocityTracker.addChange(firstDown)
+
+    const cleanUp = await waitForCleanUp(
+        stream,
+        firstDownId,
+        host.doubleTapTimeout,
+        host.touchSlop,
+        change => velocityTracker.addChange(change),
+    )
 
     // Middle click zooms like a double tap; dragging it pans like the left button.
     if (cleanUp !== null && firstEvent.raw.pointerType === "mouse" && firstEvent.raw.button === 1) {
@@ -115,7 +125,7 @@ export async function handleContinuousGesture(
         return
     }
 
-    await dragGesture(host, firstEvent, longPressJob, () => longPressed)
+    await dragGesture(host, firstEvent, velocityTracker, longPressJob, () => longPressed)
 }
 
 /** Double tap: toggle between the state's minScale and doubleTapScale, anchored at the tap. */
@@ -315,12 +325,11 @@ function snapOffsetXIntoBounds(state: ImageViewerContinuousState) {
 async function dragGesture(
     host: ContinuousGestureHost,
     firstEvent: GestureEvent,
+    velocityTracker: VelocityTracker,
     longPressJob: Job | null,
     longPressed: () => boolean,
 ) {
     const { state, stream } = host
-    const velocityTracker = new VelocityTracker()
-    velocityTracker.addChange(firstEvent.changes.find(c => c.id === firstEvent.raw.pointerId)!)
 
     let single = true
     let zoomOriginX = 0

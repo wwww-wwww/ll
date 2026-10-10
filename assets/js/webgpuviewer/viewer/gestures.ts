@@ -226,6 +226,8 @@ export async function waitForCleanUp(
     pointerId: number,
     timeout: number,
     touchSlop: number,
+    // Sees every event of the pointer, so a drag's velocity includes the motion spent in the slop.
+    onChange?: (change: PointerInfo) => void,
 ): Promise<GestureEvent | null> {
     const deadline = performance.now() + timeout
     let acc: Offset = { x: 0, y: 0 }
@@ -238,6 +240,7 @@ export async function waitForCleanUp(
 
         const change = event.changes.find(c => c.id === pointerId)
         if (!change) return null
+        onChange?.(change)
 
         if (event.changes.some(c => c.id !== pointerId && c.pressed)) return null
 

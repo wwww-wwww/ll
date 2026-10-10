@@ -95,6 +95,10 @@ export class ImageViewerContinuousState extends ImageViewerState {
         this._scale = value
     }
 
+    protected override get slideScale(): number {
+        return this._scale
+    }
+
     private _offsetX = 0
 
     get offsetX(): number {

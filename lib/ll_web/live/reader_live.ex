@@ -8,126 +8,125 @@ defmodule LLWeb.ReaderLive do
     ~H"""
     <input type="checkbox" id="series_details_toggle" phx-update="ignore" />
     <% reading_mode = (assigns[:multi] || assigns[:series]) |> Map.get(:reading_mode) %>
+
     <div class="series_details">
-      <div class="inner">
-        <div class="details">
-          <h2>
-            <%= if assigns[:multi] do %>
-              <.link navigate={~p"/multi/#{@multi.id}"}>{@multi.series.title} (Multi)</.link>
-            <% else %>
-              <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
-            <% end %>
-          </h2>
-        </div>
-
-        <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
+      <div class="details">
+        <h2>
           <%= if assigns[:multi] do %>
-            <.live_component
-              :for={{s, c} <- @chapters}
-              :if={c.hidden != true}
-              module={LLWeb.ChapterComponent}
-              id={LLWeb.ChapterComponent.id(c.id)}
-              href={~p"/multi/#{@multi.id}/#{c.id}"}
-              chapter={c}
-              source={s.source}
-              show_source={true}
-              selected={c.id == @chapter.id}
-            />
+            <.link navigate={~p"/multi/#{@multi.id}"}>{@multi.series.title} (Multi)</.link>
           <% else %>
-            <.live_component
-              :for={c <- @chapters}
-              :if={c.hidden != true}
-              module={LLWeb.ChapterComponent}
-              id={LLWeb.ChapterComponent.id(c.id)}
-              href={~p"/series/#{c.series_id}/#{c.id}"}
-              chapter={c}
-              source={@source}
-              selected={c.id == @chapter.id}
-            />
+            <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
           <% end %>
+        </h2>
+      </div>
+
+      <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
+        <%= if assigns[:multi] do %>
+          <.live_component
+            :for={{s, c} <- @chapters}
+            :if={c.hidden != true}
+            module={LLWeb.ChapterComponent}
+            id={LLWeb.ChapterComponent.id(c.id)}
+            href={~p"/multi/#{@multi.id}/#{c.id}"}
+            chapter={c}
+            source={s.source}
+            show_source={true}
+            selected={c.id == @chapter.id}
+          />
+        <% else %>
+          <.live_component
+            :for={c <- @chapters}
+            :if={c.hidden != true}
+            module={LLWeb.ChapterComponent}
+            id={LLWeb.ChapterComponent.id(c.id)}
+            href={~p"/series/#{c.series_id}/#{c.id}"}
+            chapter={c}
+            source={@source}
+            selected={c.id == @chapter.id}
+          />
+        <% end %>
+      </div>
+
+      <div class="reader-settings">
+        <h2>Settings</h2>
+        <div id="reader-settings" phx-update="ignore">
+          <div>
+            <label for="chk_3dlut">3dlut</label>
+            <input id="chk_3dlut" type="checkbox" checked />
+          </div>
+          <div>
+            <label for="sel_transition_single">single page transition</label>
+            <select id="sel_transition_single"></select>
+          </div>
+          <div>
+            <label for="sel_transition_dual">double page transition</label>
+            <select id="sel_transition_dual"></select>
+          </div>
         </div>
 
-        <div class="reader-settings">
-          <h2>Settings</h2>
-          <div id="reader-settings" phx-update="ignore">
-            <div>
-              <label for="chk_3dlut">3dlut</label>
-              <input id="chk_3dlut" type="checkbox" checked />
-            </div>
-            <div>
-              <label for="sel_transition_single">single page transition</label>
-              <select id="sel_transition_single"></select>
-            </div>
-            <div>
-              <label for="sel_transition_dual">double page transition</label>
-              <select id="sel_transition_dual"></select>
-            </div>
+        <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>
+          <style>
+            div:has(#chk_pagedetect:not(:checked)) + .pagedetect {
+              display: none;
+            }
+          </style>
+
+          <div>
+            <label for="chk_pagedetect">pagedetect</label>
+            <input id="chk_pagedetect" phx-update="ignore" type="checkbox" />
           </div>
 
-          <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>
-            <style>
-              div:has(#chk_pagedetect:not(:checked)) + .pagedetect {
-                display: none;
-              }
-            </style>
-
-            <div>
-              <label for="chk_pagedetect">pagedetect</label>
-              <input id="chk_pagedetect" phx-update="ignore" type="checkbox" />
-            </div>
-
-            <div class="pagedetect">
-              <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
-              <div :if={not is_nil(@files.order)}>
-                <form phx-submit="order-save">
-                  <textarea name="order">{inspect(@files.order)}</textarea>
-                  <button>Save</button>
-                </form>
-                <div id="current_page"></div>
-                <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
-                <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
-                <table>
-                  <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
-                    <td>
-                      <button
-                        phx-click="order-set"
-                        phx-value-index={i}
-                        phx-value-n="0"
-                        disabled={o == 0}
-                      >
-                        0
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        phx-click="order-set"
-                        phx-value-index={i}
-                        phx-value-n="1"
-                        disabled={o == 1}
-                      >
-                        1
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        phx-click="order-set"
-                        phx-value-index={i}
-                        phx-value-n="2"
-                        disabled={o == 2}
-                      >
-                        2
-                      </button>
-                    </td>
-                    <td>
-                      <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
-                    </td>
-                    <td>
-                      <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
-                    </td>
-                    <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
-                  </tr>
-                </table>
-              </div>
+          <div class="pagedetect">
+            <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
+            <div :if={not is_nil(@files.order)}>
+              <form phx-submit="order-save">
+                <textarea name="order">{inspect(@files.order)}</textarea>
+                <button>Save</button>
+              </form>
+              <div id="current_page"></div>
+              <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
+              <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
+              <table>
+                <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
+                  <td>
+                    <button
+                      phx-click="order-set"
+                      phx-value-index={i}
+                      phx-value-n="0"
+                      disabled={o == 0}
+                    >
+                      0
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      phx-click="order-set"
+                      phx-value-index={i}
+                      phx-value-n="1"
+                      disabled={o == 1}
+                    >
+                      1
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      phx-click="order-set"
+                      phx-value-index={i}
+                      phx-value-n="2"
+                      disabled={o == 2}
+                    >
+                      2
+                    </button>
+                  </td>
+                  <td>
+                    <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
+                  </td>
+                  <td>
+                    <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
+                  </td>
+                  <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
+                </tr>
+              </table>
             </div>
           </div>
         </div>
@@ -141,18 +140,13 @@ defmodule LLWeb.ReaderLive do
       data-files={Jason.encode!(@files)}
       data-reading-mode={reading_mode || "rtl"}
     >
-      <svg style="position: fixed; visibility: hidden; transform: scale(0);">
-        <filter id="noise2">
-          <feTurbulence type="fractalNoise" baseFrequency="0.2" numOctaves="4" stitchTiles="stitch" />
-          <feColorMatrix type="matrix" values="100 0 0 0 -75 0 100 0 0 -75 0 0 100 0 -75 0 0 0 0.3 0" />
-        </filter>
-      </svg>
       <div class="info">
         <span class="page"></span>
         <span class="zoom"></span>
         <span class="mipmaplevel"></span>
         <div class="log"></div>
       </div>
+      <button id="btn_fullscreen" class="material-symbols-rounded"></button>
     </div>
     """
   end

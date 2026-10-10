@@ -40,6 +40,9 @@ const DOUBLE_TAP_TIMEOUT = 300
 const LONG_PRESS_TIMEOUT = 500
 const TOUCH_SLOP_DP = 8
 
+/** Release speed (CSS px/s) past which a drag flicks the page over, whatever the distance. */
+const FLICK_TURN_SPEED = 500
+
 /** How close to an edge a touch must be to suppress the long press. */
 const EDGE_THRESHOLD = 50
 
@@ -85,6 +88,9 @@ export class ImageViewerElement extends HTMLElement {
 
     private stream!: PointerStream
     private resizeObserver: ResizeObserver | null = null
+
+    /** Page-space centre of the canvas at the last resize. */
+    private lastCenter: { x: number; y: number } | null = null
     private gestureJob: Job | null = null
     private abort: AbortController | null = null
 
@@ -145,8 +151,22 @@ export class ImageViewerElement extends HTMLElement {
             const height = Math.max(1, Math.round(rect.height * window.devicePixelRatio))
             if (width === this.state.width && height === this.state.height) return
             const first = this.state.width === 0 || this.state.height === 0
+            if (!first) this.state.onViewportChanging?.()
             this.state.init(this.canvas, width, height)
             this.state.onViewportChanged?.(first)
+            const cx = rect.left + rect.width / 2
+            const cy = rect.top + rect.height / 2
+            // The content starts where it was on screen and slides to its new place.
+            if (!first && this.lastCenter) {
+                const dpr = window.devicePixelRatio
+                this.state.slideFrom(
+                    (this.lastCenter.x - cx) * dpr,
+                    (this.lastCenter.y - cy) * dpr,
+                )
+            }
+            this.lastCenter = { x: cx, y: cy }
+            // ResizeObserver runs before paint, so this frame replaces the cleared canvas.
+            if (!first) this.state.renderNow()
             this.state.invalidate()
         })
         this.resizeObserver.observe(this)
@@ -473,11 +493,16 @@ export class ImageViewerElement extends HTMLElement {
             }
         }
 
+        // Starts at the press, so the motion inside the touch slop counts towards a flick.
+        const velocityTracker = new VelocityTracker(firstEvent.raw.pointerType === "mouse")
+        velocityTracker.addChange(firstDown)
+
         const cleanUp = await waitForCleanUp(
             this.stream,
             firstDownId,
             DOUBLE_TAP_TIMEOUT,
             this.touchSlop,
+            change => velocityTracker.addChange(change),
         )
 
         // Middle click zooms like a double tap; dragging it pans like the left button.
@@ -529,7 +554,7 @@ export class ImageViewerElement extends HTMLElement {
             return
         }
 
-        await this.panPinch(page, firstEvent, wasScrolling, pageTurnJob, {
+        await this.panPinch(page, firstEvent, wasScrolling, pageTurnJob, velocityTracker, {
             get longPressed() {
                 return longPressed
             },
@@ -633,6 +658,7 @@ export class ImageViewerElement extends HTMLElement {
         firstEvent: GestureEvent,
         wasScrolling: boolean,
         pageTurnJob: Job | null,
+        velocityTracker: VelocityTracker,
         longPress: { readonly longPressed: boolean; cancelLongPress: () => void },
     ) {
         const state = this.state
@@ -653,9 +679,6 @@ export class ImageViewerElement extends HTMLElement {
 
         // If grabbing mid-animation, update firstPos so panning continues smoothly.
         if (wasScrolling) state.firstPos = firstPosition
-
-        const velocityTracker = new VelocityTracker()
-        velocityTracker.addChange(firstEvent.changes.find(c => c.id === firstDownId)!)
 
         page.animationJob?.cancel()
 
@@ -782,15 +805,20 @@ export class ImageViewerElement extends HTMLElement {
             const initialVelocity =
                 state.isVertical ? -velocity.y / state.height : -velocity.x / state.width
 
+            // A flick is a speed in CSS pixels, not in canvas widths: a quick flick on a wide
+            // window covers well under a width a second.
+            const extent = state.isVertical ? state.height : state.width
+            const flickSpeed = (FLICK_TURN_SPEED * window.devicePixelRatio) / extent
+
             // Flicking opposite to current direction = go back to 0.
             const flickingOpposite =
-                (state.pageOffset > 0 && initialVelocity < -0.5) ||
-                (state.pageOffset < 0 && initialVelocity > 0.5)
+                (state.pageOffset > 0 && initialVelocity < -flickSpeed / 2) ||
+                (state.pageOffset < 0 && initialVelocity > flickSpeed / 2)
 
             const target =
                 flickingOpposite ? 0
-                    : initialVelocity > 1 && state.haveNext ? 1
-                        : initialVelocity < -1 && state.havePrev ? -1
+                    : initialVelocity > flickSpeed && state.haveNext ? 1
+                        : initialVelocity < -flickSpeed && state.havePrev ? -1
                             : state.pageOffset > 0.5 && state.haveNext ? 1
                                 : state.pageOffset < -0.5 && state.havePrev ? -1
                                     : 0
