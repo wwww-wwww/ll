@@ -234,7 +234,7 @@ defmodule LL.ExtensionManager do
       extension: source.extension.path,
       source: source.source_id,
       url: series.url,
-      title: series.title,
+      title: series.title
     }
     |> Jason.encode!()
     |> Downloader.post @manager_api <> "series_details", :local do
