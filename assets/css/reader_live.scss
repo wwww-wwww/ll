@@ -5,7 +5,7 @@
         padding: 0;
         overflow-x: hidden;
         flex-direction: row-reverse;
-        background: var(--background-dark);
+        background: black;
     }
 
     .series_details {
@@ -113,13 +113,10 @@
             cursor: zoom-out;
         }
 
-        &.cursor-left {
-            cursor: w-resize;
-        }
-
-        &.cursor-right {
-            cursor: w-resize;
-        }
+        --cursor-left: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M20 5L9 16L20 27' fill='none' stroke='black' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M20 5L9 16L20 27' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 16 16,
+        auto;
+        --cursor-right: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cpath d='M12 5L23 16L12 27' fill='none' stroke='black' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M12 5L23 16L12 27' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 16 16,
+        auto;
 
         webgpu-viewer {
             width: 100%;
@@ -154,8 +151,29 @@
             border-top-left-radius: 8px;
             display: flex;
             gap: 0.5em;
+            transition: opacity 0.2s;
+            opacity: 0;
         }
 
+        &:not(&.mouse-active) {
+            cursor: none;
+        }
+
+        &.mouse-active {
+
+            .info,
+            #btn_fullscreen {
+                opacity: 1;
+            }
+
+            &.cursor-left {
+                cursor: var(--cursor-left);
+            }
+
+            &.cursor-right {
+                cursor: var(--cursor-right);
+            }
+        }
     }
 
     #page_container {
@@ -226,17 +244,9 @@
         opacity: 0;
         transition: opacity 0.2s;
 
-        &:hover {
-            opacity: 1;
-        }
-
         &::before {
             content: "fullscreen";
         }
-    }
-
-    #reader.mouse-active #btn_fullscreen {
-        opacity: 1;
     }
 }
 
