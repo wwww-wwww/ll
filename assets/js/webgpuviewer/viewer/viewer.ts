@@ -1,5 +1,6 @@
-import { Job, alphaOf, animate, closeTo, coerceIn, launch, spring } from "../util"
-import { DecodeAborted, ImageDecoder, closeLevels } from "../decoder"
+import { Job, Rect, alphaOf, animate, closeTo, coerceIn, launch, spring } from "../util"
+import { DecodeAborted, DecodeTimings, ImageDecoder, PartialFrame, closeLevels } from "../decoder"
+import { AnimationFrame } from "./animationframe"
 import { MIPMAP_TILE_SIZE, Image } from "../renderer/image"
 import { applyDisplayCorrection } from "../filter/colormanagement"
 import { WebGpuRenderer } from "../renderer/renderer"
@@ -94,8 +95,17 @@ const enum PageState {
 /** How a page's home transform is chosen. */
 export type FitMode = "fit-screen" | "fit-width" | "fit-height" | "original"
 
-/** Where a zoomed-in page starts horizontally. */
-/** "auto" starts at the reading direction's first edge: right when reversed, else left. */
+/** Log how long each image takes from download to paint. */
+const PROFILE = true
+
+/** A precise pointer with hover: desktop, where the smaller mip levels are not worth their cost. */
+const IS_DESKTOP =
+    typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches
+
+/**
+ * Where a zoomed-in page starts horizontally. "auto" starts at the reading direction's first
+ * edge: right when reversed, else left.
+ */
 export type ZoomStart = "left" | "right" | "center" | "auto"
 
 /** Every page-turn animation. */
@@ -198,6 +208,27 @@ const DEFAULT_CONFIG: ViewerConfig = {
  */
 class ViewerPage {
     state = PageState.Idle
+
+    /** The animation the worker is holding for this page, until [Viewer.startAnimation] plays it. */
+    animation: { decoder: ImageDecoder; id: number; firstDuration: number } | null = null
+
+    /** The progressive preview of the load in flight - see [Viewer.showPartial]. */
+    preview: {
+        busy: boolean
+        next: PartialFrame | null
+        single: ImageSingle | null
+        /** Set once the finished decode is taking over, so no later step overwrites it. */
+        done: boolean
+        /** Settles when the step in flight has uploaded. */
+        idle: Promise<void> | null
+    } | null = null
+
+    /** [performance.now] stamps of the last load, when [PROFILE] is on. */
+    profile: { start: number; decoded: number; uploaded: number; worker?: DecodeTimings } = {
+        start: 0,
+        decoded: 0,
+        uploaded: 0,
+    }
 
     /** A [ProgressPage] until the decode lands, then an [ImageSingle]. */
     imagePage: ImagePage
@@ -1346,6 +1377,9 @@ export class Viewer extends ImageViewerElement {
      */
     private async decodePage(page: ViewerPage) {
         page.state = PageState.Loading
+        page.preview = null
+        page.animation = null
+        page.profile = { start: performance.now(), decoded: 0, uploaded: 0 }
 
         // Each file resolves to its own ImagePage - decoded, or an ErrorPage if that one file
         // failed. A pair's halves are separate downloads, so one failing must not take the other
@@ -1356,6 +1390,7 @@ export class Viewer extends ImageViewerElement {
 
         // Evicted while the fetch was in flight.
         if (this.pageCache.get(page.index) !== page || page.imagePage.destroyed) {
+            this.dropAnimation(page)
             halves.forEach(half => half?.cleanup())
             page.state = PageState.Idle
             return
@@ -1368,6 +1403,22 @@ export class Viewer extends ImageViewerElement {
                 : new ImageSpread(halves[0], halves[1])
 
         const old = page.imagePage
+
+        // A preview that took the decode: already the page, with its own pan and zoom.
+        if (imagePage === old && imagePage instanceof ImageSingle) {
+            page.progress = []
+            page.state = PageState.Idle
+            page.preview = null
+            // Tiles for a still, which the preview skipped; an animation swaps images every frame.
+            imagePage.highQuality = page.animation === null
+            // Bumps frameVersion, so a transition's cached render of the preview is stale.
+            imagePage.invalidate()
+            this.startAnimation(page, imagePage)
+            this.state.invalidate()
+            if (PROFILE) this.reportProfile(page)
+            return
+        }
+
         page.imagePage = imagePage
         page.spreadPage = null
         page.progress = []
@@ -1387,11 +1438,156 @@ export class Viewer extends ImageViewerElement {
         }
 
         // Fade up from the placeholder's colour, if that placeholder was on screen - one that
-        // decoded out of view has nothing left to fade from.
-        if (old.isOnScreen) imagePage.fadeIn()
+        // decoded out of view has nothing left to fade from. A preview already showed the image,
+        // so there is nothing to fade up from.
+        const fromPreview = page.preview?.single === old
+        if (old.isOnScreen && !fromPreview) imagePage.fadeIn()
+        page.preview = null
 
         this.cleanupImage(old)
+        this.startAnimation(page, imagePage)
         this.state.invalidate()
+        if (PROFILE) this.reportProfile(page)
+    }
+
+    /**
+     * Play the animation the worker is holding for [page], on [imagePage] once it is the page.
+     *
+     * The worker keeps the decoder and hands frames over as they are due, so decoding stays off
+     * this thread; the page loops it and holds its frame while off screen. Releasing - when the
+     * page is evicted or cleaned up - lets the worker close the decoder.
+     */
+    private startAnimation(page: ViewerPage, imagePage: ImagePage) {
+        const animation = page.animation
+        page.animation = null
+        if (!animation) return
+        const { decoder, id, firstDuration } = animation
+        if (!(imagePage instanceof ImageSingle) || imagePage instanceof ImageSpread) {
+            decoder.releaseAnimation(id)
+            return
+        }
+        imagePage.animate(
+            firstDuration,
+            () => decoder.releaseAnimation(id),
+            async () => {
+                const frame = await decoder.nextFrame(id)
+                return frame ? new AnimationFrame(new Uint8Array(frame.pixels), frame.duration) : null
+            },
+        )
+    }
+
+    /** Let the worker go of an animation nothing is going to play. */
+    private dropAnimation(page: ViewerPage) {
+        const animation = page.animation
+        page.animation = null
+        animation?.decoder.releaseAnimation(animation.id)
+    }
+
+    /**
+     * Show a progressive step of [page] while it is still downloading: the first replaces the
+     * loading ring with an image of the partial pixels, later ones rewrite just what changed.
+     *
+     * Steps arrive faster than they upload, so only the newest waits its turn. The preview skips
+     * mip levels and the tile cache, which would go stale on every step; the finished decode
+     * replaces it.
+     */
+    private showPartial(page: ViewerPage, frame: PartialFrame) {
+        const state = (page.preview ??= {
+            busy: false,
+            next: null,
+            single: null,
+            done: false,
+            idle: null,
+        })
+        state.next = frame
+        if (state.busy || state.done) return
+        state.busy = true
+        state.idle = this.drainPartials(page, state).finally(() => (state.busy = false))
+    }
+
+    private async drainPartials(page: ViewerPage, state: NonNullable<ViewerPage["preview"]>) {
+        try {
+            while (state.next && !state.done) {
+                const f = state.next
+                state.next = null
+                if (this.pageCache.get(page.index) !== page) return
+
+                const pixels = new Uint8Array(f.pixels)
+                const rect = new Rect(
+                    f.dirty[0],
+                    f.dirty[1],
+                    f.dirty[0] + f.dirty[2],
+                    f.dirty[1] + f.dirty[3],
+                )
+
+                if (!state.single) {
+                    const image = await Image.create(pixels, f.width, f.height, {
+                        createMipMaps: false,
+                        backgroundColor: this.config.backgroundColor,
+                    })
+                    // Only a loading ring is ever replaced: anything else is the finished page
+                    // or an error, which a preview must not overwrite.
+                    const old = page.imagePage
+                    if (
+                        state.done ||
+                        this.pageCache.get(page.index) !== page ||
+                        !(old instanceof ProgressPage) ||
+                        old.destroyed
+                    ) {
+                        image.cleanup()
+                        return
+                    }
+                    const single = new ImageSingle(image)
+                    single.highQuality = false
+                    state.single = single
+                    page.imagePage = single
+                    // A spread built around the ring would keep drawing it.
+                    page.spreadPage = null
+                    single.attach(this.state, () => this.state.invalidate())
+                    if (!this.isDualPageMode() && !this.applyWideZoom(single)) {
+                        this.applyFitMode(single)
+                    }
+                    if (old.isOnScreen) single.fadeIn()
+                    this.cleanupImage(old)
+                } else {
+                    const shown = state.single
+                    // Replaced, by the finished page or an error.
+                    if (page.imagePage !== shown || shown.destroyed || !shown.image) return
+                    if (shown.image.width !== f.width || shown.image.height !== f.height) return
+                    await shown.image.update(pixels, rect)
+                    shown.invalidate()
+                }
+                this.state.invalidate()
+            }
+        } catch (e) {
+            console.warn(`Viewer: progressive preview of page ${page.index} failed`, e)
+        }
+    }
+
+    /** Logs the stages of [page]'s load once the frame that first shows it has been drawn. */
+    private reportProfile(page: ViewerPage) {
+        const { start, decoded, uploaded, worker } = page.profile
+        const installed = performance.now()
+        // Registered after the invalidate, so it runs after the frame that draws the page.
+        requestAnimationFrame(() => {
+            const painted = performance.now()
+            const ms = (a: number, b: number) => Math.round(b - a)
+            console.log(
+                `Viewer: page ${page.index} download+decode ${ms(start, decoded)} ms` +
+                    (worker ?
+                        ` [${worker.engine}: download ${Math.round(worker.download)}, ` +
+                        `wait ${Math.round(worker.wait)}, decode ${Math.round(worker.decode)}, ` +
+                        `${worker.previews} previews, first at ${Math.round(worker.firstPreview)}]`
+                        : "") +
+                    `, ` +
+                    `upload ${ms(decoded, uploaded)} ms, install ${ms(uploaded, installed)} ms, ` +
+                    `paint ${ms(installed, painted)} ms - total ${ms(start, painted)} ms`,
+            )
+            performance.measure(`page ${page.index} download to paint`, {
+                start,
+                end: painted,
+            })
+        })
     }
 
     /**
@@ -1432,8 +1628,13 @@ export class Viewer extends ImageViewerElement {
             page.aborts[slot] = controller
 
             let image: Image | null = null
+            // The preview that took the decode, when it did.
+            let finished: ImageSingle | null = null
             if (decoder) {
                 try {
+                    // One file per page: a pre-paired page is two separate decodes, and composing
+                    // a spread of two half-loaded images is not something the viewer does.
+                    const previewable = page.urls.length === 1
                     const decoded = await decoder.decode(
                         url,
                         MIPMAP_TILE_SIZE,
@@ -1441,26 +1642,54 @@ export class Viewer extends ImageViewerElement {
                             if (ring) ring.progress = DOWNLOAD_SHARE * value
                         },
                         controller!.signal,
+                        previewable ? frame => void this.showPartial(page, frame) : undefined,
+                        // As the preview: a pre-paired page is two decodes, not one animation.
+                        page.urls.length === 1,
                     )
+                    if (decoded.animation) {
+                        page.animation = { decoder, ...decoded.animation }
+                    }
                     if (ring) ring.progress = 1
+                    page.profile.decoded = Math.max(page.profile.decoded, performance.now())
+                    page.profile.worker = decoded.timings
                     // Evicted while decoding.
                     if (this.pageCache.get(page.index) !== page) {
+                        this.dropAnimation(page)
                         closeLevels(decoded.levels)
                         decoder.recycle(decoded.levels)
                         return null
                     }
                     try {
-                        image = await Image.fromDecoded(
-                            decoded,
-                            this.config.backgroundColor,
-                            MIPMAP_TILE_SIZE,
-                        )
+                        // A preview becomes the finished image in place, which keeps the pan and
+                        // zoom the reader already has on it.
+                        const preview = page.preview
+                        if (preview?.single) {
+                            preview.done = true
+                            await preview.idle
+                            const shown = preview.single
+                            if (
+                                page.imagePage === shown &&
+                                !shown.destroyed &&
+                                shown.image &&
+                                (await shown.image.adopt(decoded, MIPMAP_TILE_SIZE))
+                            ) {
+                                finished = shown
+                            }
+                        }
+                        if (!finished) {
+                            image = await Image.fromDecoded(
+                                decoded,
+                                this.config.backgroundColor,
+                                MIPMAP_TILE_SIZE,
+                            )
+                        }
                     } finally {
                         // The upload is done with them either way - back to the pool, so this thread
                         // never frees a page-sized buffer. See ImageDecoder.recycle.
                         decoder.recycle(decoded.levels)
                     }
                 } catch (e) {
+                    this.dropAnimation(page)
                     if (isAbort(e)) throw e
                     // The worker is an optimisation, not a dependency. Anything it can't do -
                     // a blocked fetch, a codec it lacks, a broken environment - falls through to
@@ -1472,13 +1701,20 @@ export class Viewer extends ImageViewerElement {
                 }
             }
 
+            if (finished) {
+                page.profile.uploaded = Math.max(page.profile.uploaded, performance.now())
+                return finished
+            }
+
             if (!image) {
                 bitmap = await this.download(page, url, slot, controller)
                 // Aborted, or the page was evicted while the bytes were arriving.
                 if (!bitmap) return null
                 if (this.pageCache.get(page.index) !== page) return null
+                page.profile.decoded = Math.max(page.profile.decoded, performance.now())
 
                 image = await Image.fromBitmap(bitmap, {
+                    createMipMaps: !IS_DESKTOP,
                     trimColors,
                     trimThreshold: 0.15,
                     backgroundColor:
@@ -1490,6 +1726,7 @@ export class Viewer extends ImageViewerElement {
                 image.cleanup()
                 return null
             }
+            page.profile.uploaded = Math.max(page.profile.uploaded, performance.now())
 
             return new ImageSingle(image)
         } catch (e) {

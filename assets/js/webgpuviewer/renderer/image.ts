@@ -409,6 +409,61 @@ export class Image {
         })
     }
 
+    /**
+     * Turns this image, until now a progressive preview of one level, into the finished [decoded]
+     * one: the base texture is rewritten in place and the smaller levels are added. False, with
+     * nothing touched, where [decoded] is not a same-sized image of pixels this can take.
+     */
+    async adopt(decoded: DecodedImage, tileSize: number = MIPMAP_TILE_SIZE): Promise<boolean> {
+        const first = decoded.levels[0]
+        const base = this.mipmaps[0]
+        if (!base || this.mipmaps.length !== 1 || !first?.bytes) return false
+        if (decoded.width !== this.width || decoded.height !== this.height) return false
+
+        if (!(await this.update(new Uint8Array(first.bytes, 0, first.w * first.h * 4)))) {
+            return false
+        }
+
+        // Off the lock: unreachable until added.
+        const extra: Mipmap[] = []
+        try {
+            await WebGpuRenderer.unlocked(async () => {
+                for (const level of decoded.levels.slice(1)) {
+                    extra.push(
+                        level.bytes ?
+                            await Mipmap.create(
+                                new Uint8Array(level.bytes, 0, level.w * level.h * 4),
+                                level.w,
+                                level.h,
+                                level.scale,
+                                tileSize,
+                            )
+                            : await Mipmap.createFromSource(
+                                level.bitmap!,
+                                level.w,
+                                level.h,
+                                level.scale,
+                                tileSize,
+                            ),
+                    )
+                }
+            })
+            await WebGpuRenderer.withLock(() => {
+                if (this.mipmaps.length !== 1 || this.mipmaps[0] !== base) {
+                    throw new Error("Image was cleaned up")
+                }
+                this.mipmaps.push(...extra)
+            })
+        } catch (e) {
+            if (extra.length > 0 && !this.mipmaps.some(m => extra.includes(m))) {
+                await WebGpuRenderer.unlocked(() => extra.forEach(m => m.cleanup()))
+            }
+            throw e
+        }
+        closeLevels(decoded.levels)
+        return true
+    }
+
     /** Bumped by [update]; part of the page's frameVersion, so a transition's cached copy re-seeds. */
     contentVersion = 0
 

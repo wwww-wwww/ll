@@ -1093,6 +1093,7 @@ export class ImageSingle extends ImagePage {
             return
         }
         this.animationLoop?.cancel()
+        this.wakeShown?.()
         // The replaced loop's back image is its own; this one starts again from [image].
         if (this.backImage) this.releaseImage(this.backImage)
         this.backImage = null
@@ -1147,6 +1148,8 @@ export class ImageSingle extends ImagePage {
         while (true) {
             if (!this.isOnScreen) {
                 while (!this.isOnScreen) {
+                    // A cancelled loop is woken to end, not left waiting for a page that is gone.
+                    job.ensureActive()
                     await new Promise<void>(resolve => (this.wakeShown = resolve))
                 }
                 this.wakeShown = null
@@ -1517,6 +1520,7 @@ export class ImageSingle extends ImagePage {
 
         this.animationLoop?.cancel()
         this.animationLoop = null
+        this.wakeShown?.()
 
         // Made by [animate], so this page's whatever [ownsImage] says.
         const back = this.backImage
