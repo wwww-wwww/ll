@@ -29,39 +29,23 @@ defmodule LLWeb.SeriesLive do
         <div :if={Anilist.has_thumbnail?(@entry)} class="cover-image">
           <img src={~p"/thumbnail/#{Path.basename(Anilist.thumbnail_path(@entry))}"} />
         </div>
-        
+
         <div class="details">
           <h1>
             <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{details.title} (Multi)</.link>
             <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{details.title}</.link>
           </h1>
-          
+
           <div>
             <div>
               <div>
                 <span>Author: <span class="author">{details.author}</span></span>
                 <span>Artist: <span class="artist">{details.artist}</span></span>
                 <span>Status: <span class="status">{status(details)}</span></span>
-                <span>
-                  Source:
-                  <span
-                    :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi}
-                    class="source"
-                  >
-                    <span :if={@is_multi}>Multi</span>
-                    <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
-                      {@entry.source.name} ({@entry.source.lang})
-                    </.link>
-                  </span>
-                </span>
-                <span :if={not @is_multi}>
-                  Last chapter refresh:
-                  <span class="updated">{relative_time(@entry.chapters_updated)}</span>
-                </span>
                 <span>Reading mode: <span class="reading-mode">{@entry.reading_mode}</span></span>
               </div>
-              
-              <div :if={LL.User.mod?(@current_scope)} class="anilist-details">
+
+              <div class="anilist-details">
                 Anilist:
                 <.link class="anilist" href={"https://anilist.co/manga/#{@entry.anilist_id}"}>
                   {@entry.anilist_id}
@@ -73,15 +57,15 @@ defmodule LLWeb.SeriesLive do
                     <button :if={@progress} type="button" phx-click="track-sync">Sync</button>
                   </label>
                 </div>
-                
-                <form phx-submit="anilist-search">
+
+                <form :if={LL.User.mod?(@current_scope)} phx-submit="anilist-search">
                   <div>
                     <input type="text" name="title" value={@entry.title || @entry.series.title} />
                     <input type="submit" value="Search" />
                   </div>
                 </form>
-                
-                <div>
+
+                <div :if={LL.User.mod?(@current_scope)}>
                   <span :for={{t, i} <- (assigns[:anilist_search_results] || []) |> Enum.with_index()}>
                     <% title = t[:title][:english] || t[:title][:romaji] || t[:title][:native] %>
                     <img src={t[:coverImage][:extraLarge]} />
@@ -102,19 +86,21 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
               </div>
-              
-              <div class="aliases">
+
+              <% aliases = LL.Anilist.aliases(@entry) %>
+              <div class="aliases" :if={length(aliases) > 0 or LL.User.mod?(@current_scope)}>
                 Aliases
-                <form phx-submit="alias-add">
+                <form :if={LL.User.mod?(@current_scope)} phx-submit="alias-add">
                   <div>
                     <input type="text" name="name" value="" />
                     <input type="submit" value="add" class="material-symbols-rounded" />
                   </div>
                 </form>
-                
-                <div :for={a <- LL.Anilist.aliases(@entry)}>
+
+                <div :for={a <- aliases}>
                   <span>{a.name}</span>
                   <button
+                    :if={LL.User.mod?(@current_scope)}
                     phx-click="alias-remove"
                     phx-value-id={a.id}
                     class="material-symbols-rounded"
@@ -123,7 +109,26 @@ defmodule LLWeb.SeriesLive do
                   </button>
                 </div>
               </div>
-              
+
+              <div>
+                <span>
+                  Source:
+                  <span
+                    :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi}
+                    class="source"
+                  >
+                    <span :if={@is_multi}>Multi</span>
+                    <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
+                      {@entry.source.name} ({@entry.source.lang})
+                    </.link>
+                  </span>
+                </span>
+                <span :if={not @is_multi}>
+                  Last chapter refresh:
+                  <span class="updated">{relative_time(@entry.chapters_updated)}</span>
+                </span>
+              </div>
+
               <div
                 :if={@is_multi or not is_nil(@entry.multi_series) or LL.User.mod?(@current_scope)}
                 class="multis"
@@ -137,14 +142,14 @@ defmodule LLWeb.SeriesLive do
                     <button phx-click="multi_create">Create multi</button>
                     <button phx-click="multi_get">Add to multi</button>
                   <% end %>
-                  
+
                   <%= if not @is_multi do %>
                     <.link :if={@entry.multi_series} navigate={~p"/multi/#{@entry.multi_series.id}"}>
                       {@entry.multi_series.title || @entry.multi_series.series.title}
                     </.link>
                   <% end %>
                 </div>
-                
+
                 <div :if={@is_multi}>
                   <span :for={s <- Enum.sort_by(@multi_children, &(&1.priority || 0))}>
                     <%= if LL.User.mod?(@current_scope) do %>
@@ -176,7 +181,7 @@ defmodule LLWeb.SeriesLive do
                     </button>
                   </span>
                 </div>
-                
+
                 <div :if={assigns[:multis]}>
                   <span :for={m <- @multis |> Enum.filter(&(@entry.multi_series_id != &1.id))}>
                     <span>{m.series.title}</span>
@@ -191,7 +196,7 @@ defmodule LLWeb.SeriesLive do
                 </div>
               </div>
             </div>
-            
+
             <div>
               <div
                 :if={@current_scope.user}
@@ -220,7 +225,7 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
               </div>
-              
+
               <div
                 :if={LL.User.mod?(@current_scope.user)}
                 class="libraries"
@@ -252,15 +257,15 @@ defmodule LLWeb.SeriesLive do
           </div>
         </div>
       </div>
-      
+
       <div :if={@entry.genre} class="tags">
         <span :for={t <- @entry.genre |> String.split(", ")}>{t}</span>
       </div>
-      
+
       <div :if={details.description} class="description">
         {raw(HtmlSanitizeEx.basic_html(details.description))}
       </div>
-      
+
       <div :if={LL.User.mod?(@current_scope)} class="actions">
         <button :if={not @is_multi} phx-click="refresh_details">Refresh details</button>
         <button phx-click="refresh_chapters">Refresh chapters</button>
@@ -273,7 +278,7 @@ defmodule LLWeb.SeriesLive do
           <% end %>
         </button>
       </div>
-      
+
       <div class="chapterlist">
         <%= if @is_multi do %>
           <.live_component
