@@ -95,7 +95,7 @@ export class Reader extends ViewHook {
                 if (x < 0.33) this.viewer.moveLeft()
                 else this.viewer.moveRight()
             } else {
-                this.turn(x < 0.33 ? 1 : -1)
+                this.step(x < 0.33 ? -1 : 1)
             }
         }
 
@@ -419,6 +419,12 @@ export class Reader extends ViewHook {
      * hand-rolled "is the next file the same page?" check here was for. Only the far edge of the
      * window stops it, and then only until the chapter past it is pulled in.
      */
+    /** Pan a zoomed page towards [screenDirection] first, and turn once it has no room left. */
+    private step(screenDirection: number) {
+        if (!this.continuous && this.viewer.panStep(screenDirection)) return
+        this.turn(this.viewer.config.reversed ? -screenDirection : screenDirection)
+    }
+
     private turn(direction: number) {
         let next = this.viewer.stepFileIndex(direction)
         if (next === null) {
@@ -736,11 +742,11 @@ export class Reader extends ViewHook {
 
             if (e.key == "ArrowLeft") {
                 e.preventDefault()
-                this.turn(1)
+                this.step(-1)
             }
             if (e.key == "ArrowRight") {
                 e.preventDefault()
-                this.turn(-1)
+                this.step(1)
             }
         }
 

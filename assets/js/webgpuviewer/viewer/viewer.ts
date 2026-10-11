@@ -95,7 +95,8 @@ const enum PageState {
 export type FitMode = "fit-screen" | "fit-width" | "fit-height" | "original"
 
 /** Where a zoomed-in page starts horizontally. */
-export type ZoomStart = "left" | "right" | "center"
+/** "auto" starts at the reading direction's first edge: right when reversed, else left. */
+export type ZoomStart = "left" | "right" | "center" | "auto"
 
 /** Every page-turn animation. */
 export const TRANSITIONS = [
@@ -172,13 +173,13 @@ const DEFAULT_CONFIG: ViewerConfig = {
     preloadAhead: 3,
     preloadBehind: 2,
     fitMode: "fit-screen",
-    zoomStart: "center",
-    landscapeZoom: false,
+    zoomStart: "auto",
+    landscapeZoom: true,
     cropBorders: false,
     cropBordersContinuous: false,
     automaticBackground: false,
     backgroundColor: 0,
-    navigateToPan: false,
+    navigateToPan: true,
     // Most of a page's time is spent waiting rather than working, so a few at once fills the
     // preload window far sooner; past a handful the network is the limit anyway.
     decodeConcurrency: 3,
@@ -591,10 +592,34 @@ export class Viewer extends ImageViewerElement {
             this.pageCache.forEach(page => {
                 page.spreadPage?.cleanup()
                 page.spreadPage = null
-                if (this.homedPages.has(page.imagePage)) page.imagePage.resetHome(true)
+                if (this.homedPages.has(page.imagePage)) this.rehome(page.imagePage)
             })
             invalidateCache()
             this.state.invalidate()
+        }
+    }
+
+    /**
+     * Re-home [page] after a resize. Wide zoom and the fit modes pin [homeScale] and the start
+     * position to the old viewport, so they are applied again rather than just re-snapped.
+     */
+    private rehome(page: ImagePage) {
+        if (
+            !(page instanceof ImageSingle) ||
+            page instanceof ImageSpread ||
+            this.isDualPageMode()
+        ) {
+            page.resetHome(true)
+            return
+        }
+        const from = page.scale
+        page.homeScale = -1
+        page.resetHome()
+        if (!this.applyWideZoom(page)) this.applyFitMode(page)
+        const { x, y, scale } = page
+        if (from > 0 && !closeTo(from, scale)) {
+            page.scale = from
+            page.animateTo({ targetScale: scale, targetX: x, targetY: y })
         }
     }
 
@@ -1573,6 +1598,9 @@ export class Viewer extends ImageViewerElement {
 
         const aspectRatio = Math.min(page.trimWidth / page.trimHeight, image.width / image.height)
 
+        // Not wide enough.
+        if (aspectRatio < 1.1) return false
+
         // Wide: its half is wider than the screen, or shaped like a decoded neighbour.
         const at = this.viewerPageFor(page)?.index
         const isWide =
@@ -1589,8 +1617,8 @@ export class Viewer extends ImageViewerElement {
         // Positioning needs the parent.
         page.parent = this.state
 
-        // Scale to fit half the image width to the full screen width.
-        page.homeScale = screenW / (page.trimWidth / 2)
+        // Scale to fit half the image width to the full screen width, but no taller than the screen.
+        page.homeScale = Math.min(screenW / (page.trimWidth / 2), screenH / page.trimHeight)
         page.scale = page.homeScale
         page.x = this.startX(page, page.homeScale)
         page.y = page.homeY
@@ -1629,7 +1657,11 @@ export class Viewer extends ImageViewerElement {
     }
 
     private startX(page: ImagePage, scale: number): number {
-        switch (this.config.zoomStart) {
+        const start =
+            this.config.zoomStart === "auto" ?
+                (this.config.reversed ? "right" : "left")
+                : this.config.zoomStart
+        switch (start) {
             case "left":
                 return page.maxX(scale)
             case "right":
@@ -1778,24 +1810,31 @@ export class Viewer extends ImageViewerElement {
             return
         }
 
-        const page = this.state.getPage(0)
-        if (page && this.config.navigateToPan) {
-            const minX = page.minX(page.scale)
-            const maxX = page.maxX(page.scale)
-            const currentX = page.animationJob ? (page.animationTargetX ?? page.x) : page.x
-            // Vertical with the zoom starting right reads a wide page from its right edge, so the
-            // pan runs the other way to meet it.
-            const reverse = this.config.vertical && this.config.zoomStart === "right" ? -1 : 1
-            const x = coerceIn(currentX - (reverse * screenDirection) / page.scale, minX, maxX)
-
-            if (!closeTo(currentX, x)) {
-                page.animateTo({ targetX: x, targetY: page.y })
-                return
-            }
-        }
+        if (this.panStep(screenDirection)) return
 
         const step = this.config.reversed ? -screenDirection : screenDirection
         this.moveToIndex(this.currentIndex + step)
+    }
+
+    /**
+     * Pan the zoomed page a screenful towards [screenDirection] if it has room, when
+     * [ViewerConfig.navigateToPan] is on. False means nothing moved, so the host should turn.
+     */
+    panStep(screenDirection: number): boolean {
+        const page = this.state.getPage(0)
+        if (!page || !this.config.navigateToPan) return false
+
+        const minX = page.minX(page.scale)
+        const maxX = page.maxX(page.scale)
+        const currentX = page.animationJob ? (page.animationTargetX ?? page.x) : page.x
+        // Vertical with the zoom starting right reads a wide page from its right edge, so the
+        // pan runs the other way to meet it.
+        const reverse = this.config.vertical && this.config.zoomStart === "right" ? -1 : 1
+        const x = coerceIn(currentX - (reverse * screenDirection) / page.scale, minX, maxX)
+
+        if (closeTo(currentX, x)) return false
+        page.animateTo({ targetX: x, targetY: page.y })
+        return true
     }
 
     /** For whatever the host binds it to. Returns true if it consumed [e]. */
