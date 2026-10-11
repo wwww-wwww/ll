@@ -78,13 +78,19 @@ export class Reader extends ViewHook {
         this.el.appendChild(this.viewer)
 
         // Outer thirds turn the page (right-to-left, so the left edge advances); the middle
-        // toggles the menu.
+        // shows the UI on touch only (mice reveal it by moving).
         //
         // Continuous reading scrolls instead: moveRight/moveLeft move half a viewport, since
         // jumping a whole page would skip most of a webtoon strip.
+        let lastPointerType = ""
+        this.viewer.addEventListener(
+            "pointerdown",
+            e => (lastPointerType = e.pointerType),
+            true,
+        )
         this.viewer.onTap = x => {
             if (x >= 0.33 && x <= 0.67) {
-                document.getElementById("series_details_toggle")?.click()
+                if (lastPointerType === "touch") this.revealUi?.(2000)
             } else if (this.continuous) {
                 if (x < 0.33) this.viewer.moveLeft()
                 else this.viewer.moveRight()
@@ -110,7 +116,16 @@ export class Reader extends ViewHook {
         this.viewer.onPageChange = page => this.pageChanged(page)
     }
 
-    private e_page!: HTMLElement
+    /** Shows the overlay UI for a while; set in `mounted`. */
+    private revealUi: ((timeout?: number) => void) | null = null
+
+    /** Shows or hides the series details menu. */
+    toggleSeriesDetails() {
+        document.getElementById("series_details_toggle")?.click()
+    }
+
+    private e_current_page!: HTMLElement
+    private e_last_page!: HTMLElement
 
     /** URLs already prefetched, or being so. */
     private prefetched = new Set<string>()
@@ -213,7 +228,31 @@ export class Reader extends ViewHook {
             window.history.replaceState({ ...window.history.state, page: page }, "", new_url)
         }
 
-        this.e_page.textContent = `${page + 1}/${chapter.count}`
+        this.e_current_page.textContent = `${page + 1}`
+        this.e_last_page.textContent = `${chapter.count}`
+        this.updateProgress(page, chapter.count)
+    }
+
+    private e_progress!: HTMLElement
+
+    /** One clickable block per page, the current one highlighted. */
+    private updateProgress(page: number, count: number) {
+        const bar = this.e_progress
+        if (bar.children.length !== count) {
+            bar.replaceChildren(
+                ...Array.from({ length: count }, (_, i) => {
+                    const block = document.createElement("button")
+                    block.dataset.page = i.toString()
+                    block.title = `${i + 1}`
+                    return block
+                }),
+            )
+        }
+        bar.querySelectorAll(".current").forEach(e => e.classList.remove("current"))
+        const start = this.reading?.start ?? 0
+        const shown = this.viewer.shownFiles.map(f => f - start)
+        // The viewer can lag the page being shown (a jump not yet applied) - trust [page] then.
+        for (const i of shown.includes(page) ? shown : [page]) bar.children[i]?.classList.add("current")
     }
 
     /**
@@ -481,7 +520,74 @@ export class Reader extends ViewHook {
     private readonly unbind: (() => void)[] = []
 
     mounted() {
-        this.e_page = this.el.querySelector(".info>.page")!
+        this.e_current_page = this.el.querySelector(".navigation .current_page")!
+        this.e_last_page = this.el.querySelector(".navigation .last_page")!
+        this.e_progress = this.el.querySelector(".ui-mouse>.navigation .progress")!
+        // Paged reading is right-to-left, so the first block sits on the right.
+        this.e_progress.classList.toggle("reversed", this.el.dataset.readingMode !== "continuous")
+        // Click or drag along the bar to scrub; the pointer is captured so a drag can leave it.
+        const bar = this.e_progress
+        let scrubbing = false
+        let lastPage = -1
+        const scrubTo = (e: PointerEvent) => {
+            const count = bar.children.length
+            if (!count) return
+            const rect = bar.getBoundingClientRect()
+            let frac = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1)
+            if (bar.classList.contains("reversed")) frac = 1 - frac
+            const page = Math.min(Math.floor(frac * count), count - 1)
+            if (page === lastPage) return
+            lastPage = page
+            this.set_page(page)
+        }
+        const onDown = (e: PointerEvent) => {
+            if (e.pointerType === "mouse" && e.button !== 0) return
+            scrubbing = true
+            lastPage = -1
+            bar.setPointerCapture(e.pointerId)
+            scrubTo(e)
+        }
+        const onMove = (e: PointerEvent) => {
+            if (scrubbing) scrubTo(e)
+        }
+        const onUp = () => (scrubbing = false)
+        bar.addEventListener("pointerdown", onDown)
+        bar.addEventListener("pointermove", onMove)
+        bar.addEventListener("pointerup", onUp)
+        bar.addEventListener("pointercancel", onUp)
+        this.unbind.push(() => {
+            bar.removeEventListener("pointerdown", onDown)
+            bar.removeEventListener("pointermove", onMove)
+            bar.removeEventListener("pointerup", onUp)
+            bar.removeEventListener("pointercancel", onUp)
+        })
+
+        const btnMenu = this.el.querySelector<HTMLElement>("#btn_menu")
+        if (btnMenu) {
+            const toggle = () => this.toggleSeriesDetails()
+            btnMenu.addEventListener("click", toggle)
+            this.unbind.push(() => btnMenu.removeEventListener("click", toggle))
+        }
+
+        const btnMenuClose = document.querySelector<HTMLElement>("#btn_menuclose")
+        if (btnMenuClose) {
+            const toggle = () => this.toggleSeriesDetails()
+            btnMenuClose.addEventListener("click", toggle)
+            this.unbind.push(() => btnMenuClose.removeEventListener("click", toggle))
+        }
+
+        // Left is forward in right-to-left reading, as with ctrl+arrow.
+        const chapterButtons: [string, number][] = [
+            ["#btn_chapterleft", 1],
+            ["#btn_chapterright", -1],
+        ]
+        for (const [selector, direction] of chapterButtons) {
+            const button = this.el.querySelector<HTMLElement>(selector)
+            if (!button) continue
+            const turn = () => this.turnChapter(direction)
+            button.addEventListener("click", turn)
+            this.unbind.push(() => button.removeEventListener("click", turn))
+        }
 
         const fullscreenButton = this.el.querySelector<HTMLElement>("#btn_fullscreen")
         if (fullscreenButton) {
@@ -489,19 +595,39 @@ export class Reader extends ViewHook {
             fullscreenButton.addEventListener("click", toggle)
 
             let hideTimer: number | undefined
-            const reveal = () => {
+            // Pressed on the UI: it stays up until release.
+            let held = false
+            const reveal = (timeout = UI_SHOW_TIMEOUT) => {
                 this.el.classList.add("mouse-active")
                 clearTimeout(hideTimer)
-                hideTimer = window.setTimeout(
-                    () => this.el.classList.remove("mouse-active"),
-                    UI_SHOW_TIMEOUT,
-                )
+                hideTimer = window.setTimeout(() => {
+                    if (!held) this.el.classList.remove("mouse-active")
+                }, timeout)
             }
-            this.el.addEventListener("pointermove", reveal)
+            const onMove = (e: PointerEvent) => {
+                if (e.pointerType === "mouse") reveal()
+            }
+            const onDown = (e: PointerEvent) => {
+                if ((e.target as HTMLElement).closest(".ui-mouse")) held = true
+            }
+            const onUp = () => {
+                if (!held) return
+                held = false
+                reveal()
+            }
+            this.el.addEventListener("pointermove", onMove)
+            this.el.addEventListener("pointerdown", onDown)
+            window.addEventListener("pointerup", onUp)
+            window.addEventListener("pointercancel", onUp)
+            this.revealUi = reveal
 
             this.unbind.push(
                 () => fullscreenButton.removeEventListener("click", toggle),
-                () => this.el.removeEventListener("pointermove", reveal),
+                () => this.el.removeEventListener("pointermove", onMove),
+                () => this.el.removeEventListener("pointerdown", onDown),
+                () => window.removeEventListener("pointerup", onUp),
+                () => window.removeEventListener("pointercancel", onUp),
+                () => (this.revealUi = null),
                 () => clearTimeout(hideTimer),
             )
         }
@@ -584,6 +710,12 @@ export class Reader extends ViewHook {
             if (e.key == "f" && !e.ctrlKey && !e.altKey && !e.metaKey) {
                 e.preventDefault()
                 this.toggleFullscreen()
+                return
+            }
+
+            if (e.key == "h" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault()
+                this.toggleSeriesDetails()
                 return
             }
 

@@ -1008,6 +1008,18 @@ export class Viewer extends ImageViewerElement {
         return this.pageList[this.currentIndex]?.fileIndex ?? 0
     }
 
+    /** File indices on screen: both halves of a spread, otherwise just [page]. */
+    get shownFiles(): number[] {
+        const page = this.pageList[this.currentIndex]
+        if (!page) return [0]
+        // A complete pair is one page covering two consecutive files.
+        if (page.pair) return [page.fileIndex, page.fileIndex + 1]
+        if (this.pairsWithNext(this.currentIndex)) {
+            return [page.fileIndex, this.pageList[this.currentIndex + 1].fileIndex]
+        }
+        return [page.fileIndex]
+    }
+
     /**
      * The file index one page (not one file) away in [direction], or null past either end.
      *

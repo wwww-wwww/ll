@@ -6,7 +6,7 @@ defmodule LLWeb.ReaderLive do
 
   def render(assigns) do
     ~H"""
-    <input type="checkbox" id="series_details_toggle" phx-update="ignore" />
+    <input type="checkbox" id="series_details_toggle" phx-update="ignore" checked />
     <% reading_mode = (assigns[:multi] || assigns[:series]) |> Map.get(:reading_mode) %>
 
     <div class="series_details">
@@ -18,6 +18,7 @@ defmodule LLWeb.ReaderLive do
             <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
           <% end %>
         </h2>
+        <button id="btn_menuclose" class="material-symbols-rounded">close</button>
       </div>
 
       <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
@@ -140,13 +141,19 @@ defmodule LLWeb.ReaderLive do
       data-files={Jason.encode!(@files)}
       data-reading-mode={reading_mode || "rtl"}
     >
-      <div class="info">
-        <span class="page"></span>
-        <span class="zoom"></span>
-        <span class="mipmaplevel"></span>
-        <div class="log"></div>
+      <div class="ui-mouse">
+        <button id="btn_fullscreen" class="material-symbols-rounded"></button>
+        <button id="btn_menu" class="material-symbols-rounded"></button>
+        <div class="navigation">
+          <div class="inner">
+            <button id="btn_chapterleft" class="material-symbols-rounded"></button>
+            <span class="last_page"></span>
+            <div class="progress"></div>
+            <span class="current_page"></span>
+            <button id="btn_chapterright" class="material-symbols-rounded"></button>
+          </div>
+        </div>
       </div>
-      <button id="btn_fullscreen" class="material-symbols-rounded"></button>
     </div>
     """
   end
