@@ -2,13 +2,12 @@ defmodule LLWeb.ReaderLive do
   use LLWeb, :live_view
   use LLWeb.ChapterComponent
 
-  alias LL.{Repo, Chapter, MultiSeries}
+  alias LL.{Repo, Chapter, MultiSeries, SeriesProgress}
 
   def render(assigns) do
     ~H"""
     <input type="checkbox" id="series_details_toggle" phx-update="ignore" checked />
     <% reading_mode = (assigns[:multi] || assigns[:series]) |> Map.get(:reading_mode) %>
-
     <div class="series_details">
       <div class="details">
         <h2>
@@ -18,9 +17,9 @@ defmodule LLWeb.ReaderLive do
             <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
           <% end %>
         </h2>
-        <button id="btn_menuclose" class="material-symbols-rounded">close</button>
+         <button id="btn_menuclose" class="material-symbols-rounded">close</button>
       </div>
-
+      
       <div id="chapterlist" class="chapterlist" phx-hook="chapterlist">
         <%= if assigns[:multi] do %>
           <.live_component
@@ -47,45 +46,47 @@ defmodule LLWeb.ReaderLive do
           />
         <% end %>
       </div>
-
+      
       <div class="reader-settings">
         <h2>Settings</h2>
+        
         <div id="reader-settings" phx-update="ignore">
           <div>
-            <label for="chk_3dlut">3dlut</label>
-            <input id="chk_3dlut" type="checkbox" checked />
+            <label for="chk_3dlut">3dlut</label> <input id="chk_3dlut" type="checkbox" checked />
           </div>
+          
           <div>
             <label for="sel_transition_single">single page transition</label>
             <select id="sel_transition_single"></select>
           </div>
+          
           <div>
             <label for="sel_transition_dual">double page transition</label>
             <select id="sel_transition_dual"></select>
           </div>
         </div>
-
+        
         <div :if={LL.User.mod?(@current_scope) and reading_mode != :continuous}>
           <style>
             div:has(#chk_pagedetect:not(:checked)) + .pagedetect {
               display: none;
             }
           </style>
-
+          
           <div>
             <label for="chk_pagedetect">pagedetect</label>
             <input id="chk_pagedetect" phx-update="ignore" type="checkbox" />
           </div>
-
+          
           <div class="pagedetect">
             <button :if={is_nil(@files.order)} phx-click="order-get">detect</button>
             <div :if={not is_nil(@files.order)}>
               <form phx-submit="order-save">
-                <textarea name="order">{inspect(@files.order)}</textarea>
-                <button>Save</button>
+                <textarea name="order">{inspect(@files.order)}</textarea> <button>Save</button>
               </form>
+              
               <div id="current_page"></div>
-              <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
+               <button phx-click="order-reset" phx-value-n="0">no dropped pages 0</button>
               <button phx-click="order-reset" phx-value-n="1">no dropped pages 1</button>
               <table>
                 <tr :for={{o, i} <- @files.order |> Enum.with_index()} class="order-page" index={i}>
@@ -99,6 +100,7 @@ defmodule LLWeb.ReaderLive do
                       0
                     </button>
                   </td>
+                  
                   <td>
                     <button
                       phx-click="order-set"
@@ -109,6 +111,7 @@ defmodule LLWeb.ReaderLive do
                       1
                     </button>
                   </td>
+                  
                   <td>
                     <button
                       phx-click="order-set"
@@ -119,12 +122,15 @@ defmodule LLWeb.ReaderLive do
                       2
                     </button>
                   </td>
+                  
                   <td>
                     <button phx-click="order-alt" phx-value-index={i} phx-value-n="0">alt</button>
                   </td>
+                  
                   <td>
                     <button phx-click="order-alt" phx-value-index={i} phx-value-n="1">alt 1</button>
                   </td>
+                  
                   <td><button phx-click={JS.push("move")} phx-value-index={i}>move</button></td>
                 </tr>
               </table>
@@ -149,7 +155,7 @@ defmodule LLWeb.ReaderLive do
             <button id="btn_chapterleft" class="material-symbols-rounded"></button>
             <span class="last_page"></span>
             <div class="progress"></div>
-            <span class="current_page"></span>
+             <span class="current_page"></span>
             <button id="btn_chapterright" class="material-symbols-rounded"></button>
           </div>
         </div>
@@ -213,6 +219,13 @@ defmodule LLWeb.ReaderLive do
     {:noreply, socket}
   end
 
+  def handle_async(:chapter_progress, {:ok, {progress, {:ok, n}}}, socket) do
+    progress |> Ecto.Changeset.change(%{progress: n}) |> Repo.update()
+    {:noreply, socket}
+  end
+
+  def handle_async(:chapter_progress, _, socket), do: {:noreply, socket}
+
   def handle_info("update_files", socket) do
     socket =
       push_event(socket, "files", %{
@@ -221,6 +234,26 @@ defmodule LLWeb.ReaderLive do
       })
 
     {:noreply, socket}
+  end
+
+  def handle_event("chapter-end", %{"id" => id}, socket) do
+    entry = socket.assigns[:multi] || socket.assigns.series
+    user = socket.assigns.current_scope.user
+
+    with %{anilist_key: token} when is_binary(token) <- user,
+         anilist_id when not is_nil(anilist_id) <- entry.anilist_id,
+         %Chapter{number: number} when not is_nil(number) <- Repo.get(Chapter, id),
+         %SeriesProgress{} = progress <-
+           Repo.get_by(SeriesProgress, user_id: user.id, anilist_id: anilist_id),
+         n = trunc(number),
+         true <- n > (progress.progress || 0) do
+      {:noreply,
+       start_async(socket, :chapter_progress, fn ->
+         {progress, LL.Anilist.advance_progress(token, anilist_id, n)}
+       end)}
+    else
+      _ -> {:noreply, socket}
+    end
   end
 
   def handle_event("order-get", _, socket) do

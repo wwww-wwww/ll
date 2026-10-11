@@ -1,5 +1,5 @@
 defmodule LL.Covers do
-  alias LL.{Repo, Series, MultiSeries}
+  alias LL.{Repo, Anilist}
 
   def encode(path) do
     filename = Path.basename(path)
@@ -9,15 +9,14 @@ defmodule LL.Covers do
   end
 
   def encode_all() do
-    LLWeb.MainLibraryLive.main_libraries()
-    |> LLWeb.MainLibraryLive.libraries_series()
+    Repo.all(Anilist)
     |> Enum.filter(&(!is_nil(&1.thumbnail_path)))
-    |> Enum.each(fn %{thumbnail_path: path} = series ->
+    |> Enum.each(fn %{thumbnail_path: path} = anilist ->
       if File.exists?("covers/#{Path.basename(path)}") do
         IO.inspect(path)
         thumbnail_path = encode(path)
 
-        series
+        anilist
         |> Ecto.Changeset.change(%{thumbnail_path: thumbnail_path})
         |> Repo.update()
       end

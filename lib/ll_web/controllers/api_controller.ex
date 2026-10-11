@@ -3,6 +3,13 @@ defmodule LLWeb.ApiController do
 
   alias LL.{Repo, Chapter, Series, MultiSeries}
 
+  defp thumbnail_url(entry) do
+    case LL.Anilist.thumbnail_path(entry) do
+      nil -> nil
+      path -> ~p"/thumbnail/#{Path.basename(path)}"
+    end
+  end
+
   def all(conn, _params) do
     entries =
       LLWeb.MainLibraryLive.main_libraries()
@@ -17,9 +24,9 @@ defmodule LLWeb.ApiController do
               author: entry.author,
               genre: entry.genre,
               status: entry.status || -1,
-              thumbnail_url: ~p"/thumbnail/#{Path.basename(entry.thumbnail_path)}",
+              thumbnail_url: thumbnail_url(entry),
               multi: true,
-              aliases: entry.aliases |> Enum.map(& &1.name)
+              aliases: LL.Anilist.aliases(entry) |> Enum.map(& &1.name)
             }
 
           series ->
@@ -30,8 +37,8 @@ defmodule LLWeb.ApiController do
               author: series.author,
               genre: series.genre,
               status: series.status || -1,
-              thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
-              aliases: entry.aliases |> Enum.map(& &1.name)
+              thumbnail_url: thumbnail_url(series),
+              aliases: LL.Anilist.aliases(entry) |> Enum.map(& &1.name)
             }
         end
       end)
@@ -41,7 +48,7 @@ defmodule LLWeb.ApiController do
 
   def all_multi(conn, %{"multi_id" => multi_id}) do
     Repo.get(MultiSeries, multi_id)
-    |> Repo.preload(series: :source, children: :source)
+    |> Repo.preload([:anilist, series: :source, children: :source])
     |> case do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
@@ -55,7 +62,7 @@ defmodule LLWeb.ApiController do
             author: multi.author,
             genre: multi.genre,
             status: multi.status || -1,
-            thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.thumbnail_path)}",
+            thumbnail_url: thumbnail_url(multi),
             multi: true
           }
         ])
@@ -64,7 +71,7 @@ defmodule LLWeb.ApiController do
 
   def all_series(conn, %{"series_id" => series_id}) do
     Repo.get(Series, series_id)
-    |> Repo.preload(:chapters)
+    |> Repo.preload([:anilist, :chapters])
     |> case do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
@@ -78,7 +85,7 @@ defmodule LLWeb.ApiController do
             author: series.author,
             genre: series.genre,
             status: series.status || -1,
-            thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}"
+            thumbnail_url: thumbnail_url(series)
           }
         ])
     end
@@ -97,7 +104,7 @@ defmodule LLWeb.ApiController do
 
   def multi(conn, %{"multi_id" => multi_id}) do
     Repo.get(MultiSeries, multi_id)
-    |> Repo.preload(series: :source, children: :source)
+    |> Repo.preload([:anilist, series: :source, children: :source])
     |> case do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
@@ -131,7 +138,7 @@ defmodule LLWeb.ApiController do
           description: multi.series.description,
           genre: multi.series.genre,
           status: multi.series.status || -1,
-          thumbnail_url: ~p"/thumbnail/#{Path.basename(multi.series.thumbnail_path)}",
+          thumbnail_url: thumbnail_url(multi),
           chapters: chapters,
           multi: true
         })
@@ -140,7 +147,7 @@ defmodule LLWeb.ApiController do
 
   def series(conn, %{"series_id" => series_id}) do
     Repo.get(Series, series_id)
-    |> Repo.preload(:chapters)
+    |> Repo.preload([:anilist, :chapters])
     |> case do
       nil ->
         conn |> json(%{success: 0, reason: "chapter not found"})
@@ -177,7 +184,7 @@ defmodule LLWeb.ApiController do
           description: series.description,
           genre: series.genre,
           status: series.status || -1,
-          thumbnail_url: ~p"/thumbnail/#{Path.basename(series.thumbnail_path)}",
+          thumbnail_url: thumbnail_url(series),
           chapters: chapters
         })
     end

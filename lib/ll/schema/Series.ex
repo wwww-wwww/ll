@@ -2,7 +2,6 @@ defmodule LL.Series do
   use Ecto.Schema
 
   schema "series" do
-    field :anilist_id, :integer
     field :title, :string
     field :artist, :string
     field :author, :string
@@ -14,6 +13,8 @@ defmodule LL.Series do
 
     field :reading_mode, Ecto.Enum, values: [:rtl, :ltr, :continuous], default: :rtl
 
+    belongs_to :anilist, LL.Anilist
+
     belongs_to :source, LL.Source
     field :url, :string
 
@@ -22,8 +23,6 @@ defmodule LL.Series do
 
     belongs_to :multi_series, LL.MultiSeries
     field :priority, :integer
-
-    has_many :aliases, LL.Alias
 
     timestamps()
   end

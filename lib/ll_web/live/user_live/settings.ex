@@ -33,6 +33,20 @@ defmodule LLWeb.UserLive.Settings do
       </tr>
     </table>
 
+    <h2>Anilist</h2>
+    <%= if @user.anilist_key do %>
+      <.async_result :let={viewer} assign={@anilist_viewer}>
+        <:loading>Connected</:loading>
+        <:failed>Connected (could not load profile)</:failed>
+        Connected as
+        <.link href={"https://anilist.co/user/#{viewer["name"]}"}>{viewer["name"]}</.link>
+        ({viewer["id"]})
+      </.async_result>
+      <button phx-click="anilist-disconnect">Disconnect</button>
+    <% else %>
+      <.link href={~p"/user/anilist/connect"}>Connect Anilist</.link>
+    <% end %>
+
     <h2>Password</h2>
     <.form
       for={@password_form}
@@ -85,6 +99,7 @@ defmodule LLWeb.UserLive.Settings do
       |> assign(current_username: user.username)
       |> assign(password_form: to_form(password_changeset))
       |> assign(trigger_submit: false)
+      |> assign_viewer(user)
 
     {:ok, socket}
   end
@@ -116,6 +131,15 @@ defmodule LLWeb.UserLive.Settings do
     end
   end
 
+  def handle_event("anilist-disconnect", _, socket) do
+    {:ok, user} =
+      socket.assigns.user
+      |> Ecto.Changeset.change(%{anilist_key: nil})
+      |> Repo.update()
+
+    {:noreply, assign(socket, user: user)}
+  end
+
   def handle_event("library-delete", %{"id" => id}, socket) do
     user_id = socket.assigns.current_scope.user.id
 
@@ -145,6 +169,15 @@ defmodule LLWeb.UserLive.Settings do
       {:noreply, socket}
     end
   end
+
+  defp assign_viewer(socket, %{anilist_key: token}) when is_binary(token) do
+    assign_async(socket, :anilist_viewer, fn ->
+      with {:ok, viewer} <- LL.Anilist.viewer(token), do: {:ok, %{anilist_viewer: viewer}}
+    end)
+  end
+
+  defp assign_viewer(socket, _),
+    do: assign(socket, anilist_viewer: Phoenix.LiveView.AsyncResult.ok(nil))
 
   def get_libraries(socket) do
     user = socket.assigns.current_scope.user

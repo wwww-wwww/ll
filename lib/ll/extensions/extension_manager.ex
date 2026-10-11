@@ -217,7 +217,7 @@ defmodule LL.ExtensionManager do
               download_cover(series)
             end
 
-            series
+            Repo.preload(series, :anilist)
           end)
 
         cb.(results, has_next)
@@ -260,8 +260,6 @@ defmodule LL.ExtensionManager do
         end
 
         LLWeb.SeriesLive.update(series)
-
-      # TODO: if thumbnail url is different, redownload
 
       err ->
         Message.error(err)

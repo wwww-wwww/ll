@@ -12,6 +12,10 @@ if System.get_env("PHX_SERVER") && System.get_env("RELEASE_NAME") do
   config :ll, LLWeb.Endpoint, server: true
 end
 
+config :ll, :anilist,
+  client_id: System.get_env("ANILIST_CLIENT_ID"),
+  client_secret: System.get_env("ANILIST_CLIENT_SECRET")
+
 if config_env() == :prod do
   config :ll, LL.Repo,
     username: "w",

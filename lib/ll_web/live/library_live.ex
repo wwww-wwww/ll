@@ -55,7 +55,10 @@ defmodule LLWeb.LibraryLive do
     libraries =
       from(l in Library, where: l.user_id == ^user.id)
       |> Repo.all()
-      |> Repo.preload([:series, [multi_series: [:series, :children]]])
+      |> Repo.preload([
+        [series: :anilist],
+        [multi_series: [:anilist, :children, series: :anilist]]
+      ])
 
     entries =
       case socket.assigns do

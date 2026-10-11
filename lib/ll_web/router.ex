@@ -49,6 +49,9 @@ defmodule LLWeb.Router do
     end
 
     post "/user/update-password", UserSessionController, :update_password
+
+    get "/user/anilist/connect", AnilistAuthController, :connect
+    get "/user/anilist/callback", AnilistAuthController, :callback
   end
 
   scope "/", LLWeb do

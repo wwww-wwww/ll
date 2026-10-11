@@ -1,9 +1,8 @@
 defmodule LL.Alias do
   use Ecto.Schema
 
-  schema "aliases" do
-    belongs_to :series, LL.Series
-    belongs_to :multi_series, LL.MultiSeries
+  schema "alias" do
+    belongs_to :anilist, LL.Anilist
     field :name, :string
   end
 end

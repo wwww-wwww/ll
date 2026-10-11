@@ -5,25 +5,23 @@ defmodule LLWeb.SeriesComponent do
     ~H"""
     <div
       class="SeriesComponent"
-      data-search={aliases(@series) |> Enum.map(& &1.name) |> Enum.join(",")}
+      data-search={LL.Anilist.aliases(@series) |> Enum.map(& &1.name) |> Enum.join(",")}
     >
       <.slink {assigns}>
         <img
-          :if={@series.thumbnail_path != nil and File.exists?(@series.thumbnail_path)}
-          src={~p"/thumbnail/#{Path.basename(@series.thumbnail_path)}"}
+          :if={LL.Anilist.has_thumbnail?(@series)}
+          src={~p"/thumbnail/#{Path.basename(LL.Anilist.thumbnail_path(@series))}"}
         />
-
         <div class="info">
           <%= if assigns[:in_library] do %>
             <span class="material-symbols-rounded">library_books</span>
           <% end %>
-
+          
           <%= if Map.get(@series, :multi_series_id) != nil do %>
             <span>Has multi</span>
           <% end %>
         </div>
-
-        <span class="title">{@series.title}</span>
+         <span class="title">{@series.title}</span>
       </.slink>
     </div>
     """
@@ -38,9 +36,7 @@ defmodule LLWeb.SeriesComponent do
         {render_slot(@inner_block)}
       </.link>
     <% else %>
-      <.link id={@id} patch={@href}>
-        {render_slot(@inner_block)}
-      </.link>
+      <.link id={@id} patch={@href}>{render_slot(@inner_block)}</.link>
     <% end %>
     """
   end
@@ -56,13 +52,14 @@ defmodule LLWeb.SeriesComponent do
     {:ok, socket}
   end
 
-  def aliases(%{aliases: aliases}) when is_list(aliases), do: aliases
-  def aliases(_), do: []
-
   defmacro __using__(_opts) do
     quote do
       def handle_info(%{topic: "thumb:multi:" <> _, event: "update", payload: series}, socket) do
-        LLWeb.SeriesComponent.update_assigns(series.id, series: series)
+        send_update(LLWeb.SeriesComponent,
+          id: "#{LLWeb.SeriesComponent.id(series.id)}-Multi",
+          series: series
+        )
+
         {:noreply, socket}
       end
 

@@ -21,9 +21,7 @@ defmodule LLWeb.MainLibraryLive do
         Add to Mihon
       </.link>
     </div>
-
-    <input type="text" id="library_search" phx-update="ignore" />
-
+     <input type="text" id="library_search" phx-update="ignore" />
     <div class="library" id="library" phx-hook="library">
       <.live_component
         :for={entry <- @entries}
@@ -54,7 +52,10 @@ defmodule LLWeb.MainLibraryLive do
   def main_libraries() do
     from(l in Library, where: is_nil(l.user_id))
     |> Repo.all()
-    |> Repo.preload([[series: :aliases], [multi_series: [:aliases, :series, :children]]])
+    |> Repo.preload([
+      [series: [anilist: :aliases]],
+      [multi_series: [:children, anilist: :aliases, series: :anilist]]
+    ])
     |> Enum.sort_by(
       fn library ->
         {
@@ -135,7 +136,10 @@ defmodule LLWeb.MainLibraryLive do
         %{user: %LL.User{} = user} ->
           from(l in Library, where: l.user_id == ^user.id)
           |> Repo.all()
-          |> Repo.preload([[series: :aliases], [multi_series: [:aliases, :series, :children]]])
+          |> Repo.preload([
+            [series: [anilist: :aliases]],
+            [multi_series: [:children, anilist: :aliases, series: :anilist]]
+          ])
           |> Enum.map(&(&1.series ++ &1.multi_series))
           |> List.flatten()
           |> Enum.uniq_by(&{&1.__struct__, &1.id})

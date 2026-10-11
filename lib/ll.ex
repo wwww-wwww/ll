@@ -57,7 +57,7 @@ defmodule LL do
         |> Repo.update()
       end)
 
-      Repo.all(Series)
+      (Repo.all(LL.Anilist) ++ Repo.all(Series))
       |> Enum.each(fn e ->
         thumbnail_path =
           case e.thumbnail_path do
@@ -83,8 +83,8 @@ defmodule LL do
 
   def cleanup() do
     series =
-      from(s in Series, where: s.in_library == true)
-      |> Repo.all()
+      (Repo.all(from(a in LL.Anilist, where: not is_nil(a.thumbnail_path))) ++
+         Repo.all(from(s in Series, where: s.in_library == true and not is_nil(s.thumbnail_path))))
       |> Enum.map(&Path.expand(&1.thumbnail_path))
 
     File.ls!("thumbnails")

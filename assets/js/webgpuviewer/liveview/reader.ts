@@ -231,6 +231,20 @@ export class Reader extends ViewHook {
         this.e_current_page.textContent = `${page + 1}`
         this.e_last_page.textContent = `${chapter.count}`
         this.updateProgress(page, chapter.count)
+        this.checkChapterEnd(chapter, page)
+    }
+
+    /** Chapter ids already reported as finished this session. */
+    private finished = new Set<string>()
+
+    /** Tell the server when the last page of [chapter] is on screen. */
+    private checkChapterEnd(chapter: WindowChapter, page: number) {
+        const last = chapter.start + chapter.count - 1
+        if (page !== chapter.count - 1 && !this.viewer.shownFiles.includes(last)) return
+        const id = this.chapterAt(chapter.at)?.dataset.chapterId
+        if (!id || this.finished.has(id)) return
+        this.finished.add(id)
+        this.pushEvent("chapter-end", { id })
     }
 
     private e_progress!: HTMLElement

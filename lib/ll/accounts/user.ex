@@ -9,6 +9,8 @@ defmodule LL.User do
 
     field :level, :integer
 
+    field :anilist_key, :string
+
     many_to_many :messages, LL.Message, join_through: LL.MessagesUser
 
     timestamps()

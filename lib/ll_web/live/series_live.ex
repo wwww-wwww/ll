@@ -15,7 +15,8 @@ defmodule LLWeb.SeriesLive do
     LibrarySeries,
     MultiSeries,
     Message,
-    Alias
+    Alias,
+    SeriesProgress
   }
 
   def title(), do: "Series"
@@ -24,30 +25,23 @@ defmodule LLWeb.SeriesLive do
     ~H"""
     <div class="inner">
       <div class="head" phx-value-sid={@entry.id}>
-        <div
-          :if={@entry.thumbnail_path != nil and File.exists?(@entry.thumbnail_path)}
-          class="cover-image"
-        >
-          <img src={~p"/thumbnail/#{Path.basename(@entry.thumbnail_path)}"} />
+        <% details = if is_struct(@entry.anilist, Anilist), do: @entry.anilist, else: @entry %>
+        <div :if={Anilist.has_thumbnail?(@entry)} class="cover-image">
+          <img src={~p"/thumbnail/#{Path.basename(Anilist.thumbnail_path(@entry))}"} />
         </div>
-
+        
         <div class="details">
           <h1>
-            <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{@entry.title} (Multi)</.link>
-            <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{@entry.title}</.link>
+            <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{details.title} (Multi)</.link>
+            <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{details.title}</.link>
           </h1>
+          
           <div>
             <div>
               <div>
-                <span>
-                  Anilist:
-                  <.link class="anilist" href={"https://anilist.co/manga/#{@entry.anilist_id}"}>
-                    {@entry.anilist_id}
-                  </.link>
-                </span>
-                <span>Author: <span class="author">{@entry.author}</span></span>
-                <span>Artist: <span class="artist">{@entry.artist}</span></span>
-                <span>Status: <span class="status">{status(@entry)}</span></span>
+                <span>Author: <span class="author">{details.author}</span></span>
+                <span>Artist: <span class="artist">{details.artist}</span></span>
+                <span>Status: <span class="status">{status(details)}</span></span>
                 <span>
                   Source:
                   <span
@@ -60,23 +54,33 @@ defmodule LLWeb.SeriesLive do
                     </.link>
                   </span>
                 </span>
-
                 <span :if={not @is_multi}>
                   Last chapter refresh:
                   <span class="updated">{relative_time(@entry.chapters_updated)}</span>
                 </span>
                 <span>Reading mode: <span class="reading-mode">{@entry.reading_mode}</span></span>
               </div>
-
+              
               <div :if={LL.User.mod?(@current_scope)} class="anilist-details">
-                Anilist
+                Anilist:
+                <.link class="anilist" href={"https://anilist.co/manga/#{@entry.anilist_id}"}>
+                  {@entry.anilist_id}
+                </.link>
+                <div>
+                  <label :if={@current_scope.user && @entry.anilist_id} class="tracking">
+                    <input type="checkbox" checked={@progress != nil} phx-click="track-toggle" />
+                    Track <span :if={@progress}>Progress: {@progress.progress}</span>
+                    <button :if={@progress} type="button" phx-click="track-sync">Sync</button>
+                  </label>
+                </div>
+                
                 <form phx-submit="anilist-search">
                   <div>
                     <input type="text" name="title" value={@entry.title || @entry.series.title} />
                     <input type="submit" value="Search" />
                   </div>
                 </form>
-
+                
                 <div>
                   <span :for={{t, i} <- (assigns[:anilist_search_results] || []) |> Enum.with_index()}>
                     <% title = t[:title][:english] || t[:title][:romaji] || t[:title][:native] %>
@@ -98,21 +102,28 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
               </div>
-
+              
               <div class="aliases">
                 Aliases
                 <form phx-submit="alias-add">
                   <div>
                     <input type="text" name="name" value="" />
-                    <input type="submit" value="add" />
+                    <input type="submit" value="add" class="material-symbols-rounded" />
                   </div>
                 </form>
-                <div :for={a <- @entry.aliases}>
+                
+                <div :for={a <- LL.Anilist.aliases(@entry)}>
                   <span>{a.name}</span>
-                  <button phx-click="alias-remove" phx-value-id={a.id}>close</button>
+                  <button
+                    phx-click="alias-remove"
+                    phx-value-id={a.id}
+                    class="material-symbols-rounded"
+                  >
+                    close
+                  </button>
                 </div>
               </div>
-
+              
               <div
                 :if={@is_multi or not is_nil(@entry.multi_series) or LL.User.mod?(@current_scope)}
                 class="multis"
@@ -126,14 +137,14 @@ defmodule LLWeb.SeriesLive do
                     <button phx-click="multi_create">Create multi</button>
                     <button phx-click="multi_get">Add to multi</button>
                   <% end %>
-
+                  
                   <%= if not @is_multi do %>
                     <.link :if={@entry.multi_series} navigate={~p"/multi/#{@entry.multi_series.id}"}>
                       {@entry.multi_series.title || @entry.multi_series.series.title}
                     </.link>
                   <% end %>
                 </div>
-
+                
                 <div :if={@is_multi}>
                   <span :for={s <- Enum.sort_by(@multi_children, &(&1.priority || 0))}>
                     <%= if LL.User.mod?(@current_scope) do %>
@@ -146,7 +157,7 @@ defmodule LLWeb.SeriesLive do
                         keyboard_arrow_up
                       </button>
                     <% end %>
-                    <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
+                     <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
                     <span class="updated">{relative_time(s.chapters_updated)}</span>
                     <button
                       :if={LL.User.mod?(@current_scope) and @multi.series.id != s.id}
@@ -165,7 +176,7 @@ defmodule LLWeb.SeriesLive do
                     </button>
                   </span>
                 </div>
-
+                
                 <div :if={assigns[:multis]}>
                   <span :for={m <- @multis |> Enum.filter(&(@entry.multi_series_id != &1.id))}>
                     <span>{m.series.title}</span>
@@ -180,7 +191,7 @@ defmodule LLWeb.SeriesLive do
                 </div>
               </div>
             </div>
-
+            
             <div>
               <div
                 :if={@current_scope.user}
@@ -209,7 +220,7 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
               </div>
-
+              
               <div
                 :if={LL.User.mod?(@current_scope.user)}
                 class="libraries"
@@ -241,15 +252,17 @@ defmodule LLWeb.SeriesLive do
           </div>
         </div>
       </div>
-
+      
       <div :if={@entry.genre} class="tags">
         <span :for={t <- @entry.genre |> String.split(", ")}>{t}</span>
       </div>
-      <div :if={@entry.description} class="description">
-        {raw(HtmlSanitizeEx.basic_html(@entry.description))}
+      
+      <div :if={details.description} class="description">
+        {raw(HtmlSanitizeEx.basic_html(details.description))}
       </div>
-
+      
       <div :if={LL.User.mod?(@current_scope)} class="actions">
+        <button :if={not @is_multi} phx-click="refresh_details">Refresh details</button>
         <button phx-click="refresh_chapters">Refresh chapters</button>
         <button phx-click="download_all">Download all</button>
         <button phx-click="editing" phx-value-show={if @editing, do: 0, else: 1}>
@@ -260,6 +273,7 @@ defmodule LLWeb.SeriesLive do
           <% end %>
         </button>
       </div>
+      
       <div class="chapterlist">
         <%= if @is_multi do %>
           <.live_component
@@ -323,13 +337,13 @@ defmodule LLWeb.SeriesLive do
     multi =
       Repo.get(MultiSeries, multi_id)
       |> Repo.preload([
+        [anilist: :aliases],
         [series: [:source, :chapters]],
-        [children: [:source, :chapters]],
-        :aliases
+        [children: [:source, :chapters]]
       ])
 
-    if not is_nil(multi.thumbnail_path) and not File.exists?(multi.thumbnail_path) do
-      LL.Anilist.download_cover(multi)
+    if not is_nil(multi.anilist_id) and not Anilist.has_thumbnail?(%{anilist: multi.anilist}) do
+      Anilist.download_cover(multi)
     end
 
     chapters = MultiSeries.get_chapters(multi)
@@ -351,6 +365,8 @@ defmodule LLWeb.SeriesLive do
       |> assign(chapters: chapters)
       |> assign(editing: false)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
+      |> assign_progress(multi)
+      |> sync_progress()
 
     {:ok, socket}
   end
@@ -363,10 +379,14 @@ defmodule LLWeb.SeriesLive do
 
     series =
       Repo.get(Series, series_id)
-      |> Repo.preload([[source: :extension], [multi_series: :series], :aliases])
+      |> Repo.preload([[anilist: :aliases], [source: :extension], [multi_series: :series]])
+
+    if not is_nil(series.anilist_id) and not Anilist.has_thumbnail?(%{anilist: series.anilist}) do
+      Anilist.download_cover(series)
+    end
 
     if not is_nil(series.thumbnail_path) and not File.exists?(series.thumbnail_path) do
-      LL.Anilist.download_cover(series)
+      ExtensionManager.download_cover(series)
     end
 
     multi = Repo.get_by(MultiSeries, series_id: series.id)
@@ -390,6 +410,8 @@ defmodule LLWeb.SeriesLive do
       |> assign(editing: false)
       |> assign(source: series.source)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
+      |> assign_progress(series)
+      |> sync_progress()
 
     if series.details_updated == nil do
       ExtensionManager.series_details(series)
@@ -402,8 +424,34 @@ defmodule LLWeb.SeriesLive do
     {:ok, socket}
   end
 
+  defp assign_progress(socket, entry) do
+    user = socket.assigns.current_scope.user
+
+    progress =
+      if user && entry.anilist_id do
+        Repo.get_by(SeriesProgress, user_id: user.id, anilist_id: entry.anilist_id)
+      end
+
+    assign(socket, progress: progress)
+  end
+
+  defp sync_progress(socket) do
+    user = socket.assigns.current_scope.user
+    entry = socket.assigns.entry
+
+    with true <- connected?(socket),
+         %{anilist_key: token} when is_binary(token) <- user,
+         %SeriesProgress{} = progress <- socket.assigns.progress do
+      start_async(socket, :sync_progress, fn ->
+        {progress, Anilist.progress(token, entry.anilist_id)}
+      end)
+    else
+      _ -> socket
+    end
+  end
+
   def update(%LL.Series{} = series) do
-    series = LL.Repo.preload(series, [[multi_series: :series], :source])
+    series = LL.Repo.preload(series, [[multi_series: :series], :source, anilist: :aliases])
 
     Endpoint.broadcast("series:#{series.id}", "update", series)
 
@@ -414,7 +462,11 @@ defmodule LLWeb.SeriesLive do
 
   def update(%LL.MultiSeries{} = multi) do
     multi =
-      LL.Repo.preload(multi, series: [:source, :chapters], children: [:source, :chapters])
+      LL.Repo.preload(multi,
+        series: [:source, :chapters],
+        children: [:source, :chapters],
+        anilist: :aliases
+      )
 
     chapters = MultiSeries.get_chapters(multi)
 
@@ -428,6 +480,31 @@ defmodule LLWeb.SeriesLive do
     |> Repo.all()
     |> Repo.preload([:multi_series, :series])
   end
+
+  def handle_event("track-toggle", _, socket) do
+    user = socket.assigns.current_scope.user
+    entry = socket.assigns.entry
+
+    if user && entry.anilist_id do
+      case socket.assigns.progress do
+        nil ->
+          Repo.insert(%SeriesProgress{
+            user_id: user.id,
+            anilist_id: entry.anilist_id,
+            progress: 0
+          })
+
+        progress ->
+          Repo.delete(progress)
+      end
+
+      {:noreply, socket |> assign_progress(entry) |> sync_progress()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("track-sync", _, socket), do: {:noreply, sync_progress(socket)}
 
   def handle_event("refresh_details", _, socket) do
     ExtensionManager.series_details(socket.assigns.entry)
@@ -689,24 +766,40 @@ defmodule LLWeb.SeriesLive do
 
     cover_url = details[:coverImage][:extraLarge]
 
-    socket.assigns.entry
-    |> Ecto.Changeset.change(%{
-      anilist_id: details.id,
-      title: title |> String.trim(),
-      thumbnail_path: cover_url,
-      author: author,
-      artist: artist,
-      description: details[:description]
-    })
-    |> Repo.update()
-    |> case do
-      {:ok, %MultiSeries{} = entry} ->
-        Endpoint.broadcast("multi:#{entry.id}", "update", entry)
-        LL.Anilist.download_cover(cover_url, entry)
+    Repo.transact(fn ->
+      case Repo.get(Anilist, details.id) do
+        nil -> %Anilist{}
+        anilist -> anilist
+      end
+      |> Ecto.Changeset.change(%{
+        id: details.id,
+        title: title |> String.trim(),
+        thumbnail_path: cover_url,
+        author: author,
+        artist: artist,
+        description: details[:description]
+      })
+      |> Repo.insert_or_update()
+      |> case do
+        {:ok, anilist} ->
+          with {:ok, entry} <-
+                 Ecto.Changeset.change(socket.assigns.entry, %{anilist_id: anilist.id})
+                 |> Repo.update() do
+            {:ok, {anilist, %{entry | anilist: anilist}}}
+          end
 
-      {:ok, %Series{} = entry} ->
+        err ->
+          err
+      end
+    end)
+    |> case do
+      {:ok, {anilist, %MultiSeries{} = entry}} ->
+        Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+        Anilist.download_cover(cover_url, anilist)
+
+      {:ok, {anilist, %Series{} = entry}} ->
         Endpoint.broadcast("series:#{entry.id}", "update", entry)
-        LL.Anilist.download_cover(cover_url, entry)
+        Anilist.download_cover(cover_url, anilist)
 
       err ->
         Message.error(err)
@@ -715,12 +808,15 @@ defmodule LLWeb.SeriesLive do
     {:noreply, socket}
   end
 
+  def handle_event("alias-add", _, %{assigns: %{entry: %{anilist_id: nil}}} = socket),
+    do: {:noreply, socket}
+
   def handle_event("alias-add", %{"name" => name}, socket) do
     name = String.trim(name)
 
     case socket.assigns.entry do
-      %MultiSeries{id: id} ->
-        %Alias{name: name, multi_series_id: id}
+      %MultiSeries{anilist_id: anilist_id} ->
+        %Alias{name: name, anilist_id: anilist_id}
         |> Repo.insert()
 
         entry =
@@ -729,20 +825,22 @@ defmodule LLWeb.SeriesLive do
             [
               [series: [:source, :chapters]],
               [children: [:source, :chapters]],
-              :aliases
+              [anilist: :aliases]
             ],
             force: true
           )
 
         Endpoint.broadcast("multi:#{entry.id}", "update", entry)
 
-      %Series{id: id} ->
-        %Alias{name: name, series_id: id}
+      %Series{anilist_id: anilist_id} ->
+        %Alias{name: name, anilist_id: anilist_id}
         |> Repo.insert()
 
         entry =
           socket.assigns.entry
-          |> Repo.preload([[source: :extension], [multi_series: :series], :aliases], force: true)
+          |> Repo.preload([[source: :extension], [multi_series: :series], [anilist: :aliases]],
+            force: true
+          )
 
         Endpoint.broadcast("series:#{entry.id}", "update", entry)
     end
@@ -762,7 +860,7 @@ defmodule LLWeb.SeriesLive do
             [
               [series: [:source, :chapters]],
               [children: [:source, :chapters]],
-              :aliases
+              [anilist: :aliases]
             ],
             force: true
           )
@@ -772,7 +870,9 @@ defmodule LLWeb.SeriesLive do
       %Series{} ->
         entry =
           socket.assigns.entry
-          |> Repo.preload([[source: :extension], [multi_series: :series], :aliases], force: true)
+          |> Repo.preload([[source: :extension], [multi_series: :series], [anilist: :aliases]],
+            force: true
+          )
 
         Endpoint.broadcast("series:#{entry.id}", "update", entry)
     end
@@ -780,8 +880,15 @@ defmodule LLWeb.SeriesLive do
     {:noreply, socket}
   end
 
+  def handle_async(:sync_progress, {:ok, {progress, {:ok, n}}}, socket) when is_integer(n) do
+    {:ok, progress} = progress |> Ecto.Changeset.change(%{progress: n}) |> Repo.update()
+    {:noreply, assign(socket, progress: progress)}
+  end
+
+  def handle_async(:sync_progress, _, socket), do: {:noreply, socket}
+
   def handle_info(%{topic: "series:" <> _id, event: "update", payload: series}, socket) do
-    {:noreply, assign(socket, entry: series)}
+    {:noreply, socket |> assign(entry: series) |> assign_progress(series)}
   end
 
   def handle_info(%{topic: "series:" <> _id, event: "multi", payload: multi}, socket) do
@@ -792,18 +899,20 @@ defmodule LLWeb.SeriesLive do
     {:noreply, assign(socket, chapters: chapters)}
   end
 
-  def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
-    {:noreply, assign(socket, entry: multi)}
-  end
-
   def handle_info(%{topic: "multi:" <> _id, event: "update", payload: {multi, chapters}}, socket) do
     socket =
       socket
+      |> assign(entry: multi)
+      |> assign_progress(multi)
       |> assign(multi: multi)
       |> assign(page_title: multi.series.title)
       |> assign(series: multi.series)
       |> assign(chapters: chapters)
 
     {:noreply, assign(socket, multi: multi)}
+  end
+
+  def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
+    {:noreply, socket |> assign(entry: multi) |> assign_progress(multi)}
   end
 end
