@@ -50,8 +50,18 @@ defmodule LLWeb.SeriesLive do
                 <.link class="anilist" href={"https://anilist.co/manga/#{@entry.anilist_id}"}>
                   {@entry.anilist_id}
                 </.link>
+                <button
+                  :if={LL.User.mod?(@current_scope) && @entry.anilist_id}
+                  type="button"
+                  phx-click="anilist-refresh"
+                >
+                  Refresh
+                </button>
                 <div>
-                  <label :if={@current_scope.user && @entry.anilist_id} class="tracking">
+                  <label
+                    :if={@current_scope.user && @current_scope.user.anilist_key && @entry.anilist_id}
+                    class="tracking"
+                  >
                     <input type="checkbox" checked={@progress != nil} phx-click="track-toggle" />
                     Track <span :if={@progress}>Progress: {@progress.progress}</span>
                     <button :if={@progress} type="button" phx-click="track-sync">Sync</button>
@@ -751,24 +761,6 @@ defmodule LLWeb.SeriesLive do
 
     details = socket.assigns.anilist_search_results |> Enum.at(index)
 
-    author =
-      details.staff.edges
-      |> Enum.filter(&String.contains?(&1.role, "Original Story"))
-      |> Enum.map(& &1[:node][:name][:full])
-      |> Enum.at(0) ||
-        details.staff.edges
-        |> Enum.filter(&String.contains?(&1.role, "Story"))
-        |> Enum.map(& &1[:node][:name][:full])
-        |> Enum.at(0)
-
-    artist =
-      details.staff.edges
-      |> Enum.filter(
-        &(String.contains?(&1.role, "Art") or String.contains?(&1.role, "Illustration"))
-      )
-      |> Enum.map(& &1[:node][:name][:full])
-      |> Enum.at(0)
-
     cover_url = details[:coverImage][:extraLarge]
 
     Repo.transact(fn ->
@@ -776,14 +768,12 @@ defmodule LLWeb.SeriesLive do
         nil -> %Anilist{}
         anilist -> anilist
       end
-      |> Ecto.Changeset.change(%{
-        id: details.id,
-        title: title |> String.trim(),
-        thumbnail_path: cover_url,
-        author: author,
-        artist: artist,
-        description: details[:description]
-      })
+      |> Ecto.Changeset.change(
+        Map.merge(details_attrs(details), %{
+          id: details.id,
+          title: title |> String.trim()
+        })
+      )
       |> Repo.insert_or_update()
       |> case do
         {:ok, anilist} ->
@@ -808,6 +798,29 @@ defmodule LLWeb.SeriesLive do
 
       err ->
         Message.error(err)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("anilist-refresh", _, %{assigns: %{entry: %{anilist_id: nil}}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("anilist-refresh", _, %{assigns: %{entry: entry}} = socket) do
+    with {:ok, details} <- Anilist.fetch(entry.anilist_id),
+         {:ok, anilist} <-
+           Repo.get!(Anilist, entry.anilist_id)
+           |> Ecto.Changeset.change(details_attrs(details))
+           |> Repo.update() do
+      Anilist.download_cover(details[:coverImage][:extraLarge], anilist)
+      entry = %{entry | anilist: Repo.preload(anilist, :aliases)}
+
+      case entry do
+        %MultiSeries{} -> Endpoint.broadcast("multi:#{entry.id}", "update", entry)
+        %Series{} -> Endpoint.broadcast("series:#{entry.id}", "update", entry)
+      end
+    else
+      err -> Message.error(err)
     end
 
     {:noreply, socket}
@@ -919,5 +932,29 @@ defmodule LLWeb.SeriesLive do
 
   def handle_info(%{topic: "multi:" <> _id, event: "update", payload: multi}, socket) do
     {:noreply, socket |> assign(entry: multi) |> assign_progress(multi)}
+  end
+
+  defp details_attrs(details) do
+    edges = details.staff.edges
+    names = fn edges -> Enum.map(edges, & &1[:node][:name][:full]) end
+
+    author =
+      (edges |> Enum.filter(&String.contains?(&1.role, "Original Story")) |> names.() |> Enum.at(0)) ||
+        edges |> Enum.filter(&String.contains?(&1.role, "Story")) |> names.() |> Enum.at(0)
+
+    artist =
+      edges
+      |> Enum.filter(
+        &(String.contains?(&1.role, "Art") or String.contains?(&1.role, "Illustration"))
+      )
+      |> names.()
+      |> Enum.at(0)
+
+    %{
+      author: author,
+      artist: artist,
+      description: details[:description],
+      status: Anilist.status(details.status)
+    }
   end
 end

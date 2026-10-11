@@ -10,6 +10,7 @@ defmodule LL.Anilist do
     field :genre, :string
     field :status, :integer
     field :thumbnail_path, :string
+    field :thumbnail_hash, :string
 
     has_many :aliases, LL.Alias
 
@@ -24,11 +25,17 @@ defmodule LL.Anilist do
 
   @endpoint "https://graphql.anilist.co"
 
-  def search(title) do
+  def search(title), do: media("$title: String", "search: $title", %{title: title})
+
+  def fetch(id) do
+    with {:ok, [media | _]} <- media("$id: Int", "id: $id", %{id: id}), do: {:ok, media}
+  end
+
+  defp media(decl, filter, variables) do
     query = """
-    query ($title: String) {
+    query (#{decl}) {
       Page {
-        media (search: $title, type: MANGA) {
+        media (#{filter}, type: MANGA) {
           siteUrl
           title {
             english
@@ -52,12 +59,13 @@ defmodule LL.Anilist do
           id
           description
           synonyms
+          status
         }
       }
     }
     """
 
-    body = Jason.encode!(%{query: query, variables: %{title: title}})
+    body = Jason.encode!(%{query: query, variables: variables})
 
     with {:ok, %{body: body}} <-
            HTTPoison.request(%HTTPoison.Request{
@@ -77,6 +85,12 @@ defmodule LL.Anilist do
       err -> Message.error(err)
     end
   end
+
+  def status("FINISHED"), do: 2
+  def status("RELEASING"), do: 1
+  def status("NOT_YET_RELEASED"), do: 0
+  def status("CANCELLED"), do: 5
+  def status("HIATUS"), do: 6
 
   def viewer(token) do
     body = Jason.encode!(%{query: "query { Viewer { id name } }"})
@@ -246,6 +260,14 @@ defmodule LL.Anilist do
   end
 
   def download_cover(cover_url, %__MODULE__{} = anilist) do
+    hash = :crypto.hash(:sha256, cover_url) |> Base.encode16(case: :lower)
+
+    if anilist.thumbnail_hash == hash and has_thumbnail?(anilist),
+      do: :ok,
+      else: fetch_cover(cover_url, hash, anilist)
+  end
+
+  defp fetch_cover(cover_url, hash, anilist) do
     Downloader.get cover_url do
       {:ok, body, _headers} ->
         ext = cover_url |> URI.parse() |> Map.get(:path) |> Path.extname()
@@ -261,7 +283,7 @@ defmodule LL.Anilist do
         thumbnail_path = LL.Covers.encode(path)
 
         {:ok, anilist} =
-          Ecto.Changeset.change(anilist, %{thumbnail_path: thumbnail_path})
+          Ecto.Changeset.change(anilist, %{thumbnail_path: thumbnail_path, thumbnail_hash: hash})
           |> Repo.update()
 
         broadcast(anilist)
