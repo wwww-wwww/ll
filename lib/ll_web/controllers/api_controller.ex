@@ -19,11 +19,11 @@ defmodule LLWeb.ApiController do
           %MultiSeries{series: series} ->
             %{
               url: ~p"/multi/#{entry.id}",
-              title: entry.title,
-              artist: entry.artist,
-              author: entry.author,
+              title: LL.Anilist.title(entry),
+              artist: LL.Anilist.field(entry, :artist),
+              author: LL.Anilist.field(entry, :author),
               genre: entry.genre,
-              status: entry.status || -1,
+              status: LL.Anilist.field(entry, :status) || -1,
               thumbnail_url: thumbnail_url(entry),
               multi: true,
               aliases: LL.Anilist.aliases(entry) |> Enum.map(& &1.name)
@@ -32,11 +32,11 @@ defmodule LLWeb.ApiController do
           series ->
             %{
               url: ~p"/series/#{series.id}",
-              title: series.title,
-              artist: series.artist,
-              author: series.author,
+              title: LL.Anilist.title(series),
+              artist: LL.Anilist.field(series, :artist),
+              author: LL.Anilist.field(series, :author),
               genre: series.genre,
-              status: series.status || -1,
+              status: LL.Anilist.field(series, :status) || -1,
               thumbnail_url: thumbnail_url(series),
               aliases: LL.Anilist.aliases(entry) |> Enum.map(& &1.name)
             }
@@ -57,11 +57,11 @@ defmodule LLWeb.ApiController do
         json(conn, [
           %{
             url: ~p"/multi/#{multi.id}",
-            title: multi.title,
-            artist: multi.artist,
-            author: multi.author,
+            title: LL.Anilist.title(multi),
+            artist: LL.Anilist.field(multi, :artist),
+            author: LL.Anilist.field(multi, :author),
             genre: multi.genre,
-            status: multi.status || -1,
+            status: LL.Anilist.field(multi, :status) || -1,
             thumbnail_url: thumbnail_url(multi),
             multi: true
           }
@@ -80,11 +80,11 @@ defmodule LLWeb.ApiController do
         json(conn, [
           %{
             url: ~p"/series/#{series.id}",
-            title: series.title,
-            artist: series.artist,
-            author: series.author,
+            title: LL.Anilist.title(series),
+            artist: LL.Anilist.field(series, :artist),
+            author: LL.Anilist.field(series, :author),
             genre: series.genre,
-            status: series.status || -1,
+            status: LL.Anilist.field(series, :status) || -1,
             thumbnail_url: thumbnail_url(series)
           }
         ])
@@ -114,14 +114,16 @@ defmodule LLWeb.ApiController do
           MultiSeries.get_chapters(multi)
           |> Enum.filter(&(Chapter.downloaded?(elem(&1, 1)) and elem(&1, 1).hidden != true))
           |> Enum.map(fn {series, chapter} ->
+            source_name = if series.source, do: series.source.name, else: "Local"
+
             scanlator =
               if chapter.scanlator == nil,
-                do: series.source.name,
-                else: "#{series.source.name} - #{chapter.scanlator}"
+                do: source_name,
+                else: "#{source_name} - #{chapter.scanlator}"
 
             %{
               url: ~p"/series/#{series.id}/#{chapter.id}",
-              title: chapter.title,
+              title: chapter.title || "",
               number: chapter.number,
               date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
               scanlator: scanlator
@@ -132,12 +134,12 @@ defmodule LLWeb.ApiController do
         json(conn, %{
           success: 1,
           url: ~p"/multi/#{multi.id}",
-          title: multi.series.title,
-          artist: multi.series.artist || "",
-          author: multi.series.author || "",
-          description: multi.series.description,
+          title: LL.Anilist.title(multi),
+          artist: LL.Anilist.field(multi, :artist) || "",
+          author: LL.Anilist.field(multi, :author) || "",
+          description: LL.Anilist.field(multi, :description),
           genre: multi.series.genre,
-          status: multi.series.status || -1,
+          status: LL.Anilist.field(multi, :status) || -1,
           thumbnail_url: thumbnail_url(multi),
           chapters: chapters,
           multi: true
@@ -159,7 +161,7 @@ defmodule LLWeb.ApiController do
           |> Enum.sort_by(
             fn c ->
               {c.number,
-               Regex.scan(~r/\d+\.?\d*/, c.title)
+               Regex.scan(~r/\d+\.?\d*/, c.title || "")
                |> List.flatten()
                |> Enum.map(&(Float.parse(&1) |> elem(0)))}
             end,
@@ -168,7 +170,7 @@ defmodule LLWeb.ApiController do
           |> Enum.map(fn chapter ->
             %{
               url: ~p"/series/#{series.id}/#{chapter.id}",
-              title: chapter.title,
+              title: chapter.title || "",
               number: chapter.number,
               date: chapter.date |> DateTime.to_unix() |> Kernel.*(1000),
               scanlator: chapter.scanlator || ""
@@ -178,12 +180,12 @@ defmodule LLWeb.ApiController do
         json(conn, %{
           success: 1,
           url: ~p"/series/#{series.id}",
-          title: series.title,
-          artist: series.artist || "",
-          author: series.author || "",
-          description: series.description,
+          title: LL.Anilist.title(series),
+          artist: LL.Anilist.field(series, :artist) || "",
+          author: LL.Anilist.field(series, :author) || "",
+          description: LL.Anilist.field(series, :description),
           genre: series.genre,
-          status: series.status || -1,
+          status: LL.Anilist.field(series, :status) || -1,
           thumbnail_url: thumbnail_url(series),
           chapters: chapters
         })
@@ -205,7 +207,7 @@ defmodule LLWeb.ApiController do
         json(conn, %{
           success: 1,
           url: ~p"/series/#{chapter.series_id}/#{chapter.id}",
-          title: chapter.title,
+          title: chapter.title || "",
           number: chapter.number,
           date: chapter.date |> DateTime.to_unix(),
           scanlator: chapter.scanlator,

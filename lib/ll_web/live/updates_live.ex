@@ -18,9 +18,9 @@ defmodule LLWeb.UpdatesLive do
           <button phx-click="delete" phx-value-id={e.id} class="material-symbols-rounded">
             close
           </button>
-          <span>{relative_time(e.inserted_at)}</span>
-          <span>{replace_links(e.title)}</span>
+           <span>{relative_time(e.inserted_at)}</span> <span>{replace_links(e.title)}</span>
         </div>
+
         <div :if={e.body != ""}>{replace_links(e.body)}</div>
       </div>
     </div>
@@ -60,7 +60,7 @@ defmodule LLWeb.UpdatesLive do
                 assigns = %{series: series}
 
                 ~H"""
-                <.link navigate={~p"/series/#{@series.id}"}>{@series.title}</.link>
+                <.link navigate={~p"/series/#{@series.id}"}>{LL.Anilist.title(@series)}</.link>
                 """
                 |> Phoenix.HTML.Safe.to_iodata()
                 |> IO.iodata_to_binary()
@@ -75,7 +75,7 @@ defmodule LLWeb.UpdatesLive do
                 assigns = %{series: series}
 
                 ~H"""
-                <.link navigate={~p"/multi/#{@series.id}"}>{@series.title}</.link>
+                <.link navigate={~p"/multi/#{@series.id}"}>{LL.Anilist.title(@series)}</.link>
                 """
                 |> Phoenix.HTML.Safe.to_iodata()
                 |> IO.iodata_to_binary()

@@ -16,12 +16,12 @@ defmodule LLWeb.SeriesComponent do
           <%= if assigns[:in_library] do %>
             <span class="material-symbols-rounded">library_books</span>
           <% end %>
-          
+
           <%= if Map.get(@series, :multi_series_id) != nil do %>
             <span>Has multi</span>
           <% end %>
         </div>
-         <span class="title">{@series.title}</span>
+        <span class="title">{LL.Anilist.title(@series)}</span>
       </.slink>
     </div>
     """

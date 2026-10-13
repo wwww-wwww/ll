@@ -68,7 +68,7 @@ defmodule LLWeb.LibraryLive do
       |> Enum.map(&(&1.series ++ &1.multi_series))
       |> List.flatten()
       |> Enum.uniq_by(&{&1.__struct__, &1.id})
-      |> Enum.sort_by(&(Map.get(&1, :series, &1).title |> String.downcase()))
+      |> Enum.sort_by(&((LL.Anilist.title(&1) || "") |> String.downcase()))
 
     assigns = %{socket: socket, libraries: libraries, library: socket.assigns[:library]}
 

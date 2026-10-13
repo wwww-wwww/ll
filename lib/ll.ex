@@ -11,11 +11,25 @@ defmodule LL do
 
   alias LL.{Repo, Chapter, Library, Series, Extension, ExtensionManager}
 
+  @default_libraries ~w(Yuri Update Complete Local)
+
+  def default_libraries(), do: @default_libraries
+
+  def create_default_libraries() do
+    for name <- @default_libraries,
+        not Repo.exists?(from(l in Library, where: is_nil(l.user_id) and l.name == ^name)) do
+      Repo.insert!(%Library{name: name})
+    end
+
+    :ok
+  end
+
   def sync_chapters() do
     from(l in Library, where: is_nil(l.user_id) and l.name == "Update")
     |> Repo.one()
     |> Repo.preload(:series)
     |> Map.get(:series)
+    |> Enum.reject(&is_nil(&1.source_id))
     |> Enum.each(&ExtensionManager.series_chapters(&1, true))
   end
 

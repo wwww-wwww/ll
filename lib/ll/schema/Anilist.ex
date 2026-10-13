@@ -226,6 +226,21 @@ defmodule LL.Anilist do
   def aliases(%{anilist: %__MODULE__{aliases: aliases}}) when is_list(aliases), do: aliases
   def aliases(_), do: []
 
+  def field(%{anilist: %__MODULE__{} = anilist} = entry, key) do
+    with nil <- Map.get(anilist, key), do: field(Map.delete(entry, :anilist), key)
+  end
+
+  def field(entry, key) do
+    with nil <- Map.get(entry, key) do
+      case entry do
+        %{series: %Series{} = series} -> field(series, key)
+        _ -> nil
+      end
+    end
+  end
+
+  def title(entry), do: field(entry, :title)
+
   def thumbnail_path(entry) do
     own = Map.get(entry, :thumbnail_path)
 

@@ -13,6 +13,7 @@ config :ll,
   ecto_repos: [LL.Repo],
   sync_interval: 21_600_000,
   downloads_root: "/tank/yuriyomi",
+  local_root: "/tank/yuriyomi-local",
   encode_interval: 3_600_000
 
 # Configures the endpoint

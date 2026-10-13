@@ -32,7 +32,9 @@ defmodule LLWeb.ChapterComponent do
           <div><span class="title">{@chapter.title}</span></div>
           <div>
             <span class="date">{relative_time(@chapter.date)}</span>
-            <span :if={assigns[:show_source]} class="source">{@source.name}</span>
+            <span :if={assigns[:show_source]} class="source">
+              {if @source, do: @source.name, else: "Local"}
+            </span>
             <span class="number">{@chapter.number}</span>
             <span class="scanlator">{@chapter.scanlator}</span>
           </div>

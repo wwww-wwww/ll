@@ -16,6 +16,8 @@ defmodule LLWeb.StatusLive do
       </tr>
     </table>
 
+    <button phx-click="sync-local">Sync local library</button>
+
     <h2>Working</h2>
     <table>
       <tr :for={t <- @downloader_working}>
@@ -72,6 +74,11 @@ defmodule LLWeb.StatusLive do
       |> assign(downloader_working: downloader.working)
 
     {:ok, socket}
+  end
+
+  def handle_event("sync-local", _, socket) do
+    Task.start(&LL.LocalLibrary.sync/0)
+    {:noreply, socket}
   end
 
   def handle_info(%{topic: @topic, payload: %{status: status}}, socket) do

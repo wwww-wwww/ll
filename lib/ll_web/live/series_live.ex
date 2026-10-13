@@ -32,8 +32,10 @@ defmodule LLWeb.SeriesLive do
 
         <div class="details">
           <h1>
-            <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{details.title} (Multi)</.link>
-            <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>{details.title}</.link>
+            <.link :if={@is_multi} navigate={~p"/multi/#{@entry.id}"}>{Anilist.title(@entry)}</.link>
+            <.link :if={not @is_multi} navigate={~p"/series/#{@entry.id}"}>
+              {Anilist.title(@entry)}
+            </.link>
           </h1>
 
           <div>
@@ -96,9 +98,8 @@ defmodule LLWeb.SeriesLive do
                   </span>
                 </div>
               </div>
-
               <% aliases = LL.Anilist.aliases(@entry) %>
-              <div class="aliases" :if={length(aliases) > 0 or LL.User.mod?(@current_scope)}>
+              <div :if={length(aliases) > 0 or LL.User.mod?(@current_scope)} class="aliases">
                 Aliases
                 <form :if={LL.User.mod?(@current_scope)} phx-submit="alias-add">
                   <div>
@@ -120,15 +121,15 @@ defmodule LLWeb.SeriesLive do
                 </div>
               </div>
 
-              <div>
+              <div :if={not @is_multi}>
                 <span>
                   Source:
-                  <span
-                    :if={(not @is_multi and not is_nil(@entry.source)) or @is_multi}
-                    class="source"
-                  >
-                    <span :if={@is_multi}>Multi</span>
-                    <.link :if={not @is_multi} href={Path.join(@entry.source.base_url, @entry.url)}>
+                  <span class="source">
+                    <span :if={is_nil(@entry.source)}>Local</span>
+                    <.link
+                      :if={not is_nil(@entry.source)}
+                      href={Path.join(@entry.source.base_url, @entry.url)}
+                    >
                       {@entry.source.name} ({@entry.source.lang})
                     </.link>
                   </span>
@@ -155,7 +156,7 @@ defmodule LLWeb.SeriesLive do
 
                   <%= if not @is_multi do %>
                     <.link :if={@entry.multi_series} navigate={~p"/multi/#{@entry.multi_series.id}"}>
-                      {@entry.multi_series.title || @entry.multi_series.series.title}
+                      {Anilist.title(@entry.multi_series)}
                     </.link>
                   <% end %>
                 </div>
@@ -172,8 +173,11 @@ defmodule LLWeb.SeriesLive do
                         keyboard_arrow_up
                       </button>
                     <% end %>
-                     <.link navigate={~p"/series/#{s.id}"}>{s.source.name}</.link>
-                    <span class="updated">{relative_time(s.chapters_updated)}</span>
+
+                    <.link navigate={~p"/series/#{s.id}"}>
+                      {if s.source, do: s.source.name, else: "Local"}
+                    </.link>
+                     <span class="updated">{relative_time(s.chapters_updated)}</span>
                     <button
                       :if={LL.User.mod?(@current_scope) and @multi.series.id != s.id}
                       phx-click="multi_set_primary"
@@ -194,7 +198,7 @@ defmodule LLWeb.SeriesLive do
 
                 <div :if={assigns[:multis]}>
                   <span :for={m <- @multis |> Enum.filter(&(@entry.multi_series_id != &1.id))}>
-                    <span>{m.series.title}</span>
+                    <span>{Anilist.title(m)}</span>
                     <button
                       phx-click="multi_add"
                       phx-value-id={m.id}
@@ -376,7 +380,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(multi: multi)
       |> assign(multi_children: multi.children)
       |> assign(is_multi: true)
-      |> assign(page_title: multi.series.title)
+      |> assign(page_title: Anilist.title(multi))
       |> assign(chapters: chapters)
       |> assign(editing: false)
       |> assign(main_libraries: LLWeb.MainLibraryLive.main_libraries())
@@ -420,7 +424,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(entry: series)
       |> assign(multi: multi)
       |> assign(is_multi: false)
-      |> assign(page_title: series.title)
+      |> assign(page_title: Anilist.title(series))
       |> assign(chapters: chapters)
       |> assign(editing: false)
       |> assign(source: series.source)
@@ -549,12 +553,27 @@ defmodule LLWeb.SeriesLive do
   end
 
   def handle_event("multi_create", _, socket) do
-    %MultiSeries{}
-    |> Ecto.Changeset.change(%{series_id: socket.assigns.entry.id})
-    |> Repo.insert()
+    Repo.transact(fn ->
+      with {:ok, multi} <-
+             %MultiSeries{}
+             |> Ecto.Changeset.change(%{series_id: socket.assigns.entry.id})
+             |> Repo.insert(),
+           {:ok, series} <-
+             socket.assigns.entry
+             |> Repo.reload()
+             |> Ecto.Changeset.change(%{multi_series_id: multi.id})
+             |> Repo.update() do
+        {:ok, {multi, series}}
+      end
+    end)
     |> case do
-      {:ok, multi} -> Endpoint.broadcast("series:#{socket.assigns.entry.id}", "multi", multi)
-      err -> Message.error(err)
+      {:ok, {multi, series}} ->
+        Endpoint.broadcast("series:#{series.id}", "multi", multi)
+        update(series)
+        update(multi)
+
+      err ->
+        Message.error(err)
     end
 
     {:noreply, socket}
@@ -923,7 +942,7 @@ defmodule LLWeb.SeriesLive do
       |> assign(entry: multi)
       |> assign_progress(multi)
       |> assign(multi: multi)
-      |> assign(page_title: multi.series.title)
+      |> assign(page_title: Anilist.title(multi))
       |> assign(series: multi.series)
       |> assign(chapters: chapters)
 
@@ -939,7 +958,7 @@ defmodule LLWeb.SeriesLive do
     names = fn edges -> Enum.map(edges, & &1[:node][:name][:full]) end
 
     author =
-      (edges |> Enum.filter(&String.contains?(&1.role, "Original Story")) |> names.() |> Enum.at(0)) ||
+      edges |> Enum.filter(&String.contains?(&1.role, "Original Story")) |> names.() |> Enum.at(0) ||
         edges |> Enum.filter(&String.contains?(&1.role, "Story")) |> names.() |> Enum.at(0)
 
     artist =

@@ -53,7 +53,11 @@ defmodule LL.Application do
     LL.Source.start_bucket()
 
     opts = [strategy: :one_for_one, name: LL.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    with {:ok, _} = started <- Supervisor.start_link(children, opts) do
+      LL.create_default_libraries()
+      started
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

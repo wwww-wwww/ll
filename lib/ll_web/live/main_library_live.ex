@@ -21,7 +21,7 @@ defmodule LLWeb.MainLibraryLive do
         Add to Mihon
       </.link>
     </div>
-     <input type="text" id="library_search" phx-update="ignore" />
+    <input type="text" id="library_search" phx-update="ignore" />
     <div class="library" id="library" phx-hook="library">
       <.live_component
         :for={entry <- @entries}
@@ -56,17 +56,10 @@ defmodule LLWeb.MainLibraryLive do
       [series: [anilist: :aliases]],
       [multi_series: [:children, anilist: :aliases, series: :anilist]]
     ])
-    |> Enum.sort_by(
-      fn library ->
-        {
-          library.name == "Yuri",
-          library.name == "Update",
-          library.name == "Complete",
-          library.name == "Trial"
-        }
-      end,
-      :desc
-    )
+    |> Enum.sort_by(fn library ->
+      Enum.find_index(LL.default_libraries(), &(&1 == library.name)) ||
+        length(LL.default_libraries())
+    end)
   end
 
   def libraries_series(libraries) do
@@ -88,7 +81,7 @@ defmodule LLWeb.MainLibraryLive do
       end)
 
     (series ++ multi_series)
-    |> Enum.sort_by(&(&1.title |> String.downcase()))
+    |> Enum.sort_by(&((LL.Anilist.title(&1) || "") |> String.downcase()))
   end
 
   def in_library?(entry, my_library) do
